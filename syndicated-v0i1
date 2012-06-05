@@ -1,0 +1,166 @@
+# Blosxom Plugin: syndicated
+# Author(s): Adrian Sampson <adrian@pygmysoftware.com>
+# Version: 0.1
+# Documentation: See the bottom of this file or type: perldoc syndicated
+# Updates: http://adrian.pygmysoftware.com/blog/blosxom/syndicated/
+
+# Copyright 2004 Adrian Sampson
+# Released under the same License as Blosxom
+
+package syndicated;
+
+use LWP::Simple;
+use File::stat;
+
+# --- Configurable variables -----
+
+# url of syndicated rss
+my $rss_url = '';
+# template for items
+my $display_template = '<p><a href = "$link">$title</a>: $description</p>';
+# items to display (0 for no limit)
+my $num_display = 0;
+# seconds to cache between downloads
+my $reload_delay = 30 * 60;
+
+# --------------------------------
+
+$content; # use as $syndicated::content in flavour templates
+
+sub start {
+    1;
+}
+
+sub head {
+    my($pkg, $currentdir, $head_ref) = @_;
+
+    my $rss;
+    my $cache = "$blosxom::plugin_state_dir/syndicated.cache";
+    if (!stat($cache) || time - stat($cache)->mtime >= $reload_delay) {
+        $rss = get($rss_url) unless $rss;
+        open(FILE,'>',$cache);
+        print FILE $rss;
+        close FILE;
+    } elsif (open(FILE,$cache)) {
+        $rss = join '',<FILE>;
+        close FILE;
+    }
+    
+    my @items = parse_rss($rss);
+    for my $item (@items[0..(($num_display && $num_display < @items-1) ? $num_display : @items-1)]) {
+        my $title = $item->{'title'};
+        my $link = $item->{'link'};
+        my $description = $item->{'description'};
+        $content .= eval('qq{'.$display_template.'}');
+        # I get the sense there's a better way to do that.
+    }
+
+    1;
+}
+
+# my extremely simple, extremely slow (presumably) RSS parser
+# to eliminate dependencies
+# will probably break on a lot of feeds
+sub parse_rss {
+    local $_;
+    my @items;
+    my @rss_items = split(/<item[> ]/,shift);
+    for (@rss_items[1..@rss_items-1]) {
+        my %item;
+        $item{'title'} = (/<title>(.*)<\/title>/s)[0];
+        $item{'link'} = (/<link>(.*)<\/link>/s)[0];
+        $item{'description'} = (/<description>(.*)<\/description>/s)[0];
+        push @items,\%item;
+    }
+    @items;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: C<syndicated>
+
+=head1 SYNOPSIS
+
+Purpose: Populates C<$syndicated::content> with a list of headlines syndicated from a single news source via an RSS feed.
+
+=head1 VERSION
+
+0.1 (initial release)
+
+=head1 CONFIGURATION
+
+There are a few values that need to be configured before C<syndicated> is useful.
+
+=over
+
+=item C<$rss_url>
+
+The URL of the RSS feed to be syndicated.
+
+=item C<$display_template>
+
+The format for each article. C<$title>, C<$link>, and C<$description> will be replaced with their appropriate values.
+
+=item C<$num_display>
+
+Maximum number of RSS items to display.
+
+=item C<$reload_delay>
+
+The number of seconds to cache the RSS feed before downloading it again.
+
+=back
+
+=head1 AUTHOR
+
+Adrian Sampson <adrian@pygmysoftware.com>
+               L<http://adrian.pygmysoftware.com/>
+
+=head1 BUGS
+
+=over
+
+=item *
+
+RSS parser is unbelievably simplistic and probably breaks.
+
+=item *
+
+Only one feed can be syndicated at a time.
+
+=item *
+
+Depends on LWP::Simple. Could use something more compatible; wget, curl, lynx, something.
+
+=back
+
+Reports of other bugs should be directed to the author.
+
+=head1 LICENSE
+
+this Blosxom Plug-in
+Copyright 2003, Adrian Sampson
+
+(This license is the same as Blosxom's)
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

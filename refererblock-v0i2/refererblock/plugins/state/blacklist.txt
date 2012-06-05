@@ -1,0 +1,14 @@
+# the usual suspects
+(poker|casino|gambling|slots|holdem|hold-em|blackjack|roulette|crap)
+(levitra|paxil|viagra|phentermine|tramadol|pharmacy|valium|diet|xanax)
+(credit|loan)
+(blow|sex|penis|enlarge|fuck|shit|pussy)
+(lolita|zyban|valtex|xenical|adipex|meridia)
+(finder|netfirms)
+(prozac|zoloft|xanax|valium|hydrocodone|vicodin|paxil|vioxx)
+(ultram|btenuate|pheromone|phen|ionamin|ortho|tricyclen|retin)
+(valtrex|zyrtec|ambien|flonase|allegra|didrex|renova|bontril|nexium)
+(buy)[\w\-_.]*online[\w\-_.]*\.[a-z]{2,}
+# specific spammer domains
+smsportali
+ronnieazza

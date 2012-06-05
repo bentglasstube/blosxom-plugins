@@ -1,0 +1,53 @@
+# Blosxom Plugin: writeback
+# Author(s): Rael Dornfest <rael@oreilly.com> 
+# Version: 2003-03-23
+
+# Quick Start
+
+Welcome to the Blosxom [http://www.raelity.org/apps/blosxom/] writeback plug-in.
+
+This package provides you all you need to get writebacks up and running
+on your Blosxom weblog.
+
+Installation is quick and easy...
+
+1. Drop the writeback plug-in file, found in this package's plugins 
+   directory, into your plug-ins directory (whatever you set as 
+   $plugin_dir in blosxom.cgi).
+
+2. Writeback, being a well-behaved plug-in, won't do anything until you set 
+   $writeback_dir.
+
+   While you can use the same directory as your blosxom $datadir (WriteBacks
+   are saved as path/weblog_entry_name.wb), it's probably better to keep
+   them separate.
+
+   I suggest: $writeback_dir = "$blosxom::plugin_state_dir/writeback";
+
+3. Visit your site.  Once $writeback_dir is set, the next time you visit 
+   your site, the writeback plug-in will perform some checks, creating 
+   the $writeback_dir and setting appropriate permissions if it doesn'
+   already exist.  
+
+   (Check your error_log for details of what's happening behind the scenes.)
+
+4. Move the contents of the flavours folder included in this distribution 
+   into your Blosxom data directory (whatever you set as $datadir in 
+   blosxom.cgi).
+
+   Don't move the folder itself, only the files it contains!  If you don't
+   have the the sample flavours handy, you can download them from:
+
+5. Point your browser at one of your Blosxom entries, specifying the 
+   writeback flavour: 
+
+     http://localhost/cgi-bin/blosxom.cgi/path/to/a/post.writeback
+
+   (Replace "localhost/cgi-bin/blosxom.cgi" with your weblog's URL
+    and "/path/to/a/post" with the path to a weblog post, including its
+    filename.)
+   
+For detailed documentation, take a gander at the bottom of writeback
+plug-in file itself or type: 
+
+  perldoc writeback

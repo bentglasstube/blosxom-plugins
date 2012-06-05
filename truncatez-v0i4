@@ -1,0 +1,194 @@
+# Blosxom Plugin: truncatez
+# Author(s): Stu MacKenzie <http://groups.yahoo.com/group/blosxom/messages>
+# Based on "foreshortened" plugin by: Rael Dornfest
+# Version: v0.4  2005-04-15
+# Documentation: See the bottom of this file or type: perldoc truncatez
+
+package truncatez;
+
+# --- Configurable variables -----
+#
+# = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
+#
+#  Configuration Section
+#
+# = = = = = = = = = = = = = = = =
+#
+#  Minimum number of characters to display per entry
+ $minimum = 100 
+           unless defined $minimum;
+#
+#  Maximum number of characters to display per entry
+ $maximum = 400 
+           unless defined $maximum;
+#
+#  Selective start --
+#      What flavours should trigger truncatez's operation?
+#      List the flavour(s) under which truncatez should run, 
+#      or leave empty to have truncatez run all the time.
+#      Within the single quote marks, enter flavour name(s) 
+#      separated by spaces.
+#   ex: $run_for_these_flavours = 'rss atom'
+ $run_for_these_flavours = 'rss' 
+           unless defined $run_for_these_flavours;
+#
+# = = = = = = = = = = = = = = = =
+
+use strict;
+
+# call $truncatez::body in story templates
+use vars qw { $body $minimum $maximum $run_for_these_flavours };
+
+sub start {
+  $run_for_these_flavours =~ m/^\s*$/s and return 1;
+  foreach (split " ", $run_for_these_flavours) {
+    $blosxom::flavour eq $_ and return 1;
+  }
+  0;
+}
+
+
+sub story {
+  my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+  $minimum > $maximum and ($minimum, $maximum) = ($maximum, $minimum);
+  $body = substr($$body_ref, 0, $maximum*2);    # this *probably* gives us enough text...
+
+  my $cycle = 0;             # look at every chunk of stuff enclosed in <>;
+  $body = join '', map {     # if it looks like valid markup, delete it, 
+    if ($cycle++ % 2) {      # else convert < and > to entities
+      s/^[A-Za-z!\/].*$//s or $_ = "&lt;$_&gt;";
+    }
+    $_;
+  } split m/<([^<]*?)>/s, $body;
+
+  $body =~ s/</&lt;/g;       # entitize any stragglers...
+  $body =~ s/>/&gt;/g;
+  $body =~ s/^\n+//s;        # remove leading empty lines
+
+                                       # truncate past ".!?", but get minimum
+  $body =~ s/^(.{$minimum}.*?(?:\.|\!|\?)['")]*).*$/$1.../s;
+                                       # truncate past "smileys", but get minimum
+  $body =~ s/^(.{$minimum}.*?\))\s+[A-Z0-9].*$/$1.../s;
+
+  $body = substr($body, 0, $maximum);  # return maximum
+
+  1;
+}
+
+1;
+
+__END__
+
+
+=head1 NAME
+
+Blosxom Plug-in: truncatez
+
+
+=head1 SYNOPSIS
+
+Returns a truncated version of the current entry, containing at 
+least $minimum characters, but no more than $maximum characters. 
+Truncation occurs at the first ".", "!", or "?" after $minimum, 
+or at the first close-parens ( ")" ) followed by space(s) and a 
+capital letter or digit (e.g. a sentence-ending smiley ;-) Call 
+with $truncatez::body from story templates. Useful for teasers on 
+rss feeds, etc.
+
+
+=head1 DESCRIPTION
+
+This is a "more robust" version of Rael's "foreshortened" plugin. 
+The original has a few problems; consider this entry (sans title):
+    Mr. Packard doesn't know that 4 < 5 ;-) He really likes 
+    this 400-word sentence that [text] ends in a "quote mark."
+which foreshortened delivers as "Mr...". Hmmph. If we try to fix 
+things by removing the period after "Mr":
+    Mr Packard doesn't know that 4 < 5 ;-) He really likes 
+    this 400-word sentence that [text] ends in a "quote mark."
+foreshortened delivers this: "Mr Packard doesn't know that 4 "; 
+again, p'bly not what we wanted. So, we change the entry to:
+    Mr. Packard doesn't know that 4 is less than 5 ;-) He really 
+    likes this 400-word sentence that [text] ends in a "quote mark."
+And we get: the whole 411-word entry...except for the final quote mark!
+
+As well, foreshortened has an appetite -- it works by copying the 
+entire story, stripping off everything contained by <>, and then 
+deleting everything after the first ".", "!", or "?". Makes perfect 
+sense (it's not bad code), but it's wasteful.
+
+To combat the "Mr. Packard" problem, truncatez counts off a 
+minimum number of characters before looking for "sentences". 
+To deal with "4 < 5", the plugin seeks out only "pairs" of 
+< and >, and only those pairs that might contain markup. If 
+the content between <> cannot be said to not be markup, the 
+<> and content is deleted; otherwise < and > are entitized 
+and content preserved. Any "loose" < and/or > are entitized. 
+To avoid the "never-ending sentence," truncatez also treats 
+certain close-parens as sentence-enders, and it counts off 
+a maximum number of characters to return. Sentence-enders 
+also check for trailing quote marks and close-parens.
+
+To reduce its appetite, truncatez only copies twice the number 
+of $maximum characters from blosxom (running the risk of not 
+having enough non-markup characters to fulfill $minimum).
+
+
+=head1 INSTALLATION
+
+Enter configuration info as instructed, then drop this file 
+into your blosxom plugins folder. Blog on.
+
+
+=head1 CONFIGURATION
+
+With any luck, the instructions in the "Configuration Section" 
+at the top of this file are sufficient; if more information is 
+needed, see the documentation at:
+  http://www.enilnomi.net/dltext/truncatez.dl
+
+
+=head1 USAGE
+
+This plugin is purely an experiment. I haven't tested its output 
+on 3rd party validators; it parses OK in Safari and NewsFire. I 
+can't think of any reason you wouldn't want to use this in place 
+of foreshortened, but you never know... (truncatez is a longer 
+piece of code, but it runs faster and cuts cleaner.)
+
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+ [http://www.yahoogroups.com/group/blosxom].
+
+
+=head1 VERSION
+
+2005-04-15 (v0.4)   - it's alive
+ based on < foreshortened > plugin by Rael Dornfest
+
+
+=head1 LICENSE
+
+this Blosxom Plug-in
+Copyright 2003-2005, Stu MacKenzie
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

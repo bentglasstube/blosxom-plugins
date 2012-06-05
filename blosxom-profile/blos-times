@@ -1,0 +1,49 @@
+#!/usr/bin/perl -w
+
+my %items;
+sub add_item {
+    my ($tag, $value) = @_;
+
+    my $r = $items{$tag} ||= {tag   => $tag,
+			      count => 0,
+			      total => 0,
+			      min   => $value,
+			      max   => $value
+			     };
+    $r->{count}++;
+    $r->{total} += $value;
+    $r->{min} = $value if $value < $r->{min};
+    $r->{max} = $value if $value > $r->{max};
+}
+
+sub report {
+    foreach (sort keys %items) {
+	$_ = $items{$_};
+	$_->{mean} = $_->{total} / $_->{count};
+	write;
+    }
+}
+
+sub main {
+    while (<>) {
+	next unless /^TIME[RS]: /;
+	while (/(\w+):(\d+\.\d+)/g) {
+	    add_item($1, $2);
+	}
+    }
+
+    report();
+}
+
+$= = 5000;
+main();
+
+format STDOUT_TOP =
+Item                                  Total    Minimum    Maximum       Mean
+-------------------------------- ---------- ---------- ---------- ----------
+.
+format STDOUT =
+@<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< @###.##### @###.##### @###.##### @###.##### 
+$_->{tag},       $_->{total}, $_->{min}, $_->{max}, $_->{mean}
+.
+  

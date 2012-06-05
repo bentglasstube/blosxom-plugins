@@ -1,0 +1,51 @@
+# Blosxom Plugin: recentwbslist
+# Author(s): andi (andi@ac.wakwak.com)
+# Version: 0.2 (2003-10-14)
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+package recentwbslist;
+use strict;
+use vars qw($list $recent_days);
+
+# --- Configurable variables -----
+my $writeback_dir = "$blosxom::plugin_state_dir/writeback";
+my $wb_file_extension = "wb";
+my $listed_flavour = "$blosxom::default_flavour"; # or 'writeback' or other flavours
+
+$recent_days = 7;
+# --------------------------------
+
+use FileHandle;
+use File::Find;
+use File::stat;
+use Time::localtime;
+
+sub start{
+	my @path;
+	my $recent_time = $recent_days * 60 * 60 * 24;
+	find(sub{
+		my $node = $_;
+		my $path = undef;
+		if($File::Find::name =~ /\.$wb_file_extension$/){
+			if($^T - $recent_time < stat($node)->mtime){
+				($path = $File::Find::name)
+					=~ s!$writeback_dir/(.+)\.wb$!$1!;
+				push(@path,[$path,stat($node)->mtime]);
+			}
+		}
+	},$writeback_dir);
+
+	@path = sort{ $b->[1] <=> $a->[1] } @path;
+
+	foreach my $path (@path){
+		my $fh = FileHandle->new("$blosxom::datadir/$path->[0].$blosxom::file_extension") || next;
+		chomp($_ = <$fh>);
+		$list .= qq{<li><a href="$blosxom::url/$path->[0].$listed_flavour">$_</a></li>\n};
+	}
+
+	$list = qq{<ul>\n$list</ul>\n} if($list);
+
+	1;
+}
+
+1;

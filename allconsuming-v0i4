@@ -1,0 +1,449 @@
+# Blosxom Plugin: allconsuming					  -*- cperl -*-
+# Author: Todd Larason (jtl@molehill.org)
+# Version: 0+4i
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/blosxom
+# Netflix plugin Home/Docs/Licensing:
+# http://molelog.molehill.org/blox/Computers/Internet/Web/Blosxom/AllConsuming/
+package allconsuming;
+
+# http://allconsuming.net/news/000012.html
+
+# -------------- Configuration Variables --------------
+# AllConsuming username
+$username = undef
+  unless defined $username;
+
+# Amazon Associate ID; feel free to leave this =)
+$associate_id = 'mtmolel-20'
+  unless defined $associate_id;
+
+# undef == "list all"
+#     0 == "don't list at all"
+#    >0 == list first N (or all, if < N)
+#    <0 == list random N (or all in random order, if < N)
+%num = (
+	purchased => 5,          # most recent 5
+	reading   => undef,      # all
+	rereading => undef,      # all
+	favorite  => -5,         # random 5
+	completed => 5,          # most recent 5
+	nofinish  => 0           # none
+       ) unless scalar keys %num > 0;
+
+# one of: SOAP::Lite, LWP, wget (or a pathname to wget), curl (or a pathname)
+# SOAP::Lite should be fastest and most likely to stay working long-term,
+# but is the hardest to get installed
+$networking = 'LWP'
+  unless defined $networking;
+
+# Whether to try to use caching; default is yes, and caching is very
+# strongly recommended
+$use_caching = 1
+  unless defined $use_caching;
+
+# how long to go between re-fetching the data, in seconds
+# default value is 1 week
+$max_cache_data_age = 60 * 60 * 24 * 7
+  unless defined $max_cache_data_age;
+
+# how long to go between re-formatting the lists, in seconds
+# default is 5 minutes
+$max_cache_layout_age = 60 * 5
+  unless defined $max_cache_layout_age;
+
+$debug_level = 1
+  unless defined $debug_level;
+# -----------------------------------------------------
+
+$purchased = '';
+$reading   = '';
+$rereading = '';
+$favorite  = '';
+$completed = '';
+$nofinish  = '';
+
+use CGI qw/param/;
+use strict;
+use vars qw/$username $associate_id $max_cache_data_age $max_cache_layout_age
+  %num $networking $use_caching $debug_level
+  $purchased $reading $rereading $favorite $completed $nofinish/;
+
+my $cache;
+my $package = "allconsuming";
+my $cachefile = "$blosxom::plugin_state_dir/.$package.cache";
+my $save_cache = 0;
+
+# General utility functions
+
+sub debug {
+    my ($level, @msg) = @_;
+
+    if ($debug_level >= $level) {
+	print STDERR "$package debug $level: @msg\n";
+    }
+}
+
+sub load_template {
+    my ($bit) = @_;
+    return $blosxom::template->('', "$package.$bit", $blosxom::flavour);
+}
+
+sub report {
+    my ($bit, $listname, $title, $author, $asin, $image, $allconsuming_url, $amazon_url) = @_;
+    my $f   = load_template("$listname.$bit") || load_template($bit);
+    $title  = encode_entities($title);
+    $author = encode_entities($author);
+    $f =~ s/((\$[\w:]+)|(\$\{[\w:]+\}))/$1 . "||''"/gee;
+    return $f;
+}
+
+sub encode_entities {
+    my ($text) = @_;
+    eval "require HTML::Entities";
+    if ($@) {
+	my %map = ('<' => 'lt', '&' => 'amp', '>' => 'gt');
+	my $keys = join '',keys %map;
+	$text =~ s:([$keys]):&$map{$1};:g;
+	return $text;
+    }
+    return HTML::Entities::encode_entities($text);
+}
+
+# General networking
+
+sub GET {
+    my ($url) = @_;
+
+    if ($networking =~ m:curl:) {
+	return `$networking -m 30 -s "$url"`;
+    } elsif ($networking =~ m:wget:) {
+	return `$networking --quiet -O - "$url"`;
+    } elsif ($networking eq 'LWP') {
+	foreach (qw/LWP::UserAgent HTTP::Request::Common/) {
+	    eval "require $_";
+	    if ($@) {
+		debug(0, "Can't load $_, can't use LWP networking: $@");
+		return undef;
+	    }
+	}
+	my $ua 	= LWP::UserAgent->new;
+	my $res = $ua->request(HTTP::Request::Common::GET $url);
+	if (!$res->is_success) {
+	    my $error = $res->status_line;
+	    debug(0, "HTTP GET error: $error");
+	    return undef;
+	}
+	return $res->content;
+    } else {
+	debug(0, "ERROR: invalid \$networking $networking");
+    }
+}
+
+# AllConsuming-specific networking
+
+sub allconsuming_handle {
+    if ($networking eq 'SOAP::Lite') {
+	eval "require SOAP::Lite;";
+	if ($@) {
+	    debug(0, "SOAP::Lite couldn't be loaded");
+	    return undef;
+	}
+	my @now = localtime;
+	my $soap = SOAP::Lite
+	  -> uri('http://www.allconsuming.net/AllConsumingAPI')
+	    -> proxy('http://www.allconsuming.net/soap.cgi');
+	my $obj = $soap
+	      -> call(new => $now[2], $now[3], $now[4] + 1, $now[5] + 1900)
+		-> result;
+	return {soap => $soap,
+		obj  => $obj,
+		map  => {purchased => 'GetPurchasedBooksList',
+			 reading   => 'GetCurrentlyReadingList',
+			 rereading => 'GetRereadingBooksList',
+			 favorite  => 'GetFavoriteBooksList',
+			 completed => 'GetCompletedBooksList',
+			 nofinish  => 'GetNeverFinishedBooksList'}
+	       };
+    } else {
+	return {
+		map => {purchased => 'purchased_books',
+			reading   => 'currently_reading',
+			rereading => 'rereading_books',
+			favorite  => 'favorite_books',
+			completed => 'completed_books',
+			nofinish  => 'never_finished_books'}
+	       };
+    }
+}
+
+sub allconsuming_lookup {
+    my ($handle, $username, $list) = @_;
+
+    return undef unless defined $handle;
+
+    if ($networking eq 'SOAP::Lite') {
+	return undef unless defined $handle->{map}{$list};
+	return $handle->{soap}
+	  -> call($handle->{map}{$list} => $handle->{obj}, $username)
+	    -> result;
+    } else {
+	my $data = GET('http://allconsuming.net/soap-client.cgi?' .
+		       "$handle->{map}{$list}=1&username=$username");
+	$data =~ s:\A\<pre>\$VAR1 =(.*)</pre>\Z:\1:ms;
+	return eval $data;
+    }
+}
+
+sub get_data {
+    if (defined $cache->{data} and
+	$^T - $cache->{data_timestamp} < $max_cache_data_age) {
+	return;
+    }
+    debug(1, "cache miss data");
+    $cache->{data_timestamp} = $^T;
+    my $obj = allconsuming_handle();
+
+    foreach (keys %num) {
+	next if defined($num{$_}) && $num{$_} == 0;
+	$cache->{data}{$_} = allconsuming_lookup($obj, $username, $_);
+    }
+    $save_cache = 1;
+}
+
+# Cache handling
+
+sub prime_cache {
+    return if (!$use_caching);
+    eval "require Storable";
+    if ($@) {
+	debug(1, "cache disabled, Storable not available");
+	$use_caching = 0;
+	return 0;
+    }
+    if (!Storable->can('lock_retrieve')) {
+	debug(1, "cache disabled, Storable::lock_retrieve not available");
+	$use_caching = 0;
+	return 0;
+    }
+    $cache = (-r $cachefile ? Storable::lock_retrieve($cachefile) : {});
+    if (defined(param('allconsuming'))) {
+	if (param('allconsuming') eq 'refresh_data') {
+	    $cache = {};
+	} elsif (param('allconsuming') eq 'refresh_layout') {
+	    $cache->{layout} = {};
+	}
+    }
+}
+
+sub save_cache {
+    return if (!$use_caching || !$save_cache);
+    debug(1, "Saving cache");
+    -d $blosxom::plugin_state_dir
+	or mkdir $blosxom::plugin_state_dir 
+	or (debug(0, "State dir $blosxom::plugin_state_dir nonexistant and noncreatable: $!") and return);
+    Storable::lock_store($cache, $cachefile);
+}
+
+sub build_list {
+    my ($listname, $num, $list) = @_;
+    my $count = 0;
+    my $results;
+
+    return '' if (defined $num and $num == 0);
+    $list = [$list] if (ref $list eq 'HASH');
+    if (defined $list and defined $num and $num < 0) {
+	# algorithm from Algorithm::Numerical::Shuffle by Abigail
+	for (my $i = @$list; -- $i;) {
+	    my $r = int rand ($i + 1);
+	    ($list -> [$i], $list -> [$r]) = ($list -> [$r], $list -> [$i]);
+	}
+	$num = -$num;
+    }
+    $results = report('head', $listname);
+    foreach (@$list) {
+	$results .= report('item', $listname,
+			   @{$_}{qw/title author asin image allconsuming_url
+				   amazon_url/});
+	$count++;
+	last if (defined $num and $count == $num);
+    }
+    $results .= report('foot', $listname);
+
+    return $results;
+}
+
+# Blosxom plugin interface
+
+sub head {
+    prime_cache();
+    get_data();
+    save_cache();
+
+    foreach (keys %num) {
+	next if defined($num{$_}) && $num{$_} == 0;
+	no strict;
+	$$_ = $cache->{layout}{$_}{$blosxom::flavour};
+	next if (defined $$_ &&
+		 ($^T - $cache->{layout_timestamp}{$_}{$blosxom::flavour}
+		  < $max_cache_layout_age));
+	debug(1, "cache miss layout $_ $blosxom::flavour");
+	$$_ = build_list($_, $num{$_}, $cache->{data}{$_}{asins});
+	$cache->{layout}{$_}{$blosxom::flavour} = $$_;
+	$cache->{layout_timestamp}{$_}{$blosxom::flavour} = $^T;
+	$save_cache = 1;
+	use strict;
+    }
+    save_cache();
+    
+    1;
+}
+
+sub start {
+    return 0 unless defined $username;
+    while (<DATA>) {
+	last if /^(__END__)?$/;
+	chomp;
+	my ($flavour, $comp, $txt) = split ' ',$_,3;
+	$txt =~ s:\\n:\n:g;
+	$blosxom::template{$flavour}{"$package.$comp"} = $txt;
+    }
+    return 1;
+}
+
+1;
+__DATA__
+error head <table class="allconsuming $listname">\n
+error item <tr><td><a href="http://www.amazon.com/exec/obidos/ASIN/$asin/$associate_id/ref=nosim"><img border="0" src="$image" alt="$title Book cover"></a></td><td><a href="http://www.amazon.com/exec/obidos/ASIN/$asin/$associate_id/ref=nosim"><i>$title</i></a>, $author</td></tr>\n
+error foot </table>
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: allconsuming
+
+=head1 SYNOPSIS
+
+Purpose: Lets you easily share your AllConsuming information
+
+  * $allconsuming::purchased -- list of books you've purchased
+  * $allconsuming::reading -- list of books you're reading
+  * $allconsuming::rereading -- list of books you're re-reading
+  * $allconsuming::favorite -- list of your favorite books
+  * $allconsuming::completed -- list of books you've completed
+  * $allconsuming::nofinish -- list of books you never finished
+
+=head1 VERSION
+
+0+3i
+
+2nd test release
+
+=head1 AUTHOR
+
+Todd Larason  <jtl@molehill.org>, http://molelog.molehill.org/
+
+=head1 BUGS
+
+None known; address bug reports and comments to me or to the Blosxom
+mailing list [http://www.yahoogroups.com/groups.blosxom].
+
+=head1 Customization
+
+=head2 Configuration variables
+
+C<$username> is your AllConsuming username.  Until it's defined, this plugin does nothing. 
+
+C<$associate_id> is an Amazon Associate ID.  By default, it's mine;
+ change it to yours if you have one.
+
+C<%num> sets how many items to include in each list.  Each of C<purchased>,
+C<reading>, C<rereading>, C<favorite>, C<completed> and C<nofinish> can be
+set separately.  Setting C<$num{foo}> to undef means to include the whole
+list; setting it to 0 means to not build the list at all (or retrieve the
+data from AllConsuming); setting it to a positive number N means to list the
+first N items (or the whole list, if there aren't that many items) in order;
+setting it to a negative number -N means to list a randomly selected set of
+N items (or the whole list, in a random order, if there are fewer than N
+items).
+
+C<$networking> controls which networking implemenentation to use.  If set to
+'SOAP::Lite', then the SOAP::Lite module will be used to communicate with
+AllConsuming's official SOAP interface; this method is preferable for both
+speed and reliability, but requires by far the most work to get working if
+you don't already have the modules installed.  If set to 'LWP', then the
+LWP family of modules will be used to communicate with a demonstration CGI
+script.  If set to 'wget' or 'curl' (or a pathname that includes one of
+those), then the respective external utility is used to communicate with
+the demonstration CGI script.
+
+C<$use_caching> is a boolean controlling whether to use caching at all.
+Caching is very strongly recommended -- AllConsuming is rather slow.
+
+C<$max_cache_data_age> sets how long to cache the downloaded AllConsuming
+information for.  Fetching the data is pretty slow, so this defaults to a high
+value -- 1 week.
+
+C<$max_cache_layout_age> sets how long to cache the formatted data.
+Formatting the data is relatively fast, so this defaults to a small value -- 5
+minutes.  If you aren't modifying templates and aren't using randomized lists,
+this can be set to the same as $max_cache_data_age without ill effects.
+
+C<$debug_level> can be set to a value between 0 and 5; 0 will output
+no debug information, while 5 will be very verbose.  The default is 1,
+and should be changed after you've verified the plugin is working
+correctly.
+
+=head2 Classes for CSS control
+
+There's are some classes used, available for CSS customization.
+
+  * C<allconsuming> -- all lists are in the netflix class
+  * C<purchased>, etc -- each list is also in a class named for the list
+
+=head2 Flavour-style files
+
+If you want a format change that can't be made by CSS, you can
+override the HTML generated by creating files similar to Blosxom's
+flavour files.  They should be named allconsuming.I<bit>.I<flavour>; for
+available I<bit>s and their default meanings, see the C<__DATA__>
+section in the plugin.
+
+=head1 Caching
+
+Because fetching the queue information is relatively slow, caching is very
+strongly recommended.  Caching requires a version of the Storable module
+that supports the 'lock_save' and 'lock_retrieve' functions.
+
+Since the data reload is so slow, you may wish to raise the $max_cache_data_age
+even higher, and use explicit cache reloading.  The cache can be reloaded
+either by deleting the cache file $plugin_state_dir/.allconsuming.cache, or
+by passing an C<allconsuming=refresh_data> parameter to the blosxom script;
+the latter is preferable, as you can insure that you take the time hit, not
+a random visitor.
+
+=head1 LICENSE
+
+this Blosxom Plug-in
+Copyright 2003, Todd Larason
+
+(This license is the same as Blosxom's)
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+=cut

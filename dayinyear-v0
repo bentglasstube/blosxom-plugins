@@ -1,0 +1,50 @@
+# Blosxom Plugin: dayinyear
+# Author: BR 
+# Version: 0
+# http://www.6109.us/blog
+# License: Proprietary and confidential - Use limited to users 
+# who accept these restrictions: You may not disclose or share 
+# this file. You must accept all liability of risk, danger,
+# devastation and problems that may result from the use of this 
+# file. You may not seek receovery for any damages resulting 
+# from the use of this file from any person that made, downloaded, 
+# handled, installed, maintained or modified this file. You may 
+# modify this file and release it as your own provided that you 
+# made substantial substantive changes or improvements to its 
+# functions. DO NOT READ ON IF YOU DO NOT ACCEPT THIS LICENSE.
+
+package dayinyear;
+sub start {
+my @now = localtime(time);
+$numday = $now[7] + 1;
+$numweek = int($now[7] / 7 + 1);
+$numyear = $now[5] + 1900;
+1;
+}
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: dayinyear
+
+=head1 DESCRIPTION
+
+In a template file, enter one or all of the following:
+$dayinyear::numday - to display the number of the day in the current year
+$dayinyear::numweek - to display the number of the week in the current year
+$dayinyear::numyear - to display the current year
+
+You can combine these commands with each other, or interspere words, such as:
+Day $dayinyear::numday of $dayinyear::numyear
+
+There is nothing to configure, but you can set html and css format commands around the plugin commands.
+
+=head1 AUTHOR
+
+BR
+
+=head1 LICENSE
+Proprietary and confidential - Use limited to users who accept these restrictions: You may not disclose or share this file. You must accept all liability of risk, danger, devastation and problems that may result from the use of this file. You may not seek receovery for any damages resulting from the use of this file from any person that made, downloaded, handled, installed, maintained or modified this file. You may modify this file and release it as your own provided that you made substantial substantive changes or improvements to its functions.
+

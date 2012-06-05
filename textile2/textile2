@@ -1,0 +1,110 @@
+# Blosxom Plugin: textile2					   -*- perl -*-
+# Author: Todd Larason (jtl@molehill.org)
+# Version: 0+1i
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/blosxom
+# Textile plugin Home/Docs/Licensing:
+#   http://molelog.molehill.org/blox/Computers/Internet/Web/Blosxom/Plugins/Textile/
+
+package textile2;
+
+# Configuration Variables
+# ----------------------------------------------------------------------------
+#$flavour 	    = "xhtml"		unless defined $flavour;
+$flavor 	    = "xhtml"		unless defined $flavour;
+$character_encoding = 1			unless defined $character_encoding;
+$character_set 	    = "utf-8"		unless defined $character_set;
+$head_offset 	    = 3			unless defined $head_offset;
+$image_root 	    = $blosxom::datadir unless defined $image_root;
+$handle_textile_1   = 0                 unless defined $handle_textile_1;
+# ----------------------------------------------------------------------------
+use strict;
+
+# Blosxom interface
+
+use lib qq{$blosxom::plugin_dir/lib};
+use vars qw/$flavor $character_encoding $character_set $head_offset 
+    $image_root $handle_textile_1 $textile/;
+sub start {
+    eval {require Text::Textile;};
+    return 1 if (!$@);
+    return 0;
+}
+
+sub story {
+  my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+  if ($meta::markup eq 'textile2' ||
+      ($handle_textile_1 && $meta::markup eq 'textile')) {
+      my $c = {
+	  image_root => $image_root,
+	  image_rel_base => "$blosxom::datadir/$path"
+	  };
+
+      $$body_ref = blostile($$body_ref, $c);
+  }
+  return 1;
+}
+
+# Simplified interface to Blosxom::Textile
+
+# context items:
+#   image_root		absolute image filenames relative to this
+#   image_rel_base	relative image filenames relative to this
+
+sub blostile {
+	# modif : http://groups.yahoo.com/group/blosxom/message/4052
+	local $_;
+    my $str = shift @_;
+    my $ctx = shift @_;
+    if (!$textile) {
+	$textile = new Blosxom::Textile;
+	# XXX named filters
+	$textile->char_encoding($character_encoding);
+	$textile->charset($character_set);
+    }
+    $textile->flavor($flavor);
+    $textile->filter_param($ctx);
+
+    $str = $textile->process($str);
+
+    if (defined $head_offset && ($head_offset > 1)) {
+        for (my $h = 7 - $head_offset; $h > 0; $h--) {
+            my $h2 = $h + $head_offset - 1;
+            $str =~ s/(<\/?)h$h([ >])/$1h$h2$2/g;
+        }
+    }
+
+    # XXX beautifier
+    # XXX smarty?
+
+    return $str;
+}
+
+# Blosxom::Textile
+package Blosxom::Textile;
+use Text::Textile;
+@Blosxom::Textile::ISA = qw(Text::Textile);
+
+sub image_size {
+    my ($self, $src) = @_;
+    my $ctx = $self->filter_param;
+    if ($src !~ m{^http:}) {
+	eval {require Image::Size;};
+	if (!$@) {
+	    my $file;
+	    if ($src =~ m{^/}) {
+		$file = "$ctx->{image_root}$src";
+	    } else {
+		$file = "$ctx->{image_rel_base}/$src";
+	    }
+	    my ($w, $h) = Image::Size::imgsize($file);
+	    return ($w, $h);
+	}
+    }
+    warn "Image sizing without Image::Size not implemented";
+    undef;
+}
+
+# XXX format_link ?
+# XXX format_url ?
+
+1;

@@ -1,0 +1,85 @@
+#Blosxom Plugin: Recent Entries
+#Author: Gregory Bair - http://mypage.iu.edu/~gbair/
+#Version: 0.3
+#Blosxom Home: http://www.raelity.org/apps/blosxom
+#
+#Use: insert $recententries::recententries in one of the flavour templates.
+#LM: 3/4/03
+
+package recententries;
+use File::Spec;
+#-------------- Configurable Options ----------------
+
+#How many titles do you want to show? 
+$title_num = 20;
+
+#What comes before each title? below adds a line between each title - good for long titles.
+$title_before = qq!<div style="border-bottom:1px solid #369;">!;
+
+#What comes after?
+$title_after = qq!</div>!;
+
+#----------------------------------------------------
+
+sub start
+{
+	1;
+}
+
+sub filter{
+	my ($pkg, $files_ref) = @_;
+	my $tn = 1;
+	my @files;
+
+	#put each file name (the key of %$files_ref) into an array, but sort them by modification time (value) first
+	@files = sort { $$files_ref{$b} <=> $$files_ref{$a} } keys %$files_ref;
+
+	foreach my $file (@files)
+	{
+		if ($tn != $title_num)
+		{
+			open (STORY, $file) || die "Cannot open file $file : $!";
+			my @story = <STORY>;
+			close STORY;
+			
+			#The title is always the first line in an entry.  Get that.
+			$storytitle = $story[0];
+
+			my ($volume, $directory, $file_ext) = File::Spec->splitpath($file);
+			
+			#Change the file into a URL we can use.
+			$newvol = "$volume/$directory";
+			$newvol =~ s/$blosxom::datadir/$blosxom::url/g;
+			
+			#Create our variable.
+			$recententries .= $title_before . "<a href=\"" . $newvol . "#" . $file_ext ."\">" . $storytitle . "</a>" . $title_after;
+			
+			#increment $tn.
+			$tn++;
+		}
+		else{last;}
+
+	}
+		
+	#test(%files);
+	1;
+}
+
+1;
+
+=head1 NAME
+
+Blosxom Plugin: recententries
+
+=head1 SYNOPSIS
+
+Purpose: Populates $recententries::recententries with a list of the most recent entries.  The number is specified by a configuration variable.
+
+=head1 AUTHOR
+
+Gregory Bair gregindy@softhome.net, http://mypage.iu.edu/~gbair/
+
+=head1 Changelog
+0.2 used qq!! instead of "" in configs
+
+0.3 simplified the sorting algorithm at the suggestion of Todd Larason.

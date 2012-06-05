@@ -1,0 +1,170 @@
+# Blosxom Plugin: Twitter
+# Author: David Grajal Blanco <dgrabla@gmail.com>
+# Version: 0+2i
+# Documentation: See the bottom of this file
+# Updates: http://david.grajal.net/linux/scripts/blosxom_twitter.html
+# Copyright 2007 David Grajal & Bit-Man
+
+# Changelog:
+# 0+2i
+# Modifyed by Bit-Man on Feb 10th, 2008
+# - allow list item style instead of plain text
+# - recognizes http URLs and adds the corresponding HTML markup
+# 0+1i
+# Initial version
+
+package twitter;
+use File::stat;
+
+# --- Configurable variables -----
+# URL it's the same as RSS feed BUT in XML (To provoque a cache fail)
+my $url = 'http://twitter.com/statuses/user_timeline/2855791.xml';
+# Why? Twitter's servers cache a LOT of traffic, especially RSS.
+# Fetch XML instead RSS it's a simple way to cause a cache miss
+$reload_delay = 10 * 60;
+$num_display = 1; # Number of messages to display
+$cache = "$blosxom::plugin_state_dir/twitter_badge_cache.xml";
+#Path to local cache
+my $curl_path = '/usr/bin/curl'; # Curl it's required to download the XML file
+
+## Allows the twitter text to be shown as simple text or as a bulleted list
+my $listStyle = 0;
+## Detects and shows URL
+my $showURLs = 1;
+# --------------------------------
+
+$badge;
+
+sub start {1;}
+
+sub head {
+   my($pkg, $currentdir, $head_ref) = @_;
+   my $rss;
+   if (!stat($cache) || time - stat($cache)->mtime >= $reload_delay) {
+       $rss = `$curl_path '$url' 2>/dev/null`;
+       open(FILE,'>',$cache);
+       print FILE $rss;
+       close FILE;
+   } elsif (open(FILE,$cache)) {
+       $rss = join '',<FILE>;
+       close FILE;
+   }
+   my @items = parse_xml($rss);
+   $badge = '<ul>'    if $listStyle;
+   for my $item (@items[0..(($num_display && $num_display < $#items) ? $num_display-1 : @items-1)]) {
+       my $title = $item->{'title'};
+       my $date = $item->{'pubDate'};
+       $date =~ s/ \+0000//g;
+       my $innerBadge = $title ." " .$date;
+       addURLtags( $innerBadge )   if $showURLs;
+
+       if ( $listStyle ) {
+           $badge .= '<li>' . $innerBadge .'</li>'."\n";
+       } else {
+           $badge .= $innerBadge . '<br/>'."\n";
+       };
+   }
+   $badge .= '</ul>'    if  $listStyle;
+   1;
+}
+
+sub parse_xml {
+   local $_;
+   my @items;
+   my @xml_items = split(/<status[> ]/,shift);
+   for (@xml_items[1..@xml_items-1]) {
+       my %item;
+       $item{'title'} = (/<text>(.*)<\/text>/s)[0];
+       $item{'pubDate'} = (/<created_at>(.*)<\/created_at>/s)[0];
+       push @items,\%item;
+   }
+   @items;
+}
+
+sub addURLtags($) {
+   $_[0] =~ s/(http\:\/\/[\w\.\/]*)/\<a href=\"$1\"\>$1\<\/a\>/;
+};
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: C<twitter>
+
+=head1 SYNOPSIS
+
+Purpose: Displays last Twitter's messages
+
+=head1 VERSION
+
+0+1i
+
+=head1 CONFIGURATION
+
+There are a few values that need to be configured before C<twitter> is useful.
+
+=over
+
+=item C<$url>
+
+The URL of the Twitter XML feed to be displayed.
+
+=item C<$num_display>
+
+Maximum number of messages to display.
+
+=item C<$reload_delay>
+
+The number of seconds to cache the XML before downloading it again.
+
+=item C<$cache>
+
+The file where C<twitter> should store its cached XML feed.
+
+=item C<$curl_path>
+
+C<twitter> use the C<curl> at that location.
+
+=back
+
+=head1 USAGE
+
+In the head.flavour use C<$twitter::badge>.
+
+=head1 AUTHOR
+
+David Grajal <dgrabla@gmail.com>
+This plugin it's almost a line by line copy of Adrian Sampson's Flickr
+plugin. Thanks!
+
+=head1 BUGS
+
+=head1 LICENSE
+
+C<twitter>
+Copyright 2007, David Grajal
+
+(This license is the same as Blosxom's.)
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+
+

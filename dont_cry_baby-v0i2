@@ -1,0 +1,43 @@
+# Blosxom Plugin: dont_cry_baby
+# Author(s): Hironori Azuma (andi@ac.wakwak.com)
+# Version: 0.2
+
+package dont_cry_baby;
+use strict;
+
+# --- Configurable variables -----
+my @action_flavours = qw(baby);
+my %cry = (
+	  '‚³'   => '‚¿‚á'
+	, '‚µ'   => '‚¿'
+	, '‚·'   => '‚¿‚ã'
+	, '‚¹'   => '‚¿‚¥'
+	, '‚»'   => '‚¿‚å'
+	, '‚µ‚á' => '‚¿‚á'
+	, '‚µ‚ã' => '‚¿‚ã'
+	, '‚µ‚å' => '‚¿‚å'
+	, '‚Â'   => '‚¿‚ã'
+);
+# --------------------------------
+
+sub start{
+	package blosxom;
+	*_generate = *generate;
+	*generate = *dont_cry_baby::generate;
+	1;
+}
+
+sub generate{
+	my $output = &blosxom::_generate(@_);
+	my $regexp = "(".join('|',map{ "$_" } sort{ $b cmp $a } keys %cry).")";
+
+	if(scalar(@action_flavours) > 0
+		&& grep{ $_ eq $blosxom::flavour } @action_flavours
+	){
+		$output =~ s!$regexp!$cry{$1}!g;
+	}
+
+	return $output;
+}
+
+1;

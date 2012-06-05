@@ -1,0 +1,52 @@
+# Blosxom Plugin: Pollxn
+# Version: 1.0b1 (beta)
+# Description: Displays number of Pollxn discussion comments for a given Blosxom story
+# Author: Scott Wichmann <pollxn@nukekiller.net>
+# Copyright 2003 Scott Wichmann
+# Creative Commons license applies
+#   See: http://creativecommons.org/licenses/by-sa/1.0
+# Pollxn home: http://www.nukekiller.net/pollxn
+# Blosxom home: http://www.raelity.org/apps/blosxom/
+
+package pollxn;
+
+# -----------------------
+# CONFIGURATION VARIABLES
+# -----------------------
+
+# File system path to your blog docs folder?
+# (should be the same as your 'datadir' setting in blosxom.cgi)
+$datadir = "/Library/WebServer/Documents/blosxom/docs";
+
+# Do you want some text to follow each comment count value?
+#   i.e., 1 Comment...17 Posts...etc.
+# To enable, set 'addtext' and 'addtexts' below
+$addtext = "comment";	# singluar 
+$addtexts = "comments";	# plural
+
+# ------------------------
+
+
+$comments_count; # Refer to this as $pollxn::comments_count in story templates
+
+sub start { 1; }
+
+sub story {
+ my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+ my $count;
+ my $p = "$datadir$path";
+ if ($p =~ /(.*)\/$/) {$p=$1;}
+ if (opendir(dir,$p)) {
+	my @files = grep {/$filename/} grep{/.pollxn.{2,}$/} readdir(dir); closedir dir;
+	$count = scalar @files;
+ }
+ if (!$count && $count<1) { $count=0; }
+ if ($addtext ne '') {$commentsuffix = ($count==1) ? $addtext : $addtexts;}
+ $comments_count="$count $commentsuffix";
+ 1;
+}
+
+1;
+
+
+

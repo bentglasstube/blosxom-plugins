@@ -1,0 +1,90 @@
+# Blosxom Plugin: debpackagetag
+# Author(s): Marc Nozell <marc@nozell.com> (who borrowed heavily from John Slee's googletag)
+# Version 0.1
+
+package debpackagetag;
+
+sub debpackit {
+	my ($a) = (@_);
+	my $b = $a; $b =~ s/\s/+/g;
+	qq{<a href="http://packages.debian.org/cgi-bin/search_packages.pl?searchon=names&keywords=$b">$a</a>};
+}
+
+sub xlate_debpackagetags {
+	my ($text_ref) = @_;
+	$$text_ref =~ s{<debpackage>([^>]*)</debpackage>}{debpackit($1)}meg;
+	
+	1;
+}
+
+sub start {
+	1;
+}
+
+sub head {
+	my ($pkg, $currentdir, $head_ref) = @_;
+
+	xlate_debpackagetags($head_ref);
+	
+	1;
+}
+
+sub story {
+	my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+	xlate_debpackagetags($body_ref);
+	xlate_debpackagetags($title_ref);
+	xlate_debpackagetags($story_ref);
+
+	1;
+}
+
+sub foot {
+	my($pkg, $currentdir, $foot_ref) = @_;
+	xlate_debpackagetags($foot_ref);
+
+	1;
+}
+
+1;
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: debpackagetag
+
+=head1 SYNOPSIS
+
+Creates a <debpackage>packagename</debpackage> pseudo-html tag
+that creates a link to debian.org's package search engine.
+
+So "Try <debpackage>blosxom</debpackage>" becomes:
+
+Try <a href="http://packages.debian.org/cgi-bin/search_packages.pl?searchon=names&keywords=blosxom">blosxom</a>
+
+=head1 VERSION
+
+2.0b4
+
+Version number coincides with the version of Blosxom with which the 
+current version was first bundled.
+
+=head1 AUTHOR
+
+Marc Nozell  <marc@nozell.com>, http://www.nozell.com/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+I borrowed heavily from John Slee's googletag which has not license
+statement.  Whatever.

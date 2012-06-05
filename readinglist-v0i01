@@ -1,0 +1,273 @@
+# Blosxom Plugin: readinglist                                 -*- perl -*-
+# Author: Kevin Scaldeferri (kevin+blosxom at scaldeferri dot com)
+# Version: 0.01
+# Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+package readinglist;
+
+use strict;
+use warnings;
+
+
+# --- Configuration Variables ---
+
+# where do I keep my reading list files?
+
+my $base_dir = $blosxom::datadir."/books";
+
+my $queued_dir  = "$base_dir/in_queue";
+my $current_dir = "$base_dir/current";
+my $completed_dir = "$base_dir/completed";
+
+# number of items to list in each category
+# undef = unlimited
+my $num_queued = 5;
+my $num_current = undef;
+my $num_recent = 5;
+
+# how verbose should I be?
+# Set to 0 for no debugging or 5 for maximum verbosity
+# or somewhere in between for something in between
+my $debug_level = 2;
+
+# -----------------------------------------
+
+#
+# Variables exported to templates
+#
+
+use vars qw($queued $current $recent $amazon_id $title $author $isbn);
+
+# change this to your Amazon Associates ID (or don't)
+$amazon_id = "kevinshome-20";
+
+
+# -----------------------------------------
+
+# private package vars
+
+my (@queued, @current, @recent);
+
+sub debug {
+    my ($level, @msg) = @_;
+
+    if ($debug_level >= $level) {
+	print STDERR __PACKAGE__." debug $level: @msg\n";
+    }
+    1;
+}
+
+sub start { 
+  debug(2, "plugin loaded");
+
+  while (<DATA>) {
+    last if /^(__END__)?$/;
+    chomp;
+    my ($flavour, $comp, $txt) = split ' ',$_,3;
+    $txt =~ s:\\n:\n:g;
+    $blosxom::template{$flavour}{__PACKAGE__.".$comp"} = $txt;
+  }
+
+  1;
+}
+
+
+sub filter {
+  my ($pkg, $files_ref) = @_;
+
+  my @remove;
+
+FILE:
+  foreach my $file (keys %$files_ref) {
+    debug(5, "Examining $file");
+    for ( [$queued_dir, \@queued],
+          [$current_dir, \@current],
+          [$completed_dir, \@recent]) {
+
+      my ($dir, $list) = @$_;
+      if ($file =~ /^$dir/) {
+        debug(3, "$file matched");
+        my $p = process($file);
+        unless ($p->{body}) {
+          #no body
+          push @remove, $file;
+          debug(3, "$file removed from entries list: no body");
+        }
+        push @$list, $p;
+        #ought to be mutually exclusive:
+        next FILE;
+      }
+    }
+  }
+
+  for (\@recent, \@queued, \@current) {
+    my $n = 0;
+    @$_ = map 
+          { (!defined $num_recent or $n++ < $num_recent) 
+              ? debug(2, "displaying $_->{file}") && $_
+                : () }
+          sort 
+          { $files_ref->{$b->{file}} <=> $files_ref->{$a->{file}} } 
+          @$_;
+  }
+
+  for my $file (@remove) {
+    delete $files_ref->{$file};
+  }
+
+  1;
+}
+
+# put this off until now because we want interpolate() to be set
+sub head {
+
+  $queued = display(\@queued);
+  $current = display(\@current);
+  $recent = display(\@recent);
+
+  return 1;
+}
+
+sub process {
+  my $file = shift;
+
+  open FH, "<", $file or return;
+
+  my ($title, $body) = ("","");
+  while (<FH>) {
+    if ($title) {
+      $body .= $_;
+    } else {
+      $title .= $_;
+    }
+  }
+
+  meta::story(undef, undef, undef, undef, \$title, \$body);
+
+  return { title  => $meta::title, 
+           author => $meta::author, 
+           isbn   => $meta::isbn, 
+           body   => $body, 
+           file   => $file};
+}
+
+
+sub display {
+  my ($books) = @_;
+
+  my $out = $blosxom::template->('', __PACKAGE__.".head", $blosxom::flavour);
+  for (@$books) {
+    ($title, $author, $isbn) = @$_{"title", "author", "isbn"};
+    my $book = $blosxom::template->('', __PACKAGE__.".book", $blosxom::flavour);
+    $book = $blosxom::interpolate->($book);
+    $out .= $book;
+  }
+  $out .= $blosxom::template->('', __PACKAGE__.".foot", $blosxom::flavour);
+
+  return $out;
+  
+}
+
+
+1;
+
+__DATA__
+error head <ul class="readinglist">\n
+error book <li><a href="http://www.amazon.com/exec/obidos/ASIN/$readinglist::isbn/ref=nosim/$readinglist::amazon_id">$readinglist::title</a>, by $readinglist::author</li>\n
+error foot </ul>\n
+__END__
+
+
+=head1 NAME
+
+Blosxom Plug-in: readinglist
+
+=head1 SYNOPSIS
+
+Allows the creation of lists for reading in progress, recently completed, 
+and queued.  Creates the following variables which may be inserted in
+your templates:
+
+  * $readinglist::recent
+  * $readinglist::queued
+  * $readinglist::current
+
+Books are tracked as normal bloxsom entries, with meta- variables for 
+additional information.  Ex:
+
+  The Confusion
+  meta-title: The Confusion
+  meta-author: Neal Stephenson
+  meta-isbn: 0060523867
+  ... Your review (optional) ...
+
+If a review is present, then a normal blosxom entry will be generated from
+file, as well as it being included in the reading list.  Otherwise, the file 
+will be removed from the entries list (i.e., it will appear in the reading
+list, but not in the main blog.)
+
+=head1 VERSION
+
+0.01
+
+=head1 DEPENDENCIES
+
+Requires the "meta" plugin
+
+=head1 Customization
+
+=head2 Configuration variables
+
+C<$base_dir>, C<$queued_dir>, C<$current_dir>, C<$completed_dir> can be
+modified to control which directories store the data files for books.  The 
+defaults are $bloxsom::datadir/books/{in_queue,current,completed}.
+
+C<$num_queued>, C<$num_current>, C<$num_recent> specify the maximum
+number of books to display in each category.  Setting these to C<undef> 
+indicated no limit.  The defaults are 5, undef, and 5, respectively.
+
+C<$amazon_id> can be changed to your Amazon Associates ID, or you can
+express your eternal gratitude to me by leaving it as it is ;-)
+
+C<$debug_level> can be set to a value between 0 and 5; 0 will output
+no debug information, while 5 will be very verbose.  The default is 2,
+and should be changed after you've verified the plugin is working
+correctly.
+
+=head2 Templates
+
+You can customize the HTML that is produced for each list using the 
+templates: C<readinglist.head.flavour>, C<readinglist.book.flavour>, 
+C<readinglist.foot.flavour>.
+
+=head1 AUTHOR
+
+Kevin Scaldeferri (kevin+blosxom at scaldeferri dot com)
+L<http://kevin.scaldeferri.com/blog/>
+
+=head1 BUGS
+
+Probably; address bug reports and comments to me or to the Blosxom
+mailing list L<http://www.yahoogroups.com/groups/blosxom>.
+
+=head1 TODO
+
+=over
+
+=item * Provide a link to the review from the list
+
+=item * Make list of lists to track configurable?
+
+=back
+
+=head1 LICENSE
+
+readinglist Blosxom Plug-in
+Copyright 2005, Kevin Scaldeferri
+
+This code is released under the same license as Perl, namely the Artistic
+License: L<http://www.perl.com/pub/a/language/misc/Artistic.html>.
+(Note that this is different from the license which Blosxom is distributed
+under.)
+
+

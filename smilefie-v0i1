@@ -1,0 +1,132 @@
+# Blosxom Plugin: smilefie
+# Author(s): Jason Silver
+# Version: 0.1
+# Home/Docs/Licensing: contact at http://intelliscript.net/
+
+package smilefie;
+
+# --- Configurable variables -----
+$height = 12;
+
+$happy        = "/images/blog_buttons/happy.gif";
+$sad          = "/images/blog_buttons/sad.gif";
+$winking      = "/images/blog_buttons/winking.gif";
+$laughing     = "/images/blog_buttons/laughing.gif";
+$suprised     = "/images/blog_buttons/suprised.gif";
+$cool         = "/images/blog_buttons/cool.gif";
+$confused     = "/images/blog_buttons/confused.gif";
+$frustrated   = "/images/blog_buttons/frustrated.gif";
+$disappointed = "/images/blog_buttons/disappointed.gif";
+$tired        = "/images/blog_buttons/tired.gif";
+$tongue       = "/images/blog_buttons/tongue.gif";
+
+# There are no more user configurable variables
+# --------------------------------
+sub smilefie_this{
+ my ($ref_to_convert) = @_;
+ $$ref_to_convert =~ s/:\)/<img src="$happy" alt="happy" height=$height>/sg;
+ $$ref_to_convert =~ s/:\-\)/<img src="$happy" alt="happy" height=$height>/sg;
+
+ $$ref_to_convert =~ s/:\(/<img src="$sad" alt="sad" height=$height>/sg;
+ $$ref_to_convert =~ s/:\-\(/<img src="$sad" alt="sad" height=$height>/sg;
+
+ $$ref_to_convert =~ s/\;\)/<img src="$winking" alt="winking" height=$height>/sg;
+ $$ref_to_convert =~ s/\;\-\)/<img src="$winking" alt="winking" height=$height>/sg;
+
+# $$ref_to_convert =~ s/:\D/<img src="$laughing" alt="laughing" height=$height>/sg;
+# $$ref_to_convert =~ s/:\-\D/<img src="$laughing" alt="laughing" height=$height>/sg;
+
+ $$ref_to_convert =~ s/:O/<img src="$suprised" alt="suprised" height=$height>/sg;
+ $$ref_to_convert =~ s/:\-O/<img src="$suprised" alt="suprised" height=$height>/sg;
+
+ $$ref_to_convert =~ s/B\)/<img src="$cool" alt="cool" height=$height>/sg;
+ $$ref_to_convert =~ s/B\-\)/<img src="$cool" alt="cool" height=$height>/sg;
+
+ $$ref_to_convert =~ s/:S/<img src="$confused" alt="confused" height=$height>/sg;
+ $$ref_to_convert =~ s/:\-S/<img src="$confused" alt="confused" height=$height>/sg;
+
+ $$ref_to_convert =~ s/:\|/<img src="$frustrated" alt="frustrated" height=$height>/sg;
+ $$ref_to_convert =~ s/:\-\|/<img src="$frustrated" alt="frustrated" height=$height>/sg;
+
+ $$ref_to_convert =~ s/:\\/<img src="$disappointed" alt="disappointed" height=$height>/sg;
+ $$ref_to_convert =~ s/:\-\\/<img src="$disappointed" alt="disappointed" height=$height>/sg;
+
+ $$ref_to_convert =~ s/:z/<img src="$tired" alt="tired" height=$height>/sg;
+ $$ref_to_convert =~ s/:\-z/<img src="$tired" alt="tired" height=$height>/sg;
+
+ $$ref_to_convert =~ s/:P/<img src="$tongue" alt="tongue" height=$height>/sg;
+ $$ref_to_convert =~ s/:\-P/<img src="$tongue" alt="tongue" height=$height>/sg;
+ 1;
+}
+
+sub start {
+ 1;
+}
+sub story {
+ my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+ smilefie_this($story_ref);
+ smilefie_this($title_ref);
+ smilefie_this($body_ref);
+ 1;
+}
+
+1;
+
+__END__
+
+
+=head1 NAME
+
+Blosxom Plug-in: smilefie
+
+=head1 SYNOPSIS
+
+Purpose: This plugin changes some basic smiley symbols to graphics much like popular instant messenger programs
+
+=head1 VERSION
+
+0.1
+
+=head1 AUTHOR
+
+Jason Silver
+http://www.crookedbush.com/
+
+
+=head1 CONFIGURATION
+
+Set the height of your smileys, and change the URL's of your smiley images to point to images on your own server.
+If you want my images, send me an email and I'll shoot 'em over to you. 
+
+Many of them were grabbed them from a Google image search. Other's I made from scratch.
+
+=head1 EXAMPLE
+
+:-) becomes a happy face!
+;) is a wink
+etc.!
+
+=head1 LICENSE
+
+Copyright 2004, Jason Silver
+
+(This license is the same as Blosxom's)
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+

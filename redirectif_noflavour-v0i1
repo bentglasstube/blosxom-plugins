@@ -1,0 +1,31 @@
+# Blosxom Plugin: redirectif_noflavour
+# Author: motormean
+# Version: 0.1 
+# Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+package redirectif_noflavour;
+
+use strict;
+
+my @chunk_list = qw(content_type head story date foot);
+
+sub start
+{
+    1;
+}
+
+sub skip
+{
+    my $path = $blosxom::path_info;
+
+    foreach my $chunk (@chunk_list)
+    {
+        return 0 if $blosxom::template->($path, $chunk, $blosxom::flavour) ne $blosxom::template{error}{$chunk};
+    }
+
+    $path =~ s/\.[^\.]*$/.$blosxom::default_flavour/;
+    print "Location: $blosxom::url/$path\n\n";
+    return 1;
+}
+
+1;

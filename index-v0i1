@@ -1,0 +1,125 @@
+# Blosxom Plugin: index
+#
+# Version: 0.1 (I guess) 
+# Date:  Mon Jul 28 23:34:56 BST 2003
+# Author(s): David Sheldon 
+#
+# Based on postheadprefoot, with some input from textile.
+#
+# This is my first plugin.
+#
+#
+# If you have an index.txt file, this would then replace the automatic folder
+# index that blosxom generates when it renders the directory.
+#
+# Optionally you can add entries after the index. In a manner similar to
+# readme. Indexes are not inherited.
+#
+# If you have textile, it will render the index.txt using that.
+#
+# Feedback welcome to dave-plugins@earth.li
+
+
+package index;
+
+use lib qq{$blosxom::plugin_dir/lib};
+
+# --- Configurable variables -----
+
+$indexfile = "index.$blosxom::file_extension";
+
+# regex to match path
+$pathRE = qr/^$/;
+
+# use textile to format it?
+$useTextile = 1;
+
+# Entries with index (default to zero)
+$index_entries = 0;
+
+# Entries when not index defaults to $blosxom::num_entries;
+
+# --------------------------------
+
+$num_entries;
+
+use FileHandle;
+
+my $fh = new FileHandle;
+
+sub start {
+
+    if ($useTextile) {
+      eval {require bradchoate::textile;};
+      if ($@) {
+# dont use it if we dont have it
+        $useTextile = 0;
+      }
+    }
+    $num_entries = $blosxom::num_entries;  # So we can put it back in static mode
+    return 1;
+}
+
+sub head {
+  my($pkg, $path, $head_ref) = @_;
+    
+  $index=1;
+  $index = 0 if ($blosxom::path_info =~ m{(?:\.$flavour)$}); 
+  
+  if ($index and (-r "$blosxom::datadir/$path/$indexfile" || -r "$blosxom::datadir/$path/$indexfile.$flavour")) {
+    my $append = "" ;
+    if ($useTextile) {
+      $append = encode(load($path, $indexfile));
+    } else {
+      $append = load($path, $indexfile);
+    }
+    $$head_ref .= $append;
+
+# Fiddle num_entries
+    $blosxom::num_entries = $index_entries;
+  }
+  else {
+    $blosxom::num_entries = $num_entries;
+  }
+ 
+  
+  1;
+}
+
+ 
+sub load { 
+  my($path, $chunk) = @_;
+
+# DWS - dont want to inherit such content
+# might want this to be the other way around (so the flavour one comes first)
+
+  $fh->open("< $blosxom::datadir/$path/$chunk") || $fh->open("< $blosxom::datadir/$path/$chunk.$blosxom::flavour") and return join '', <$fh>;
+
+}
+
+#
+# These two are textile orientated, from the textile plugin
+
+sub encode_html {
+    my ($text) = @_;
+    eval {require HTML::Entities;};
+    if (!$@) {
+	return HTML::Entities::encode_entities($text);
+    }
+    die "entity encoding without HTML::Entities not yet implemented";
+}
+
+sub encode {
+    my $self = shift;
+
+    my $c = {
+         encode_html   => \&encode_html,
+         smarty        => undef,
+         auto_encode   => 0,
+         head_offset   => 2
+};
+    return  bradchoate::textile::textile_1($self, $c);
+}
+
+1;
+

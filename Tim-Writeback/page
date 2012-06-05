@@ -1,0 +1,138 @@
+<!-- blosxom content_type text/html --> 
+<?xml version="1.0" encoding="iso-8859-1"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<!-- blosxom head --> 
+<html>
+
+<head>
+<title>Tim's Webpage</title>
+
+<style type="text/css" media="screen">@import "http://timswebpage.com/blosxom/themes/html/style.css";</style>
+
+
+
+
+<link rel="alternate" type="application/rss+xml" title="RSS" href="http://timswebpage.com/cgi-bin/blosxom.cgi/index.rss" />
+
+</head>
+
+<body id="top"><div id="iecontainer"><div id="ieonly"><h2>Microsoft Is Lame</h2>This column only appears in Internet Explorer. <a href="http://www.timswebpage.com/cgi-bin/blosxom.cgi/2004/12/07#dumbed_down_css">Learn why.</a><br /> <img src="http://timswebpage.com/blosxom/themes/html/noIE90.png"><br /><a href="http://www.spreadfirefox.com/?q=affiliates&id=0&t=70"><img border="0" alt="Get Firefox!" title="Get Firefox!" src="http://sfx-images.mozilla.org/affiliates/Buttons/88x31/get.gif"/></a><h2>Weblogs</h2>$file::friends<p /> $file::political<p /><h2>Flavours</h2>$file::flavour<p /> <h2>Categories</h2>$menu::rootmenu<p /></div>
+<div id="container">
+
+
+<div id="banner">
+<div id="holiday"></div>
+Tim's Webpage
+
+
+</div>
+
+<div id="navbar">
+
+
+<div id="navconatiner">
+		<div id="navlist"><em>W</em>eblogs
+					<div id="hiddenlist"><h2>Friends</h2><p />$file::friends <h2>Reading</h2>$file::political<br /></div>
+		</div>
+<div id="navlist"><em>F</em>lavours
+					<div id="hiddenlist">$file::flavour<br /></div>
+		</div>
+<div id="navlist"><em>C</em>ategories
+					<div id="hiddenlist">$menu::rootmenu<br /></div>
+		</div>
+</div>
+
+</div>
+
+<div id="content">
+<!-- blosxom date --> 
+<h2>$date_fullname::dw, $date_fullname::mo $da, $yr</h2>
+<!-- blosxom story -->
+<h4><a name="$fn">$title</a></h4>
+				$body
+					<hr><b>Comments</b><hr><!-- writebacks -->
+$writeback::writeback_response$writeback::writebacks
+
+<!-- writebacks form -->
+
+
+
+
+<br><br>
+
+
+<font size=-2><b>The Track Back URL for this entry is<br/>$url$path/$fn.trackback</b></font><br />
+
+<p><b>Leave a comment...</b> (HTML is allowed)</p>
+
+
+<!-- A simple comments form -->
+
+<form method="POST" action="$blosxom::$url/$blosxom::path_info?seewritebacks=y">
+
+<table class="comments" border="0" cellspacing="3" cellpadding="0">
+	<tr >
+		<td colspan="2" ><center><font color="red">Your PIN is: </font> <img src="http://timswebpage.com/images/pin.jpg" border="3" height="20"></center> </td>
+	</tr><tr>
+		<td>PIN:</td>
+		<td><input name="id" size="35"
+		 /></td>
+	</tr>
+	<tr>
+		<td>Name:</td>
+		<td><input name="name" size="35"
+		value="$writeback::pref_name" /></td>
+	</tr>
+	<tr>
+		<td>URL/Email:</td>
+		<td><input name="url" size="35" value="$writeback::pref_url" 
+/><font size="-2"> [http://... or mailto:you@wherever] (optional)</font></td>
+	</tr>
+	<tr>
+		<td>Title:</td>
+		<td><input name="title" size="35" /> (optional)</td>
+	</tr>
+<tr><td>Comments:</td><td><textarea name="comment" rows="10" 
+cols="35"></textarea></td></tr>
+<tr><td colspan="2">
+<input type="checkbox" name="save_preferences" value="1" checked /> Save my 
+Name and URL/Email for next time
+</td></tr>
+<tr><td colspan="2">
+<input type="hidden" name="plugin" value="writeback" />
+<input type="submit" value="Post" />
+</td></tr>
+</table>
+
+
+</form>
+
+
+<P><a href="http://timswebpage.com/cgi-bin/blosxom.cgi/index.html">Take me by to Tim's Webpage</a>
+<!-- blosxom foot --> 
+
+</div>
+
+
+<div id="sidebar"><h3>Information</h3>$file::visual
+<h3>Now Playing</h3>$file::NowPlaying
+<h3>Netflix Queue</h3>syndicated(netflix)
+<h3>Recent Photographs</h3>syndicated(gallery)
+<h3>For Profit</h3>
+$file::profit
+<h3>Homespun Bloggers</h3>
+<script language="javascript" type="text/javascript" src="http://rpc.blogrolling.com/display.php?r=80a2224f97de45badef3283975366855"></script><img src="http://ourworld.cs.com/viewer2k/homespun/homespun2.gif">
+<P>$calendar::month_calendar
+<P>$find::searchform
+
+<div id="bottom">
+
+
+</div>
+
+</div><div id="foot"><center>$moreentries::links Total Posts :: $moreentries::totalposts<br /><a href="http://www.timswebpage.com/gallery/Tims-Webpage/DSC01387_001">support the bottom</a><br />&nbsp;</center></div><div></div></div>
+
+</div>
+
+</body>
+
+</html>

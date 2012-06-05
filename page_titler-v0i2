@@ -1,0 +1,175 @@
+# Blosxom Plugin: page_titler
+# Author: Dave Slusher <dave_slusher@sff.net>
+# Version: 0.2, 20040321
+# http://www.evilgeniuschronicles.org/
+# See the perldoc info at the bottom for more details
+
+package page_titler;
+
+# --- Configurable variables -----
+my $separator = " - ";
+$debug_level = 0 unless defined $debug_level;
+
+my $DataFile = $blosxom::plugin_state_dir.'/'."page_titler.dat";
+
+
+# set this to 0 if you don't want the top story title in 
+# pages loaded by date
+$use_in_dates = 1;
+
+# set this to 0 if you don't want the top story title in
+# pages browsed to by category
+my $use_in_categories = 1;
+
+
+# --- End Configurable variables -----
+# ------------------------------------
+
+my $read_title = 0; 
+my $cached_title;
+my $titles;
+my $page_key;
+
+sub debug {
+    my ($level, @msg) = @_;
+    if ($debug_level >= $level) {
+	print STDERR "$package debug $level: @msg\n";
+    }
+    1;
+}
+
+sub load_titles {
+    my $titles = {};
+    #open data file
+    local *FH;
+    if( -e "$DataFile") {
+	open FH, "$DataFile" or return $titles;
+    }
+    flock(FH, 2);
+    while (<FH>) {
+	chomp ($_);
+	my ($url, $title) = m/([^:]*):(.*)/;
+	$titles->{$url} = $title;
+    }
+    close (FH);
+    return $titles;
+}
+
+sub save_titles {
+    my $titles = shift;
+    local *FH;
+    open FH, ">$DataFile" or return 0;
+    flock(FH, 2);
+    debug(1, "writing to $DataFile at ".localtime()."\n");
+    foreach $title (keys (%{$titles})) { 
+	debug (1, $title.":".$titles->{$title}."\n"); 
+	print FH $title.":".$titles->{$title}."\n"; 
+    }
+    close FH;
+    return 1;
+}
+
+
+sub start {
+    $title = '';
+    if ($blosxom::path_info_yr ) {
+	$page_key = $blosxom::path_info_yr .'/'.$blosxom::path_info_mo_num.'/'.$blosxom::path_info_da;
+    } else {
+	$page_key = $blosxom::path_info;
+    }
+
+    if ($ENV{"QUERY_STRING"}) {
+	$page_key .= '?'.$ENV{"QUERY_STRING"};
+    }
+    $titles = load_titles();
+
+
+    # if we don't show titles for the date views, just skip
+    if ($blosxom::path_info_yr && !$use_in_dates) {
+	return 1;
+    }
+
+    # if we don't show for paths, just skip
+    if ($blsoxom::path_info && !$use_in_categories) {
+	return 1;
+    }
+
+
+    
+    $cached_title = $titles->{$page_key};
+
+    debug (1, "cached title is $cached_title using $page_key");
+    use Data::Dumper;
+    debug (1, Dumper($titles));
+
+    if ($cached_title) {
+	$title = $separator . $cached_title;
+    }
+    1;
+}	
+
+sub story {
+    my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+  if (!$read_title) {
+
+      # deciding if we need to write this title into the cache file
+      # is it different? 
+      if (!$cached_title || $cached_title ne $$title_ref) {
+
+	  $titles->{$page_key} = $$title_ref;
+	  save_titles($titles);
+	  debug(1, "updated $page_key with ".$$title_ref); 
+	}
+	$read_title = 1;
+    }	
+    1;
+}
+
+1;
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: page_titler
+
+=head1 SYNOPSIS
+
+This allows for the title of the most recent story to be used in flavours, available with $page_titler::title . In this current version, the first page view after a story has changed will be the second newest title. While loading, the cache file will be overwritten with the new title and all subsequent uses will have the current title. As of version 0.2, the titles are stored by what page was loaded, which allows for multiple titles. Configuration variables are available to turn on or off the use of the titles in the date views and category views.
+
+=head1 AUTHOR
+
+Dave Slusher <dave_slusher@sff.net>
+
+=head1 SEE ALSO
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+storytitle: http://exo.org.uk/code/storytitle/
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Copyright 2003,2004, Dave Slusher
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+

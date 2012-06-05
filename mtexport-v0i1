@@ -1,0 +1,243 @@
+# Blosxom Plugin: mtexport
+# Author(s): James Vasile (james@brutalhugs.com)
+# Version: 0.1
+# See the perldoc info at the bottom for more details
+
+package mtexport;
+
+# --- Configurable variables -----
+# Author - replace Brutal Hugger with the author name used by your new blog system
+$author = "Brutal Hugger";
+
+#The %categories hash is used to translate your blosxom directories into Movable Type categories.
+my %categories = (
+	"/category/subcategory"    => "exact mt category name",
+	"/category/second_subcategory"    => "exact mt category name",
+	"/category/subcategory/subcategory"    => "different mt category name",
+	
+	#the below are some of the categories I used, and I include them as examples
+   #"/math_and_science" => "Math and Science",
+   #"/polis/terrorism" => "Polis"
+);
+
+# writeback_dir is the directory your writebacks live in.  Check your writebacks plugin and set 
+# this to the same as that one.  The default might be fine.  If you don't have writebacks, set this to ""
+my $writeback_dir = "$blosxom::plugin_state_dir/writeback";
+
+# What file extension should I use for writebacks? Check your writebacks plugin and set this to the same as there.
+# The defualt might be fine.
+my $file_extension = "wb";
+
+# Disable trackback_counts_display - trackback_counts_display is incompatible with the export on 
+#   some (maybe all) systems, so we disable it when running mtexport.  Set to 0 if you want to 
+#   enable tracback_counts_display (although when running mtexport, it has no effect, so I can't 
+#   see why you would want to do that).
+my $disable_trackback_counts_display = 1;
+#---------------EVERYTHING BELOW THIS LINE IS OF NO CONCERN TO THE AVERAGE USER----------------------
+
+
+
+# --- Public Variables ----------------------------
+$category; #this gets set to the category for each post and is used in the builtin template.  You can ignore it.
+$comments; #this string gets all the writebacks formatted for export.  You can ignore it.
+#----------------------------------------------------
+
+use CGI qw/:standard/;
+use File::stat;
+
+my $cgi = new CGI;
+
+###########################################################
+sub start {
+	#return unless $cgi->param('mtexport') eq 'export';
+	return unless $blosxom::flavour eq 'mtexport';
+	$blosxom::num_entries=1000;
+	return 1;
+}
+
+sub head {
+	#  Here's where we detect and disable the trackback_counts_display plugin.  Hideously ugly!  Look away!
+	foreach my $plugin (@blosxom::plugins) {
+		$blosxom::plugins{$plugin} = -1 if $plugin eq 'trackback_counts_display';
+	}
+}
+
+sub story {
+	my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref, $ne) = @_;
+
+	#match up the category with the path of the post
+	foreach my $path_key (keys %categories) {
+		$category = $categories{$path_key} if $path eq $path_key;
+	}
+
+	# More category sorting... left here as an example
+	#$category = "Polis" if $path =~ /polis/;
+	#$category = "Fun, Personal, Life" if $path =~ /life/;
+	#$category = "Projects" if $path =~ /flavours/;
+	#$category = "Projects" if $path =~ /trackback/;
+	#$category = "Arts and Culture" if $path =~ /arts/;
+
+	#if no match, just put the path in there so the user can see it (or should we default to no category?)
+	$category = $path if $category eq '';
+	
+	
+	#handle writebacks - this is no fun, and I think there might be a better way to do it w/ flavours, but I have a headache and I'm stupid right now.
+	my $fh = new FileHandle;
+	$comments='';
+	if ( $fh->open("$writeback_dir$path/$filename.$file_extension") ) {		
+		my ($seconds, $minutes, $hours, $dom, $mon, $yr, $wday, $yday, $isdst) = localtime(stat("$writeback_dir$path/$filename.$file_extension")->mtime);
+		$mon+=1; $yr+=1900; $seconds=0;
+		foreach my $line (<$fh>) {
+			$line =~ /^(.+?):(.*)$/ and $param{$1} = $2;
+	   	if ( $line =~ /^-----$/ ) {
+	   		$param{'comment'} =~ s/<br \/><br \/>/\n/;
+	   		$param{'comment'} =~ s/^ //;
+	   		$param{'excerpt'} =~ s/^ //;
+	   		if ($param{'comment'} ne '') {
+		   		# it's a ping
+	   			my $url = $param{'url'} if $param{'url'} =~ /^http:\/\//;
+	   			my $email = $param{'url'} if $url eq '';
+	   			$comments .= <<template
+COMMENT:
+AUTHOR: $param{'name'}
+EMAIL: $email
+IP: 0.0.0.0
+DATE: $mon/$dom/$yr $hours:$minutes:$seconds
+URL: $url
+$param{'comment'}
+-----
+template
+;
+					$seconds++;
+	   		} else {
+		   		# it's a comment
+	   			$comments .= <<template
+PING:
+TITLE: $param{'title'}
+URL: $param{'url'}
+IP: 0.0.0.0
+DATE: $mon/$dom/$yr $hours:$minutes:$seconds
+BLOG NAME: $param{'blog_name'}
+$param{'excerpt'}
+-----
+template
+;
+					$seconds++;
+	   		}
+	   	}
+		}
+	}
+
+	return 1;
+}
+
+sub template {
+	#replace existing templates with the export templates
+	return sub {
+		my (undef, $chunk, $flavour) = @_;
+    
+    	return "text/plain;\n" if $chunk eq 'content_type';
+    	return "" if $chunk ne 'story';
+    	return <<storyflavour
+AUTHOR: \$mtexport::author
+TITLE: \$title
+STATUS: Publish
+ALLOW COMMENTS: 1
+CONVERT BREAKS: 0
+ALLOW PINGS: 1
+PRIMARY CATEGORY: \$mtexport::category
+
+DATE: \$mo_num/\$da/\$yr \$hr:\$min:00
+-----
+BODY:
+\$body
+-----
+EXTENDED BODY:
+
+-----
+EXCERPT:
+
+-----
+KEYWORDS:
+
+-----
+\$mtexport::comments
+
+--------
+storyflavour
+;
+  };
+}
+
+
+###   STOCK ROUTINES   ###############################
+sub html_exit {print $cgi->header(), join '<br />', @_; exit;}
+
+
+
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: login
+
+=head1 SYNOPSIS
+
+This is a plugin that contains flavours and some code to allow you to export your blog to an ascii file.  Movable Type is capable of importing this file, and other blog software might be able to as well.
+
+To install, rename this file 00mtexport and drop it in your plugin directory.  You'll want this plugin to run before any other template plugins or else you'll get an error: 'Error: I'm afraid this is the first I've heard of a "mtexport" flavoured Blosxom."  And since it's just dumping data, you don't need to run any other plugins withit.
+
+To invoke, use the mtexport flavour, which can be invoked by: http://url.to.blog/path/to/blog?flav=mtexport
+
+When invoked, the plugin will dump your blog to the screen, just copy or save the entire page to a text file, drop it in your Movable Type import directory and import the file using the Movable Type control panel.  If you use categories in your blog, you'll want to configure the plugin because the default setting is not to have any categories at all.
+
+This plugin has compatibility issues with certain other plugins.  If you get an internal server error when running mtexport, try removing your other plugins.  Add them back in one at a time until one triggers the error, and you'll know which one is incompatible.  Because mtexport doesn't result in your usual display, you probably don't need most of your plugins when using it anyway.
+
+=head1 AUTHOR
+
+James Vasile <james@brutalhugs.com>
+
+=head1 SEE ALSO
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+The date and time of posts is preserved down to the minute, but seconds are lost.
+
+Provision is made only for one author.  Extending the plugin for multiple authors depends on how you implement multiple authors on your Blosxom blog, but is pretty easy to do.
+
+Provision is made for a max of 10000 entries.  This should be enough, but really there shouldn't be a max at all.  If it's not enough, change it.
+
+If you have the trackback_counts_display plugin installed, you'll get an internal sever error if $num_entries is over 183.  That number might be different on different machines, but I'm not really sure because I was too lazy to track the bug down.  Instead, the plugin detects trackback_counts_display and disables it.  If you use trackback_counts_display but have changed its name, mtexport won't know to disable it.  Considering that mtexport is probably a one-off use, disabling your trackback_counts_display plugin manually shouldn't be too much of a hassle.  So do it.  Or fix the bug yourself.  The whole point of sharing the code is to let me be lazy like that, right?
+
+Line breaks in writebacks might be funky on your system.
+
+Writeback dates aren't recorded, so dates aren't exported.
+
+Email James Vasile <james@brutalhugs.com> if you find any others.
+
+=head1 LICENSE
+
+Copyright 2003, James Vasile
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

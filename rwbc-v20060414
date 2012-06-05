@@ -1,0 +1,456 @@
+# Blosxom Plugin: rwbc (recent writebacks cache)
+# Author: KITAMURA Akatsuki
+# Version: 2006-04-14
+# Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+# This script is encoded in UTF-8.
+
+package rwbc;
+
+use strict;
+use CGI qw(:standard);
+use File::Find;
+use File::stat;
+use FileHandle;
+
+# --- Configurable Variables -----------
+
+# writebackデータを保存するディレクトリ
+my $writeback_dir = "$blosxom::plugin_state_dir/writebacks";
+
+# 最近のwritebackデータを保存するキャッシュファイル名
+my $rwbc_cache_file = "$blosxom::plugin_state_dir/rwbc_cache.txt";
+
+# writebackデータファイルの拡張子
+my $wb_file_extension = 'wb';
+
+# 記事エントリを表示するフレーバーの拡張子
+my $entry_flavour = 'htm';
+
+# writebackを表示するフレーバーの拡張子
+my $wb_page_flavour = 'htm#writebacks';
+
+# 最近のwritebackリストを表示する数
+my $recent_wb_num = 5;
+
+# --- Plug-in package variables --------
+
+use vars qw( $recent_writebacks );
+
+# --------------------------------------
+
+sub start {
+	return 0 if ($blosxom::static_or_dynamic eq 'static');
+
+	# plugin変数の初期化
+	$recent_writebacks = '';
+
+	# 組み込みテンプレートの読み込み
+	foreach my $line (<DATA>) {
+		last if ($line =~ /^__END__$/);
+		my ($flavour, $comp, $text) = split(/ /, $line, 3);
+		$text =~ s/\\n/\n/g;
+		$blosxom::template{$flavour}{$comp} = $text;
+	}
+	1;
+}
+
+sub head {
+	my @recent_wb;
+
+	# キャッシュの作成または追加
+	if ( !(-e $rwbc_cache_file) || param('reindex') ) {
+		@recent_wb = &make_cache;
+	} elsif ( $writeback::trackback_response =~ m{<error>0</error>} ) {
+		@recent_wb = &add_to_cache;
+	}
+
+	# @recent_wbが空だったらキャッシュファイルから読み込む
+	@recent_wb or @recent_wb = &parse_wb_file($rwbc_cache_file);
+
+	# それでも空だったら復帰
+	@recent_wb or return 1;
+
+	# $rwbc::recent_writebacks を構成
+	my $t_item = &$blosxom::template($blosxom::path_info, 'recent_writebacks', $blosxom::flavour);
+	my $t_head = &$blosxom::template($blosxom::path_info, 'recent_writebacks_head', $blosxom::flavour);
+	my $t_foot = &$blosxom::template($blosxom::path_info, 'recent_writebacks_foot', $blosxom::flavour);
+	foreach my $wb (@recent_wb) {
+		# コメントの時は、URL情報をコメントを表示するページのURLに置換
+		if ($wb->{comment}) {
+			$wb->{url} = "$blosxom::url$wb->{entry_path}.$wb_page_flavour";
+		}
+
+		# writeback先の記事URLを設定
+		$wb->{entry_url} = "$blosxom::url$wb->{entry_path}.$entry_flavour";
+
+		# 日付用の変数設定
+		@$wb{ qw(dw mo mo_num da ti yr) } = &blosxom::nice_date($wb->{date});
+
+		# テンプレートを変換
+		my $temp = $t_item;
+		$temp =~ s/\$rwbc::(\w+)/$wb->{$1}/g;
+		$recent_writebacks .= $temp;
+	}
+	$recent_writebacks = "$t_head$recent_writebacks$t_foot";
+	1;
+}
+
+# キャッシュ作成
+
+sub make_cache {
+	warn "rwbc: make cache.\n";
+
+	# 各writebackデータファイルを@recent_wbへ読み込む
+	my @recent_wb;
+	find(
+		sub {
+			if (/\.$wb_file_extension$/) {
+				push @recent_wb, &parse_wb_file($File::Find::name);
+			}
+		}, $writeback_dir
+	);
+
+	# 日時の降順にソート
+	@recent_wb = sort {
+		$b->{date} <=> $a->{date}
+		|| $b->{number} <=> $a->{number}
+	} @recent_wb;
+
+	# $recent_wb_num 件分のみ残す
+	splice @recent_wb, $recent_wb_num;
+
+	# キャッシュファイルへ出力
+	&write_cache(@recent_wb);
+	return @recent_wb;
+}
+
+# 受け付けたwritebackデータをキャッシュに追加
+
+sub add_to_cache {
+	warn "rwbc: add new writeback to cache.\n";
+
+	# path_infoからwritebackファイル名に変換
+	my $path = $blosxom::path_info;
+	$path =~ s/\.[^.]+$//;
+	my $wb_file = "$writeback_dir/$path.$wb_file_extension";
+
+	# writebackファイルから最新分を取得
+	my @temp_wb = &parse_wb_file($wb_file) or return;
+	my $new_wb = pop @temp_wb;
+
+	# キャッシュに追加
+	@temp_wb = &parse_wb_file($rwbc_cache_file);
+	unshift @temp_wb, $new_wb;
+	splice @temp_wb, $recent_wb_num;
+	&write_cache(@temp_wb);
+	return @temp_wb;
+}
+
+# writebackデータリストの内容をキャッシュファイルに出力
+
+sub write_cache {
+	my @recent_wb = @_;
+
+	my $fh = FileHandle->new;
+	unless ($fh->open(">$rwbc_cache_file")) {
+		warn "rwbc: can't write cache file: $rwbc_cache_file.\n  $!\n";
+		return;
+	}
+	my $temp = '';
+	foreach my $wb (@recent_wb) {
+		foreach my $key (sort keys %$wb) {
+			$temp .= "$key:$wb->{$key}\n";
+		}
+		$temp .= "-----\n";
+	}
+	print $fh $temp;
+	$fh->close;
+}
+
+
+# writebackデータ(またはキャッシュ)ファイルを読む
+
+sub parse_wb_file {
+	my $wb_file = $_[0];
+
+	my $fh = FileHandle->new;
+	unless ($fh->open($wb_file)) {
+		warn "rwbc: can't open writeback file: $wb_file.\n  $!\n";
+		return;
+	}
+
+	# writeback情報補完のための変数設定
+	# (キャッシュを読むときは跳ばす)
+	my ($wb_mtime, $entry_path, $entry_title);
+	if ($wb_file ne $rwbc_cache_file){
+		$wb_mtime = stat($fh)->mtime;
+		$entry_path = $wb_file;
+		$entry_path =~ s/^$writeback_dir//;
+		$entry_path =~ s/\.[^.]+$//;
+		$entry_title = &get_entry_title($entry_path);
+	}
+
+	# writeback情報をハッシュのリストに構成
+	my @wb;
+	my $i = 0;
+	foreach my $line (<$fh>) {
+		$line =~ /^(.+?):(.*)$/ and $wb[$i]{$1} = $2;
+		$line =~ /^-+$/ or next;
+
+		# 投稿日時
+		$wb[$i]{date} ||= $wb_mtime;
+		# writebackの番号
+		$wb[$i]{number} ||= $i + 1;
+		# writeback先記事の(拡張子を除いた)パス名
+		$wb[$i]{entry_path} ||= $entry_path;
+		# writeback先記事のタイトル
+		$wb[$i]{entry_title} ||= $entry_title;
+
+		$i++;
+	}
+	$fh->close;
+	return @wb;
+}
+
+# 記事タイトルを取得
+
+sub get_entry_title {
+	my $file = $_[0];
+
+	# パス名から記事ファイル名へ変換
+	$file = "$blosxom::datadir$file";
+	$file =~ s/(?:\.[^.]+)?$/.$blosxom::file_extension/;
+
+	# 記事ファイルからタイトル(先頭1行)を読み込む
+	my $fh = FileHandle->new;
+	unless ($fh->open($file)) {
+		warn "rwbc: can't open entry file: $file.\n  $!\n";
+		return '(no title)';
+	}
+	my $entry_title = <$fh>;
+	$fh->close;
+	chomp $entry_title;
+	$entry_title;
+}
+
+1;
+
+__DATA__
+wbrss content_type application/xml;charset=utf-8
+wbrss head <?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE rss PUBLIC "-//Netscape Communications//DTD RSS 0.91//EN"\n "http://my.netscape.com/publish/formats/rss-0.91.dtd">\n\n<rss version="0.91">\n<channel>\n<title>recent writebacks: $blog_title</title>\n<link>$url/</link>\n<description>recent comments and trackbacks to $blog_title.</description>\n<language>$blog_language</language>\n\n$rwbc::recent_writebacks\n
+wbrss story 
+wbrss date 
+wbrss foot </channel>\n</rss>
+wbrss recent_writebacks <item>\n<title>$rwbc::title</title>\n<link>$rwbc::url</link>\n<description><![CDATA[$rwbc::comment$rwbc::excerpt]]></description>\n</item>\n
+wbrss recent_writebacks_head 
+wbrss recent_writebacks_foot 
+error recent_writebacks <dt><a href="$rwbc::entry_url">$rwbc::entry_title</a></dt>\n<dd>$rwbc::blog_name$rwbc::name &#187; <a href="$rwbc::url" title="$rwbc::yr-$rwbc::mo_num-$rwbc::da $rwbc::ti">$rwbc::title</a></dd>\n
+error recent_writebacks_head <dl>\n
+error recent_writebacks_foot </dl>
+__END__
+
+
+=head1 NAME
+
+=encoding utf8
+
+Blosxom Plug-in: rwbc (recent writebacks cache)
+
+=head1 SYNOPSIS
+
+目的: writebackプラグインを使用している環境で、
+最近受け付けたwriteback(コメント及びTrackBack)へのリンクを、
+最新のものから指定した数だけ表示します。
+
+=head1 DESCRIPTION
+
+rwbcプラグインは、最近受け付けたwritebackのリストを提供します。
+最近のwritebackデータはキャッシュに保存し、writebackを受けたら
+適宜キャッシュに追加し、古い情報をキャッシュから除きます。
+表示のためにはこのキャッシュの情報が使われるので、必要以上に
+ファイルアクセスが発生することを防いでいます。
+
+また、テンプレートファイルを利用して最近のwritebackのリストの
+書式を編集することもできます。
+組み込みのテンプレートにより、最近のwritebackのRSSを提供する機能も
+持っています。
+
+=head1 INSTALLATION
+
+このプラグインファイルをプラグインディレクトリ($plugin_dir)に
+置いて下さい。
+
+=head1 CONFIGURATION
+
+Configurable Variables を環境に合わせて設定して下さい。
+
+=head1 FLAVOUR TEMPLATE VARIABLES
+
+最近のwritebackリストは、$rwbc::recent_writebacks 変数に格納されます。
+head以下のどのテンプレートファイルでも使用できます。
+
+=head1 FLAVOURING RECENT WRITEBACKS
+
+writebackリストの書式を変更するには、以下のテンプレートファイルを
+使用します。
+
+=over
+
+=item recent_writebacks.I<flavour>
+
+各writeback情報の書式を定めます。
+
+=item recent_writebacks_head.I<flavour>
+
+writebackリストの先頭に、この内容が挿入されます。
+
+=item recent_writebacks_foot.I<flavour>
+
+writebackリストの末尾に、この内容が挿入されます。
+
+=back
+
+recent_writebacks_head.I<flavour> 及び recent_writebacks_foot.I<flavour> は、
+writebackのリストをHTMLのリスト要素(ul, ol, dl)として出力する際に、
+その開始タグ・終了タグを挿入するために使用します。
+writebackがまだ存在しない時には、これらのテンプレートの内容も出力されません。
+HTMLのリスト要素は1つ以上の項目要素(li または dt, dd)を内容に持つ必要が
+あるため、この動作により出力するHTML文書の妥当性が保たれます。
+リスト要素として出力する必要がない場合には、recent_writebacks_head.I<flavour>、
+recent_writebacks_foot.I<flavour> の内容は空に設定してください。
+
+recent_writebacks.I<flavour> テンプレートでは、以下の $rwbc:: 変数を
+使用することができます。
+
+=over
+
+=item $rwbc::title
+
+TrackBack元記事やコメントの題名
+
+=item $rwbc::blog_name
+
+TrackBack元のweblogの名前
+
+=item $rwbc::name
+
+コメント投稿者の名前
+
+=item $rwbc::excerpt
+
+TrackBackの概要
+
+=item $rwbc::comment
+
+コメントの内容
+
+=item $rwbc::entry_title
+
+writeback先の記事の題名
+
+=item $rwbc::entry_url
+
+TrackBack元のURL、またはコメント表示ページのURL
+
+=item $rwbc::yr, $rwbc::mo, $rwbc::mo_num, $rwbc::da, $rwbc::dw, $rwbc::ti
+
+writebackの日付用の変数 (年、月名、月の数字、日、曜日、時間)
+
+=back
+
+これらの変数は recent_writebacks.I<flavour> テンプレートでのみ利用可能です。
+また、recent_writebacks.I<flavour> テンプレートでは、これら以外の
+他のテンプレート用変数を使用することができません。
+
+=head1 RECENT WRITEBACKS FEED
+
+blosxomのURLが http://host/path/blosxom.cgi であれば、
+http://host/path/blosxom.cgi/index.wbrss にアクセスすることにより、
+最近のwriteback情報がRSS 0.91形式で出力されます。
+これは組み込みの *.wbrss テンプレートによる機能です。
+
+テンプレートファイルを作成して、他の形式のフィード(更新情報)を出力することも
+できるかもしれません。
+
+=head1 REBUILD CACHE
+
+キャッシュファイルは、ファイルが無ければ自動的に作成されます。
+また、blosxomのURLに ?reindex=y というクエリをつけてアクセスする
+ことにより、キャッシュを再作成することもできます。
+
+オリジナルのwritebackプラグインでは、writebackを受け付けた日付情報を
+記録しませんが、writebackプラグインの134行目を以下のように
+変更することにより、日付情報を記録することができます。
+
+変更前:
+
+      print $fh "-----\n";
+
+変更後:
+
+      print $fh "date:", time, "\n-----\n";
+
+rwbcプラグインは、この日付情報(dateパラメタ)を元にキャッシュを作成します。
+dateパラメタが無い場合には、writebackデータファイル(*.wb)の最終更新時刻を
+元にしてキャッシュを作成します。
+
+また、blosxom starter kit に添付のwritebackプラグインでは、
+あらかじめdateパラメタを記録するよう変更されています。
+
+=over
+
+=item blosxom starter kit
+
+http://hail2u.net/archives/bsk.html
+
+=back
+
+=head1 VERSION
+
+2006-04-14
+
+=head1 AUTHOR
+
+北村曉 (KITAMURA Akatsuki) <kits@akatsukinishisu.net>,
+http://www.akatsukinishisu.net/
+
+=head1 SEE ALSO
+
+=over
+
+=item Blosxom Home/Docs/Licensing
+
+http://www.blosxom.com/
+
+=item Blosxom Plugin Docs
+
+http://www.blosxom.com/plugins/
+
+=item blosxom plugin: rwbc (recent writebacks cache)
+
+http://www.akatsukinishisu.net/itazuragaki/blosxom/rwbc.html
+
+=back
+
+=head1 LICENSE
+
+This Blosxom Plug-in Copyright (c) 2006, KITAMURA Akatsuki
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

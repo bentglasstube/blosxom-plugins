@@ -1,0 +1,181 @@
+M# blosxom plugin: adsense
+# raffi krikorian <r@bitwaste.com>
+# version: 0.0.2
+# see the bottom of the source for documentation
+
+package adsense;
+use CGI qw/:standard :netscape/;
+use File::stat;
+use FileHandle;
+use LWP::UserAgent;
+
+# --- configurable variables -----
+
+# the identifier that is included as google_ad_client in the
+# javascript that is given to you by the adsense website
+my $ad_client = "pub-1258118923120631";
+
+# --------------------------------
+
+$adsenseurl;
+$adsenseurlescaped;
+$adsensetitle;
+$adsensedesc;
+
+sub start {
+    return 0 if( $blosxom::flavour ne "rss" );
+    1;
+
+}
+
+# this is the helper function that actually gets the advertisment from
+# google, parses the information, and assigns the variables to be used
+# by the blosxom templates
+sub fetchad {
+    my( $path ) = @_;
+    my $useragent = LWP::UserAgent->new();
+
+    # construct the URL to get the advertisement from the google site
+    # with.  this has to get the referrer correct, the time of day for
+    # the request, and the asks for only a single advertisement.  we
+    # use the first story as the referrer so we can get (hopefully)
+    # better targeted advertisements.
+    my $refererurl = $path;
+    $refererurl =~ s|^$blosxom::datadir(/.*?)\.[^\.]*?$|$blosxom::url$1\.html|;
+    $refererurl =~ s|\:|\%3A|g;
+    $refererurl =~ s|/|\%2F|g;
+
+    my $adurl = "http://pagead2.googlesyndication.com/pagead/ads?client=ca-";
+    $adurl .= $ad_client;
+    $adurl .= "&random=" . ( time() * 1000 );
+    $adurl .= "&format=125x125_as";
+    $adurl .= "&output=html";
+    $adurl .= "&url=" . $refererurl;
+
+    # make the request to fetch the html containing the advertisement
+    my $request = HTTP::Request->new( GET => $adurl );
+    $request->referer( $blosxom::url );
+    $request->user_agent( "Mozilla/5.0 (Macintosh; U; PPC Mac OS X; en) AppleWebKit/124 (KHTML, like Gecko) Safari/125" );
+    $response = $useragent->request( $request )->content();
+
+    # and if that worked, pull out the relavent information
+    if( $response ) {
+	$response =~ m|<font[^>]*?>\s*<a.*?href=\"(.*?)\"[^>]*>\s*<b>(.*?)</b></a><br></font><font[^>]*?>(.*?)<br>|;
+	
+	$googleurl = "http://pagead2.googlesyndication.com$1";
+	$googletitle = $2;
+	$googledesc = $3;
+
+	$googleurlescaped = $googleurl;
+	$googleurlescaped =~ s|\&|&amp;|g;
+	return( $googleurl, $googleurlescaped, $googletitle, $googledesc );
+
+    } else {
+	return( );
+
+    }
+
+}
+
+sub filter {
+    my( $pkg, $files_ref ) = @_;
+    
+    # get a list of all the files that are being rendered, and pick
+    # out the timestamp of the most recent story
+    my $fh = new FileHandle;
+    my @files = 
+	sort { $files_ref->{$b} <=> $files_ref->{$a} } keys %$files_ref;
+    my $recenttime = $files_ref->{$files[0]};
+
+    # now check to see if we have a state file -- we check the
+    # timestamp on that file and if the timestamp is -earlier- than
+    # the recenttime variable, then we are going to replace that file
+    # with a new advertisement.  if it is less than or equal to, then
+    # we are going to open the file and pull the google ad out of it.
+    #
+    # we don't want to pull a new advertisement every time as google
+    # changes the advertisement URLs frequently, even if they are
+    # pointing to the same destination web site.  this does lead to
+    # the problem that the advertisement URLs may get stale.
+    my $statefile = $blosxom::plugin_state_dir . "/adsense.state";
+    if( ( ! -e $statefile ) ||
+	( stat( $statefile )->mtime < $recenttime ) ) {
+	my @ad = fetchad( $files[0] );
+
+	# store the advertisement into this state file for the next
+	# time around
+	unlink $statefile;
+	open ADSTATE, ">$statefile";
+	print ADSTATE $ad[0] . "\n" . $ad[1] . "\n" . $ad[2] . "\n" . $ad[3] . "\n";
+	close ADSTATE;
+	
+	$adsenseurl = $ad[0];
+	$adsenseurlescaped = $ad[1];
+	$adsensetitle = $ad[2];
+	$adsensedesc = $ad[3];
+
+    } else {
+	# we don't need a new advertisement, so we are just going to
+	# read the one from the state file
+	open ADSTATE, "<$statefile";
+	$adsenseurl = <ADSTATE>;
+	$adsenseurlescaped = <ADSTATE>;
+	$adsensetitle = <ADSTATE>;
+	$adsensedesc = <ADSTATE>;
+	close ADSTATE;
+
+    }
+
+    1;
+
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+blosxom plug-in: adsense
+
+=head1 SYNOPSIS
+
+fills the variables $adsense::adsenseurl, $adsense::adsenseurlescaped,
+$adsense::adsensetitle, $adsense::adsensedesc with the google
+advertisement URL (in non-escaped and escaped form), the title of the
+advertisement, and a one line description of the advertisement for
+inclusion in the RSS of the weblog.
+
+=head1 USAGE
+
+activate this plugin by placing it in your bloxsom plugin directory,
+then in your foot.rss (or something similar), add the following
+
+<item>    
+<title>Google Ad: $adsense::adsensetitle</title>
+<link>$adsense::adsenseurlescaped</link>
+<description>$adsense::adsensedesc</description>
+</item>
+
+</channel>
+</rss>
+
+=head1 VERSION
+
+0.0.1
+
+=head1 AUTHOR
+
+raffi krikorian <r@bitwaste.com>, http://www.bitwaste.com/
+
+=head1 LICENSE
+
+adsense plugin
+copyright 2004, raffi krikorian
+
+this software is distributed under the GPL
+(http://www.gnu.org/copyleft/gpl.html) with the following addition --
+if you do use this plugin, then you are required to publish full
+stories in your RSS and -not- use excerpts.  the only exception to
+that rule is if the story is "long" (as defined by more than a 250
+words) and requires a link to get to the remainder of the content.

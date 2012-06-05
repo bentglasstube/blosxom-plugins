@@ -1,0 +1,88 @@
+# Blosxom Plugin: snap_in
+# Author: kay(info@ellinikonblue.com)
+# Version: 2006-1-24
+
+# snap_in
+#
+# Turns square-bracketed image/html references into simple html markup
+#   * Can exist in any part of story body
+#   * image/html root is configurable
+#   * sets simple 'alt' tag automaticaly
+#
+# Usage Examples:
+# 
+#   [name.jpg]  A image with 'alt' tag which is 'Image: name.jpg'
+#   [name.html] A html file insert
+
+package snap_in;
+
+# Configuration Section
+my @image_ext = ( 'jpg', 'jpeg', 'gif', 'png' );
+my @html_ext  = ( 'html', 'htm' );
+
+my $image_root = "$blosxom::url/lib/image/";        # the base image url
+my $html_root  = "$blosxom::plugin_state_dir/html"; # the base html path
+
+#-------------------------------------------------------------------------------
+my $match_ext;
+
+sub start {
+  $match_ext = join( "|", (@image_ext, @html_ext) );
+
+  return 1;
+}
+
+sub story {
+  my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+  $$body_ref =~ s/\[([\w\-\!\#\$\%\'\^\(\)\{\}\~]+)\.($match_ext)\]/replace( $1, $2 )/gies;
+
+  1;
+}
+
+sub replace {
+  my ( $name, $ext ) = @_;
+  my $rtn = '';
+
+  for ( $i = 0; $i < @image_ext; $i++ ) {
+    if ( $image_ext[ $i ] eq lc( $ext ) ) {
+      $rtn = replace_image( "$name\.$ext" );
+      $rtn = '<div class="snapimg">' . $rtn  . '</div>';
+    }
+  }
+
+  if ( length( $rtn ) < 1 ) {
+    for ( $i = 0; $i < @html_ext; $i++ ) {
+      if ( $html_ext[ $i ] eq lc( $ext ) ) {
+        $rtn = replace_html( "$name\.$ext" );
+        $rtn = '<div class="snaphtml">' . $rtn . '</div>';
+      }
+    }
+  }
+
+  return $rtn;
+}
+
+sub replace_image {
+  my ( $fn ) = @_;
+
+  return "<img src=\"$image_root$fn\" alt=\"Image: $fn\" \/>";
+}
+
+sub replace_html {
+  my ( $fn ) = @_;
+  my $rtn    = '';
+
+  $fn = "$html_root$fn";
+
+  if ( -f $fn ) {
+    if ( open HTMLFILE, $fn ) {
+      $rtn = join( '', <HTMLFILE> );
+      close HTMLFILE;
+    }
+  }
+
+  return $rtn;
+}
+
+1;

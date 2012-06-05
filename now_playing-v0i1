@@ -1,0 +1,118 @@
+# Blosxom Plugin: now_playing
+# Author(s): James Vasile (james@brutalhugs.com)
+# Version: 0.1
+# Documentation: See the bottom of this file or 
+# type: perldoc trackback_counts_display
+
+package now_playing;
+
+# --- Configurable variables -----
+
+# Where are trackbacks kept?
+my $trackback_dir = "/home/brutalhu/www/www/cgi-bin/tb/tb_data";
+
+# What is the trackback id of the winamp file?
+# leave this alone unless you have a reason to change it.
+my $trackback_id = "now_playing_plugin";
+
+# How many songs do you want to display?
+my $num_songs = 5;
+
+# Song Template
+my $song_template = '<div now_playing_song>$song<br /></div>';
+
+
+# --------------------------------
+
+use File::Spec::Functions; 
+
+$last; # use as $now_playing::last in flavour templates
+
+sub start {
+  -d $trackback_dir or return 0;
+  1;
+}
+
+sub head {
+  require Storable;
+  unless (-r "$trackback_dir/$trackback_id.stor") {
+      $last = "[No songs found]";
+      return;
+  }
+
+  my $trackbacks = scalar eval { Storable::retrieve("$trackback_dir/$trackback_id.stor") } || [];
+  for (my $lcv; $lcv < $num_songs && $lcv < (@$trackbacks); $lcv++) {
+      my $song = %{$trackbacks->[$lcv]}->{"excerpt"} || "[no song info]";
+      my $template = $song_template;
+      $template =~ s/(\$[\w:]+)/$1 . "||''"/gee;
+      $last .= $template;
+  }
+  
+
+  if ((@$trackbacks) > 5*$num_songs+10) { #trim list if its too big, but don't trim too often.
+      @$trackbacks = splice(@$trackbacks, 0, $num_songs);
+      Storable::store($trackbacks, "$trackback_dir/$trackback_id.stor");
+  }
+
+  1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: now_playing
+
+=head1 SYNOPSIS
+
+Populates $now_playing::last with the last few songs you've played in Winamp.
+
+Requires Benn Trott's tb.cgi implementation of Trackback.
+
+Requires the DoSomething WinAmp plugin.
+
+=head1 VERSION
+
+0.1
+
+=head1 AUTHOR
+
+James Vasile (james@brutalhugs.com)
+
+=head1 SEE ALSO
+
+http://brutalhugs.com/flavours
+
+http://a.wholelottanothing.org/archives.blah/006625
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Blosxom and this Blosxom Plug-in
+Copyright 2003, James Vasile
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

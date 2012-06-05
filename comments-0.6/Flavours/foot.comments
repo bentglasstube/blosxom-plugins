@@ -1,0 +1,34 @@
+<p>
+<span class="dateheader">Your Comment</span>
+</p>
+
+<!-- A simple comments form -->
+
+<form method="POST" action="$url/$path_info">
+<table border="0" cellspacing="3" cellpadding="0">
+    <tr><td>&nbsp;</td></tr>
+    <tr><td>Name:</td>
+        <td><input name="name" size="35" value="$comments::pref_name" /></td>
+    </tr>
+    <tr><td>URL/Email:</td>
+        <td><input name="url" size="35" value="$comments::pref_url" />
+	    [http://... or mailto:you@wherever] (optional)</td></tr>
+    <tr><td>Title:</td>
+        <td><input name="title" size="35" value="$comments::title"/>
+		(optional)</td></tr>
+    <tr><td valign=top>Comment:</td>
+	<td><textarea name="comment" rows="5" cols="60"></textarea></td></tr>
+    <tr><td colspan="2">
+	    <input type="checkbox" name="save_preferences" value="1" checked />
+		Save my Name and URL/Email for next time
+    </td></tr>
+    <tr><td colspan="2">
+	<input type="hidden" name="plugin" value="comments" />
+	<input type="hidden" name="parent" value="$comments::parent" />
+	<input type="submit" value="Post" />
+    </td></tr>
+</table>
+</form>
+
+</body>
+</html>

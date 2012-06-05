@@ -1,0 +1,138 @@
+# Blosxom Plugin: deferer
+# Author: Jason Clark (http://jclark.org/weblog/);
+# Version 0+2i
+# Blosxom Home/Docs/Licensing: http://www.blosxom.com
+# deferer plugin Home/Docs/Licensing: 
+#     http://jclark.org/weblog/WebDev/Blosxom/plugins/deferer
+
+package deferer;
+
+# ----- Configuration Variables -----
+
+# The IP Address in question
+$ip = '161.58.59.8';
+
+# -----------------------------------
+
+sub start {
+    package blosxom;
+    use Socket;
+
+    my $refer = referer();
+    if ($refer =~ m!https?://!) {
+	my $r = (split(/\//, $refer))[2];
+	my $n = inet_aton($r);
+	if (defined $n && inet_ntoa($n) eq $deferer::ip) {
+	    print STDERR "Redirected $r\n";
+	    print "Status: 301 Moved Permanently\n";
+	    print "Location: $refer\n\n";
+	    exit(0);
+	}
+    }
+    1;
+}
+
+1;
+
+__END__
+
+=head1 Name
+
+Blosxom Plug-In: defer
+
+=head1 Synopsis
+
+A bit of defense against a particularly tenacious referer spammer.  A one-trick pony
+for now, but eventually will get expanded to combat other sorts of referer spam (as 
+time permits).
+
+=head1 Quick Start
+
+Just drop it in your $plugin_dir.  There is only one config variable, which 
+you shouldn't need to change, at least until this jerk gets chased to another
+hosting provider with another IP.
+
+Deferer tries to save your server a few cycles by ending the entire blosxom run (via 
+exit(0)) once a redirect header has been sent.  To save the most time, make this plugin
+run first by naming it 00deferer.
+
+=head1 More Info
+
+For lots more info, see the SEE ALSO section below.
+  
+In a nutshell, tons of referer spam is currently being sent out with
+hundreds of refer'ed URIs.  They all resolve to one IP address - 161.58.59.8.  When visited,
+they all show a fake 'hosting account suspended' message.  Days later the sites come on line
+with live links to poker sites and other junk.  Same rig is sending tons of comment spam
+using info harvested previously.
+
+The traffic comes through many proxies and zombie machines, so instead of checking the 
+remote ip, we block anyone using one of the referers.  Because we can, we send a redirect 
+right back to the offending URL.  Let 'em waste their own bandwith.
+
+=head1 Version
+
+0+2i
+
+=head1 Changelog
+
+0+2i:
+  * fixed bug that caused 500 server error if referer could not be resolved
+
+0+1i: 
+  * original release
+
+=head1 Author
+
+Jason Clark  (jason@jclark.org; http://jclark.org/weblog)
+
+=head1 Acknowledgements
+
+Credit for the idea, as well as inspirational PHP code, goes to John Sinteur who
+wrote about this on the Wordpress Support blog: 
+  http://wordpress.org/support/topic.php?id=20956#post-119138
+
+=head1 See Also
+
+Info on the problem:
+  http://wordpress.org/support/topic.php?id=20956#post-119138
+  http://www.tbray.org/ongoing/When/200x/2005/01/16/RefererBS
+  http://virtuelvis.com/archives/2005/01/referer_spammers_are_comment_spammers_too
+  http://www.annelisabeth.com/blog/archives/000165.html (and many other enties on Anne's site)
+
+Blosxom Home/Docs/Licensing: 
+  http://www.blosxom.com/
+
+Blosxom Plugin Docs: 
+  http://www.blosxom.com/documentation/users/plugins.html
+
+deferer plugin Home/Docs/Licensing: 
+  http://jclark.org/weblog/WebDev/Blosxom/plugins/deferer
+
+=head1 Bugs
+
+I wouldn't be surprised.
+
+Not tested at all with static rendering, not really applicable.
+
+=head1 License
+
+This Blosxom Plug-in Copyright 2005, Jason Clark
+
+(This license is the same as Blosxom's)
+Permission is hereby granted, free of charge, to any person obtaining a copy 
+of this software and associated documentation files (the "Software"), to deal 
+in the Software without restriction, including without limitation the rights 
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell 
+copies of the Software, and to permit persons to whom the Software is furnished 
+to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all 
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS 
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR 
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER 
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION 
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

@@ -1,0 +1,37 @@
+package skipn;			# -*- perl -*-
+use CGI;
+
+my $numskip = 0;
+
+$nextlink = '';
+$prevlink = '';
+
+sub start {
+    $numskip ||= param('skip');
+    my $c = new CGI;
+    if ($numskip) {
+	my $nextskip = $numskip - $blosxom::num_entries;
+	$nextskip = 0 if $nextskip < 0;
+	$c->param('skip', $nextskip);
+	$nextlink = $c->a({href=>$c->url(-full=>1, -query=>1)}, "next $blosxom::num_entries");
+    }
+    $c->param('skip', $numskip + $blosxom::num_entries);
+    $prevlink = $c->a({href=>$c->url(-full=>1, -query=>1)}, "prev $blosxom::num_entries");
+    $blosxom::num_entries += $numskip;
+    1;
+}
+
+sub story {
+    return if ($numskip == 0);
+    my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    $numskip--;
+    $$story_ref = '';
+}
+
+sub date {
+    return if ($numskip == 0);
+    my ($pkg, $currentdir, $date_ref, $mtime, @date) = @_;
+    $$date_ref = '';
+}
+
+1;

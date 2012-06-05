@@ -1,0 +1,57 @@
+# Blosxom Plugin: FixCategory
+# Author: Randall Hand
+# Version: 1
+# http://www.yeraze.com
+#
+
+package fixcategory;
+
+#  Fill these in 
+# $User{'First Category Name'} = 'url to replace it with'
+$User{'RandallHand'} = '~rhand/cgi-bin/blog.cgi';
+$User{'JohnDoe'}     = '~jdoe/cgi-bin/blosxom.cgi';
+
+#
+#  So now in your templates..
+#
+#    when $path = RandallHand/WebWork/Latest
+#
+#    You now have
+#      $category = WebWork/Latest
+#      $user = "Randall Hand"
+#      $url = "~rhand/cgi-bin/blog.cgi/WebWork/Latest"
+#
+
+$category;
+$user;
+$url;
+
+sub start {
+    1;
+}
+
+sub story {
+    my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+    $user = "";
+    $category = "";
+    $url = "";
+    foreach (keys %User) {
+        $username = $_;
+        ($junk, $name, $cat) = split /\//, $path, 3;
+        if ($username eq $name) {
+            $category = $cat;
+            $user = $username;
+            $user =~ s:([a-z])([A-Z]):\1 \2:g; 
+            $user =~ s:_: :g;
+            $user =~ s:^/::g;
+            $user = "<a href=\"$User{$username}\">$user</a>";
+            $url = "/$User{$username}";
+            if ($category ne "") {
+                $url .= "/$category";
+            }
+        }
+    }
+    1;
+}
+1;

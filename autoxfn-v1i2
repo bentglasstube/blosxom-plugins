@@ -1,0 +1,133 @@
+# Blosxom Plugin: autoxfn
+# Author: Buzz Andersen (autoxfn@scifihifi.com)
+# Version: 1.2
+# Documentation: See the bottom of this file or type: perldoc autoxfn
+
+package autoxfn;
+use strict;
+
+# --- Configurable Variables ---
+
+# This file should contain a line for each person, separated with three fields separated by tabs: name, match string, relationship data
+# example: Buzz Andersen	www.scifihifi.com	friend met
+my $xfnFile = "/path/to/xfn/xfn.txt";
+
+# If this is set to 1, match strings will be treated as regular expressions (meaning metacharacters that should be treated literally must be escaped)
+# If it is 0, each string will be treated literally (meaning all non-alphanumeric characters will be automatically escaped)
+# If you don't understand any of that just leave it set to 0
+my $regexpMatching = 0;
+
+my $onlyProcessPosts = 0;
+
+# ------------------------------
+
+my %regexpHash;
+my %relationshipHash;
+
+sub start {
+	if (! -e $xfnFile) {
+		warn "XFN file $xfnFile does not exist.";	
+		return 0;
+	}
+
+	open(HASH, "< $xfnFile");
+
+	while (<HASH>) {
+		chomp;
+		my($personName, $regexpText, $relationshipData) = split("\t", $_);
+		
+		if (!$regexpMatching) {
+			$regexpText = quotemeta($regexpText)
+		}
+
+		$regexpHash{$personName} = qr/$regexpText/i;		
+		$relationshipHash{$personName} = $relationshipData;
+	}
+	
+	close(HASH);
+
+	if (%regexpHash < 1) {
+		warn "XFN file $xfnFile seems to be empty";
+		return 0;
+	}
+
+	return 1;
+}
+
+sub story {
+	my($pkg, $path, $filename, $storyRef, $titleRef, $bodyRef) = @_;
+	
+	if ($onlyProcessPosts) {
+		processAnchors($$bodyRef);
+	}
+
+	return 1;	
+}
+
+sub last {
+	if (!$onlyProcessPosts) {
+		processAnchors($blosxom::output);
+	}
+	
+	return 1;
+}
+
+sub processAnchors {
+	my $relationshipInfo;
+	$_[0] =~ s/((<a\s*href\s*=\s*"*)(.*?)("*)(\s*?>)(.*?)(<\/a\s*>))/defined($relationshipInfo = matchSite($3)) ? $2.$3.$4.' rel="'.$relationshipInfo.'"'.$5.$6.$7 : $1/gie; 
+}
+
+sub matchSite {
+	my $siteURL = $_[0];
+		
+	my($personName, $regexp);
+	
+	# This is weird, but "keys %regexpHash" has to be evaluated every time to reset the "each" iterator
+	keys %regexpHash;
+	
+	while (($personName, $regexp) = each(%regexpHash)) {
+		if ($siteURL =~ /$regexp/) {
+			return $relationshipHash{$personName};
+		}
+	}
+	
+	return;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: autoxfn
+
+=head1 SYNOPSIS
+
+Purpose: Automatically adds XFN relationship data, where appropriate, to anchor tags in Blosxom posts.
+
+=head1 VERSION
+
+1.2
+
+=head1 AUTHOR
+
+Buzz Andersen  <autoxfn@scifihifi.com>, http://www.scifihifi.com/
+
+=head1 SEE ALSO
+
+XFN: http://gmpg.org/xfn/
+Autoxfn: http://www.scifihifi.com/weblog/software/Autoxfn.html
+
+=head1 BUGS
+
+Address bug reports and comments to autoxfn@scifihifi.com
+
+=head1 LICENSE
+
+This work is licensed under the Creative Commons Attribution License. To view a copy of this license, visit
+
+http://creativecommons.org/licenses/by/1.0/
+
+or send a letter to Creative Commons, 559 Nathan Abbott Way, Stanford,
+California 94305, USA.

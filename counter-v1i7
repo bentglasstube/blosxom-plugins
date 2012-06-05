@@ -1,0 +1,225 @@
+# -*-perl-*-
+# Blosxom Plugin: counter 
+# Author(s): Allen Hutchison (allen@hutchison.org)
+# Version: $Id: counter,v 1.7 2004/08/25 05:57:54 allen Exp $
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+package counter;
+
+# --- Configurable variables -----
+
+# Where should the counter keep it's state file.
+my $cacheFile = "$blosxom::plugin_state_dir/counter";
+
+# Should I keep a hit count?
+my $hitCount = 1;
+
+# Where should I start the counter?
+my $hitCountSeed = 0;
+
+# Should I collect basic reffer stats?
+my $collectBasicRefs = 1;
+
+my $numberOfRefs = 20;
+
+my $timeSinceLast = 86400;
+
+my @skipSites = qw(
+		   google.com
+		   );
+
+# Debug Level. 0 is no messages, 3 is max messages.
+my $debugLevel = 0;
+
+# --------------------------------
+
+use Storable;
+
+eval "require URI::Title";
+
+if ($@) {
+    $collectBasicRefs = 0;
+    debug(1, "Basic Refs disabled because URI::Title is not installed");
+}
+
+
+
+$counter;
+$basicRefs;
+
+my $data = getCache();
+
+
+sub start {
+    debug(3, "started");
+    count();
+    refs();
+    saveCache();
+    foreach (keys %ENV) {
+	debug(4, "Key: $_ $ENV{$_}");
+    }
+    return 1;
+}
+
+sub count {
+    debug(3, "count called");
+    if ($hitCount == 1) {
+	$data->{'counter'}++;
+	$counter = $data->{'counter'};
+    }
+}
+
+sub refs {
+    debug(3, "refs called");
+    if ($collectBasicRefs == 1) {
+	my $now = time();
+	my $ref = $ENV{'HTTP_REFERER'};
+	my $skip = 0;
+	
+	if ($ref eq '') {
+	    debug(3, "ref is empty");
+	    $skip = 1;
+	}
+	
+	if ($skip == 0) {
+	    foreach (@skipSites) {
+		if ($ref =~ /.*$_.*/) {
+		    debug(3, "ref is in skip list |||$_|||");
+		    $skip = 1;
+		    last;
+		}
+	    } 
+	}
+	
+	if ($skip == 0) {
+	    debug(3, "Storing basic ref");
+	    unless (defined($data->{'basicRefs'}->{$ref}->{'title'})) {
+		my $title = URI::Title::title($ref);
+		if ($title eq '') {
+		    $title = "No Title";
+		}
+		debug(2, "Title is |||$title||||");
+		$data->{'basicRefs'}->{$ref}->{'title'} = $title;
+		$data->{'basicRefs'}->{$ref}->{'last'} = $now;
+	    }
+	    $data->{'basicRefs'}->{$ref}->{'count'}++;
+	}
+	
+	my @list = sort { $data->{'basicRefs'}->{$b}->{'count'} <=> $data->{'basicRefs'}->{$a}->{'count'} } keys %{ $data->{'basicRefs'} };
+    
+	my $i = 1;
+	$basicRefs = "<ul>";
+	foreach (@list) {
+	    if (($i <= $numberOfRefs)  and 
+		(($now - $data->{'basicRefs'}->{$_}->{'last'}) < $timeSinceLast)) {
+		my $diff = $now - $data->{'basicRefs'}->{$_}->{'last'};
+		debug(3, "Now: $now Last: $data->{'basicRefs'}->{$_}->{'last'} Diff: $diff Limit: $timeSinceLast");
+		$basicRefs .= "<li>$data->{'basicRefs'}->{$_}->{'count'}: <a href=\"$_\">$data->{'basicRefs'}->{$_}->{'title'}</a></li>";
+	    } else {
+		debug(1, "Deleting Ref for $_");
+		delete $data->{'basicRefs'}->{$_};
+	    }
+	    $i++;
+	}
+	$basicRefs .= "</ul>";
+    }
+}
+
+sub getCache {
+    debug(3, "getCache Called with @_");
+    my $coderef;
+    if (-e $cacheFile) {
+	$coderef = Storable::lock_retrieve($cacheFile);
+    } else {
+	my %initcache;
+	$initcache{'counter'} = $hitCountSeed;
+	$coderef = \%initcache;
+    }
+    debug(3, "Returning from getCache");
+    return $coderef;
+}
+
+sub saveCache {
+    debug(3, "saveCache called");
+    debug(3, "Attempting to store $data in $cacheFile");
+    Storable::lock_store $data, $cacheFile;
+    debug(3, "saveCache returning");
+}
+
+sub debug {
+    my $level = shift @_;
+    my $msg = shift @_;
+    if ($level <= $debugLevel) {
+	print STDERR "Counter: $level: $msg\n";
+    }
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: counter
+
+=head1 SYNOPSIS
+
+Add a simple hit counter to your blosxom-powered site.
+
+=head1 INSTALLATION 
+
+Drop the theme plugin into your Blosxom plugins folder.
+
+=head1 CONFIGURATION
+
+The plugin comes configured for most installations. You can
+choose to have the count file in another location.
+
+=head1 VERSION
+
+$Id: counter,v 1.7 2004/08/25 05:57:54 allen Exp $
+
+=head1 AUTHOR
+
+Allen Hutchison (allen@hutchison.org), http://www.hutchison.org/allen/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: 
+  http://www.blosxom.com/
+
+Blosxom Plugin User Documentation:
+  http://www.blosxom.com/documentation/users/plugins.html
+
+Blosxom Plugin Developer Documentation: 
+  http://www.blosxom.com/documentation/developers/plugins.html
+
+=head1 BUGS
+
+Address bugs to the author at:
+
+http://www.hutchison.org/allen/source/counter/
+
+
+=head1 LICENSE
+
+Counter Blosxom Plug-in
+Copyright 2004, Allen hutchison
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

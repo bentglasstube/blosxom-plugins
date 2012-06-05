@@ -1,0 +1,132 @@
+# Blosxom Plugin: bloglinks
+# Author(s): Mike Mason <mike@mikemason.ca>
+# Version: 0.2
+# Documentation: See the bottom of this file or type: perldoc bloglinks
+
+package bloglinks;
+
+# --- Configurable variables ---
+
+# Name of file in data directory where links to other blogs resides
+# File should contain lines with the format "URL, link label, link description"
+# e.g. http://mikemason.ca, boy meets world, Mike Mason's weblog
+$bloglinks_datafile = "bloglinks.list";
+
+# CSS class for links
+$link_label_class = "linkurl";
+$link_label_prepend = "[ ";
+$link_label_append  = " ]";
+
+# CSS class for link descriptions
+$link_description_class = "linktext";
+$link_description_prepend = "";
+$link_description_append  = "";
+
+# ------------------------------
+
+$bloglinks;
+
+sub start {
+	return 1;
+}
+
+sub head {
+	local $_;
+
+	$bloglinks = buildbloglinks();
+	return 1;
+}
+
+sub buildbloglinks {
+	my $result = "";
+	open(IN, "$blosxom::datadir/$bloglinks_datafile") or die "bloglinks couldn't open links file '$blosxom::datadir/$bloglinks_datafile': $!";
+	while(my $line = <IN>) {
+		my($url, $link_label, $description) = split(',', $line);
+		chomp $url;
+		chomp $link_label;
+		chomp $description;
+		$result .= buildbloglink($url, $link_label, $description);
+	}
+	return $result;
+}
+
+sub buildbloglink {
+	my ($url, $link_label, $description) = @_;
+	return "
+<p class=\"$link_label_class\">
+	$link_label_prepend<a href=\"$url\">$link_label</a>$link_label_append
+</p>
+<p class=\"$link_description_class\">
+	$link_description_prepend$description$link_description_append
+</p>
+";
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plugin: bloglinks
+
+=head1 SYNOPSIS
+
+Provides a $bloglinks::bloglinks variable which will display a set of links
+to other blogs as listed in a bloglinks.list file in your data directory.
+
+=head1 DESCRIPTION
+
+This plugin will provide a variable you can use ($bloglinks::bloglinks) to cause
+Blosxom to read in a list of other blogs and generate a list of them. Each
+link has a URL, a label for the link, and a description for the link. The URL
+and label generate a paragraph, as does the description.
+
+=head1 CONFIGURATION
+
+There are seven user-configurable variables to customize the operation of
+bloglinks. These are as follows:
+
+=item B<$bloglinks_datafile>: Name of the file in your data directory
+from which the list of blog links will be read
+
+=item B<$link_label_class>: CSS class name for the URL and label paragraphs
+
+=item B<$link_label_prepend>: Text to be placed before each link label
+
+=item B<$link_label_append>: Text to be placed after each link label
+
+=item B<$link_description_class>: CSS class name for the description paragraphs
+
+=item B<$link_description_prepend>: Text to be placed before each link description
+
+=item B<$link_description_append>: Text to be placed after each link description
+
+=head1 VERSION
+
+0.2
+
+=head1 AUTHOR
+
+Mike Mason <mike@mikemason.ca>, http://mikemason.ca
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+Blosxom Plugin Docs: http://www.blosxom.com/documentation/developers/
+
+=head1 BUGS
+
+There are certain to be some.  If you find any, let the author know.
+
+=head1 LICENSE 
+
+Copyright 2003, Michael Mason
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. 
+

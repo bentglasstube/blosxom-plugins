@@ -1,0 +1,127 @@
+#!/usr/bin/perl
+
+##
+## Flickrloxom will use Flickr rss 2.0 feeds to make
+## routine posts of your images to your Blosxom-powered website.
+##
+## Best if cron-ed to run hourly.
+##
+## By:  Brett O'Connor (oconnorb AT dogheadbone.com)
+##
+## Last Revision Date: 2004-09-29
+##
+## INSTALLATION:
+## 1. Configure the variables below.
+## 2. Place this on your webserver.  Make sure it is executable
+##    and that it can write to its working directory as it WILL output
+##    a file each time it runs (which keeps track of the last time it
+##    has been executed).
+## 3. Make a crontab entry that will execute this script every once in
+##    a while (hourly is good).
+## 4. IMPORTANT: Make sure the time zone you said your are in on Flickr
+##    matches that of your webserver!
+##
+
+require XML::RSS;
+use POSIX;
+
+#file name and location
+$timestamp = time();
+$outfile = "/path/to/blosxom/entries/flickr".$timestamp.".txt";
+
+#ouput header (aka the title of your entry)
+$header = "flickrloxom\n";
+
+#ocation of your rss feed on flickr.com
+#You can find this on your main photo page on flickr.
+#Look for where it says "RSS 2.0" and copy that link location.
+#NOTE! If there is an @ symbol in the link then escape it with a slash, e.g. \@
+$flickrPhotoRssFeed = "http://www.flickr.com/services/feeds/photos_public.gne?id=00000000\@N00&format=rss_200";
+
+#location of the curl program on your webserver
+$CURL_COMMAND = "curl";
+
+##
+## You don't need to configure anything past this point.
+##
+
+#output header
+$output = $header;
+
+#download the feed
+$curl = `$CURL_COMMAND -s '$flickrPhotoRssFeed' -o "flickr.rdf"`;
+
+#get the feed
+my $rss = new XML::RSS;
+$rss->parsefile("flickr.rdf");
+
+#get the last time this script was run
+open (GETTIME, "<./flickrloxom.lastrun") or print "Unable to read from flickrloxom.lastrun.  Will create new file.\n";
+$lastran = <GETTIME>;
+close (GETTIME);
+
+#if no last ran make it today
+if ($lastran eq '') {
+    $lastran = $timestamp;
+}
+
+#give or take a few minutes for those webservers
+#whose clocks are in sync with flickr's
+$lastran = $lastran - 1000;
+
+$numNew = 0;
+
+#add the item if it is new
+foreach my $item (@{$rss->{'items'}}) {
+    #determine if the item is newer than last run
+    $pubDateTimestamp = time822_to_timestamp($item->{'pubDate'});
+    $timeDifference = $pubDateTimestamp - $lastran;
+    #print localtime($pubDateTimestamp)." vs ".localtime($lastran)."\n";
+    if ( $timeDifference > 0) {
+        $numNew++;
+        #if new add to output
+        $output .= "$item->{'title'}<br />";
+        $output .= "$item->{'description'}<br />";
+    }
+}
+
+#print the output to the file
+if ($numNew > 0) {
+    #print $output;
+    open(OUTPUT, ">$outfile");
+    print OUTPUT "$output";
+    close(OUTPUT);
+}
+
+#remove the downloaded feed
+$delete = `rm flickr.rdf`;
+
+#write to flickerloxom.lastrun the time last run
+open (WRITETIME, ">./flickrloxom.lastrun") or print "Unable to write to flickrloxom.lastrun.\n";
+print WRITETIME $timestamp;
+close (WRITETIME);
+
+sub time822_to_timestamp {
+    #this function adopted from time822_to_time() found at:
+    #http://cvs.livejournal.org/browse.cgi/livejournal/cgi-bin/parsefeed.pl?rev=1.7
+    my $t822 = shift;
+    # remove day name if present
+    $t822 =~ s/^\s*\w+\s*,//;
+    # remove whitespace
+    $t822 =~ s/^\s*//;
+    # break it up
+    if ($t822 =~ m!(\d?\d)\s+(\w+)\s+(\d\d\d\d)\s+(\d?\d):(\d\d)!) {
+        my ($day, $mon, $year, $hour, $min) = ($1,$2,$3,$4,$5);
+        $year = $year - 1900;
+        $mon = {'Jan'=>'1', 'Feb'=>'2', 'Mar'=>'3', 'Apr'=>'4',
+                'May'=>'5', 'Jun'=>'6', 'Jul'=>'7', 'Aug'=>'8',
+                'Sep'=>'9', 'Oct'=>'10', 'Nov'=>'11', 'Dec'=>'12'}->{$mon};
+        return undef unless $mon;
+        $mon = $mon - 1; #bring down month by one for mktime
+        return mktime(0,$min,$hour,$day,$mon,$year,0,0,0);
+    } else {
+        return undef;
+    }
+}
+
+#EOF

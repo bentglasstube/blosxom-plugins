@@ -1,0 +1,248 @@
+package interpolate_tt;
+use strict;
+
+=head1 NAME
+
+interpolate_tt - Blosxom plugin for interpolating with text_template
+
+=head1 VERSION
+
+This describes version B<0.01> of interpolate_tt.
+
+=cut
+
+our $VERSION = '0.01';
+
+=head1 DESCRIPTION
+
+Overrides Blosxom's simple interpolate() subroutine, by using
+the Text::Template module.
+This is I<not> compatible with core Blosxom style interpolation.
+
+In order to be able to call actions from other plugins which have
+been designed with B<interpolate_fancy> in mind, this plugin
+includes a function L</call_action>, which will call the given
+action correctly.  All the templateble things are expected to be pure perl,
+set off by delimiters, as in Text::Template.
+
+=head1 INSTALLATION
+
+=head2 Installation
+
+Drop the interpolate_tt plug-in into your Blosxom plugins folder.
+If you have some other "interpolate" plugin, it's best to remove
+it, as there can be only one.
+
+=head2 Configuration
+
+The following configuration variables can be set by editing the
+plugin file.
+
+=over
+
+=item B<recurse_into_story>
+
+Do you want me to recursively interpolate into the story $title
+and $body?  Consider carefully before turning this on, since if
+anyone other than you has the ability to post stories, there is
+a chance of foolishness or malice, exposing variables and
+calling actions/subroutines you might not want called.
+(0 = No, 1 = Yes)
+
+=cut
+
+my $recurse_into_story = 1;
+
+=item B<left_delim> B<right_delim>
+
+The delimiters to use for Text::Template; for the sake of speed,
+it is best not to use the original '{' '}' delimiters.
+(default: left_delim='<?perl', right_delim='perl?>')
+
+=cut
+
+#our $left_delim = '<?perl';
+#our $right_delim = 'perl?>';
+our $left_delim = '[==';
+our $right_delim = '==]';
+
+=back
+
+=cut
+
+
+=head1 PLUGIN FUNCTIONS
+
+=head2 start
+
+Say I am alive.
+
+=cut
+
+sub start {
+	1;
+} # start
+
+=head2 interpolate
+
+Create the interpolate subroutine.
+
+=cut
+sub interpolate {
+  return sub {
+
+    package blosxom;
+
+    require Text::Template;
+
+    # call make a template of the $title and the $body if
+    # we were requested to "recurse_into_story"
+    if ($recurse_into_story) {
+	if ($blosxom::title) {
+	    my $ob1 = new Text::Template(
+					 TYPE=>'STRING',
+					 SOURCE => $blosxom::title,
+					 DELIMITERS => [$interpolate_tt::left_delim,
+					 $interpolate_tt::right_delim],
+					);
+	    $blosxom::title = $ob1->fill_in();
+	    undef $ob1;
+	}
+	if ($blosxom::body) {
+	    my $ob2 = new Text::Template(
+					 TYPE=>'STRING',
+					 SOURCE => $blosxom::body,
+					 DELIMITERS => [$interpolate_tt::left_delim,
+					 $interpolate_tt::right_delim],
+					);
+	    $blosxom::body = $ob2->fill_in();
+	    undef $ob2;
+	}
+    }
+
+    my $template = shift;
+
+    # do it!
+    my $obj = new Text::Template(
+	TYPE=>'STRING',
+	SOURCE => $template,
+	DELIMITERS => [$interpolate_tt::left_delim,
+	    $interpolate_tt::right_delim],
+    );
+
+    $template = $obj->fill_in();
+
+    return $template;
+
+  };  
+}
+
+=head2 call_action
+
+Call this from within your embedded perl code, in order to call
+another plugin's action.
+
+    interpolate_tt::call_action(
+	plugin=>I<plugin>,
+	action=>I<action>,
+	attributes=>{
+	    I<arg1>=>I<value1>,
+	    ...
+	    },
+	content=>I<content>
+    );
+
+Arguments:
+
+=over
+
+=item plugin
+
+The name of the plugin which supplies the action you want to call.
+
+=item action
+
+The name of the action you want to call.
+
+=item attributes
+
+The attributes which you would have put in the <@ tag if you were
+using B<interpolate_fancy>.  This is a reference to a hash whose
+keys are the attribute names, and whose values are the attribute
+values.
+
+=item content
+
+If this action does things to the "content" of the <@ tag, then
+that content needs to go here.
+Note that no recursive interpolation is done on this content
+(apart from the usual double-quote interpolation of perl).
+
+=back
+
+For example:
+
+<?perl
+$OUT = interpolate_tt::call_action(
+    plugin=>'headlines',
+    action=>'get',
+    attributes=>{
+	sort_method=>'by_date',
+	output=>"yes"
+	},
+    );
+perl?>
+=cut
+sub call_action {
+    my %args = (
+	plugin=>'',
+	action=>'',
+	attributes=>{},
+	content=>'',
+	@_
+    );
+
+  my $attributes = $args{attributes};
+  my $plugin = $args{plugin};
+  my $action = $args{action};
+  my $content = $args{content};
+  my $result = '';
+  
+  no strict 'refs';
+  $blosxom::plugins{$plugin} 
+    and $plugin->can($action) 
+      and $result = $plugin->$action($attributes, $content);
+
+  return $attributes->{'output'} =~ /yes/i ? $result : undef;
+}
+
+=head1 REQUIRES
+
+Perl 5.6.0
+
+=head1 SEE ALSO
+
+interpolate_fancy
+
+=head1 BUGS
+
+Please report any bugs or feature requests to the author.
+
+=head1 AUTHOR
+
+    Kathryn Andersen (RUBYKAT)
+    perlkat AT katspace dot com
+    http://www.katspace.com
+
+=head1 COPYRIGHT AND LICENCE
+
+Copyright (c) 2004 by Kathryn Andersen
+
+This program is free software; you can redistribute it and/or modify it
+under the same terms as Perl itself.
+
+=cut
+# vim: ft=perl ts=8 sw=4 sts=4 ai cinkeys="0{,0},0),!,o,O,e"
+
+1; # End of interpolate_tt
+__END__

@@ -1,0 +1,572 @@
+#!/usr/local/bin/perl 
+#
+# This metaweblog API for blosxom is based on Blogger-2-LiveJournal.
+# Modifications are made by Mattias Eriksson <snaggen@acc.umu.se>
+# http://www.acc.umu.se/~snaggen/
+#
+# Blogger-2-LiveJournal, installed as a CGI, this processes XML-RPC requests
+#	conforming to the Blogger API, and translates them in to the equivalent
+#	LiveJournal request, returning the result as a normal Blogger API result type
+#
+# Released under the GNU GPL.  (http://www.gnu.org/copyleft/gpl.html)
+# Simon Kittle, simon@kittle.co.uk
+# http://www.tswoam.co.uk
+
+#### Include Req'd modules
+use strict;
+use Frontier::RPC2;
+use URI::Escape;
+
+# Blog details
+# This is the dir where the blogtextfiles are stored
+my $blogdir = "/home/user/blogdir";
+
+# This it the full path to your blog
+my $blogurl = "http://www.example.com/~user/blog.cgi";
+
+# This is the name of the blog
+my $blogname = "The Blog of User";
+
+#### Config variables
+my $VERSION     = "0.1.0";                             # are
+my $method_details = &get_introspection_data();
+
+#### check the request is of the correct type, that we get XML, and a content length
+my $length = &check_request();
+
+
+#### Read in the body
+my $body  = "";
+my $count = read STDIN, $body, $length;
+&http_error(400, "Bad Request") unless $count == $length; 
+&http_error(400, "Bad Request (request empty)") if $length == 0;
+
+
+#### Parse the XML in to a data structure 
+my $methods = {'metaWeblog.newPost'        => \&metaWeblog_newPost,
+	       'metaWeblog.editPost'       => \&metaWeblog_editPost,
+	       'metaWeblog.getPost'        => \&metaWeblog_getPost,
+	       'metaWeblog.getRecentPosts' => \&metaWeblog_getRecentPosts,
+	       'blogger.getUsersBlogs'  => \&blogger_getUsersBlogs,
+	       'blogger.deletePost'     => \&blogger_deletePost,
+
+	       # "standard" introspection methods (http://xmlrpc.usefulinc.com/doc/reserved.html)
+	       'system.listMethods'     => \&system_listMethods,
+	       'system.methodSignature' => \&system_methodSignature,
+	       'system.methodHelp'      => \&system_methodHelp
+	   };
+
+
+
+#### Serve our request.
+my $coder = Frontier::RPC2->new;
+print_xml_response($coder->serve($body, $methods));
+
+
+#### we don't actually get here.  print_xml_response() exit's
+exit;
+
+
+######## -------------------------
+######## Sub procedures under here
+########
+
+sub metaWeblog_newPost
+{
+    my ($blogid, $username, $password, $blog, $publish) = @_;
+    my $methodName = "metaWeblog.newPost";
+    die "Expecting " . $#{$method_details->{$methodName}->[0]} . " arguments for $methodName" unless ($#{$method_details->{$methodName}->[0]} == ($#_ + 1));
+	
+	my $title;
+	my $content;
+	my $date;
+	
+	$title = $$blog{'title'};
+	$content = $$blog{'description'};
+	$date = $$blog{'dateCreated'};	
+	
+	
+	my $filetitle = $title;
+	$filetitle =~ s/ /_/g;
+	if ($filetitle eq "") {
+		$filetitle = "no_title";
+	}
+	
+	my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday) = gmtime(time);
+	$year += 1900; #convert year to 4 digits.
+	$mon = sprintf("%02d",$mon);
+	$mday = sprintf("%02d",$mday);
+	
+	$hour = sprintf("%02d",$hour);
+	$min = sprintf("%02d",$min);
+	$sec = sprintf("%02d",$sec);
+
+	my $postname = $year."-".$mon."-".$mday."_".$hour.":".$min.":".$sec."_".$filetitle;
+	$postname =~ s/[^0-9a-zA-Z_\-:]/x/g;
+
+	open(F,">$blogdir/$postname".".txt") or die;
+	print F "$title\n\n$content";
+	close(F);
+   
+    #FIXME: If $date, touch F;
+	$postname = xml_enc($postname);
+    print_xml_response(get_xml_resp_ok("<string>$postname</string>"));
+
+    return("$postname"); # Doesn't work :(  retursn it in an <i4></i4>
+}
+
+
+sub metaWeblog_getPost
+{
+    my ($postid, $username, $password) = @_;
+    my $methodName = "metaWeblog.getPost";
+    die "Expecting " . $#{$method_details->{$methodName}->[0]} . " arguments for $methodName" unless ($#{$method_details->{$methodName}->[0]} == ($#_ + 1));
+
+  	
+	my $blog_item = "";
+		
+	$postid =~ s/[^0-9a-zA-Z_\-:]/x/g;
+	if (open(B,"$blogdir/".$postid.".txt")) {
+	my $title = <B>; #Read title;
+	chomp($title);
+			<B>; #Read extra space;
+			my $postcontent = "";
+
+			while (<B>) {
+				$postcontent .= $_;	
+			}
+			my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,
+					$atime,$mtime,$ctime,$blksize,$blocks)
+				= stat(B);
+			my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday) = gmtime($mtime);
+			$year += 1900; #convert year to 4 digits.
+			$mon = sprintf("%02d",$mon);
+			$mday = sprintf("%02d",$mday);
+
+			$hour = sprintf("%02d",$hour);
+			$min = sprintf("%02d",$min);
+			$sec = sprintf("%02d",$sec);
+
+			my $formateddate = $year.$mon.$mday."T".$hour.$min.$sec;
+
+			my $link=$blogurl."/".$year."/".$mon."/".$mday."#".$postid;
+			
+			$blog_item .= &blogger_get_recent_event_xml("unknown",$formateddate,$title, $postcontent,$postid,$link,0);
+			close B;
+		}
+
+   print_xml_response(get_xml_resp_ok($blog_item));
+    return("blah");
+}
+
+
+sub metaWeblog_getRecentPosts
+{
+    my ($blogid, $username, $password, $numberOfPosts) = @_;
+    my $methodName = "metaWeblog.getRecentPosts";
+    die "Expecting " . $#{$method_details->{$methodName}->[0]} . " arguments for $methodName" unless ($#{$method_details->{$methodName}->[0]} == ($#_ + 1));
+
+    my $blogs_recent = "<array><data>\n";
+	
+	opendir(DIR,$blogdir) or die;
+	my @files = readdir(DIR);
+	my @txtfiles;
+
+	closedir DIR;
+	
+	my $i = 0;
+	my $len = scalar(@files);
+	for ($i = 0; $i < $len; $i++) {
+		if ($files[$i]=~/\.txt$/) {
+			my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,
+					$atime,$mtime,$ctime,$blksize,$blocks)
+				= stat($blogdir."/".$files[$i]);
+			$files[$i]=~s/\.txt$//g;
+			push @txtfiles, $mtime."_".$files[$i]; 	
+		}
+	}
+	my @sortedtxtfiles = sort {$b cmp $a} @txtfiles;
+	my @selection = splice (@sortedtxtfiles,0,$numberOfPosts);
+	my $title; 
+	
+	my $len = scalar(@selection);
+	for ($i = 0; $i < $len; $i++) {
+		$selection[$i] =~ s/^(.*?)_//;
+		my $date = $1;
+		if (open(B,"$blogdir/".$selection[$i].".txt")) {
+			$title = <B>; #Read title;
+			chomp($title);
+			<B>; #Read extra space;
+			my $postcontent = "";
+			
+			while (<B>) {
+				#chomp;
+				#s/<//g;
+				#s/>//g;
+				$postcontent .= $_;	
+			}
+			my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday) = gmtime($date);
+			$year += 1900; #convert year to 4 digits.
+			$mon = sprintf("%02d",$mon);
+			$mday = sprintf("%02d",$mday);
+
+			$hour = sprintf("%02d",$hour);
+			$min = sprintf("%02d",$min);
+			$sec = sprintf("%02d",$sec);
+			
+			my $formateddate = $year.$mon.$mday."T".$hour.$min.$sec;
+			
+			my $linkpostid = $selection[$i];
+			
+			my $link=$blogurl."/".$year."/".$mon."/".$mday."#".$linkpostid;
+			$blogs_recent .= &blogger_get_recent_event_xml("unknown",$formateddate,$title, $postcontent,$selection[$i],$link,1);
+			close B;
+		}
+	}
+    $blogs_recent .= "\n</data></array>\n";
+    
+	print_xml_response(get_xml_resp_ok($blogs_recent));
+    return("blah");
+}
+
+
+# Not really blogger but metaweblog... doesn't matter, it is just a name
+sub blogger_get_recent_event_xml($$$$)
+{
+    my ($user, $date, $title, $content, $postid, $link, $valueTag) = @_;
+    my $blog_event_xml = "";
+	$user = xml_enc($user);
+	$title = xml_enc($title);
+	$content = xml_enc($content);
+	$postid = xml_enc($postid);
+	$link = xml_enc($link);
+
+    $blog_event_xml .= "<value>\n" if ($valueTag);
+    $blog_event_xml .= <<"EOXML2";
+<struct>
+	<member>
+		<name>userid</name>
+		<value><string>$user</string></value>
+	</member>
+	<member>
+		<name>title</name>
+		<value><string>$title</string></value>
+	</member>
+	<member>
+		<name>description</name>
+		<value><string>$content</string></value>
+	</member>
+	<member>
+		<name>dateCreated</name>
+		<value><dateTime.iso8601>$date</dateTime.iso8601></value>
+	</member>
+	<member>
+		<name>postid</name>
+		<value><string>$postid</string></value>
+	</member>
+	<member>
+		<name>link</name>
+		<value><string>$link</string></value>
+	</member>
+	<member>
+		<name>permaLink</name>
+		<value><string>$link</string></value>
+	</member>
+</struct>
+EOXML2
+    $blog_event_xml .= "</value>\n" if ($valueTag);
+    return($blog_event_xml);
+}
+
+
+# Blogger api to retrieve the blogs, metaWeblog doesn't implement this    
+sub blogger_getUsersBlogs
+{
+    my ($appkey, $username, $password) = @_;
+    my $methodName = "blogger.getUsersBlogs";
+    die "Expecting " . $#{$method_details->{$methodName}->[0]} . " arguments for $methodName" unless ($#{$method_details->{$methodName}->[0]} == ($#_ + 1));
+
+    my $blog_details = "<array><data>";
+
+	#Second argument is the blogid, but since this is a single user blog 
+	#it is left empty
+    $blog_details .= blogger_get_blog_details_xml($blogurl, "", $blogname);
+
+    $blog_details .= "</data></array>";
+    print_xml_response(get_xml_resp_ok($blog_details));
+    return("blah");
+}
+
+
+sub blogger_get_blog_details_xml($$$)
+{
+    my ($url, $blogid, $blogName) = @_;
+	$url = xml_enc($url);
+	$blogid = xml_enc($blogid);
+	$blogName = xml_enc($blogName);
+
+    my $blog_details_xml = <<"EOXML";
+<value>
+	<struct>
+		<member>
+			<name>url</name>
+			<value><string>$url</string></value>
+		</member>
+		<member>
+			<name>blogid</name>
+			<value><string>$blogid</string></value>
+		</member>
+		<member>
+			<name>blogName</name>
+			<value><string>$blogName</string></value>
+		</member>
+	</struct>
+</value>
+EOXML
+    return($blog_details_xml);
+}
+
+
+sub metaWeblog_editPost 
+{
+    my ($postid, $username, $password, $blog, $publish) = @_;
+    my $methodName = "metaWeblog.editPost";
+    die "Expecting " . $#{$method_details->{$methodName}->[0]} . " arguments for $methodName" unless ($#{$method_details->{$methodName}->[0]} == ($#_ + 1));
+		
+	my $title = $$blog{'title'};
+	my $content = $$blog{'description'};
+	my $date = $$blog{'dateCreated'};
+	
+	
+	$postid=~ s/[^0-9a-zA-Z_\-:]/x/g;
+	if (-e "$blogdir/$postid".".txt") {
+		my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,
+			$atime,$mtime,$ctime,$blksize,$blocks) = stat($blogdir."/".$postid.".txt");
+		rename $blogdir."/".$postid.".txt", $blogdir."/".$postid.".bak";
+		
+	
+
+		if (open(F,">$blogdir/$postid".".txt")) {
+			print F "$title\n\n$content";
+			close(F);
+#FIXME if $date set date else use mtime;
+			utime $atime, $mtime, ("$blogdir/$postid".".txt");
+			unlink "$blogdir/$postid".".bak";
+		} else {
+			rename $blogdir."/".$postid.".bak", $blogdir."/".$postid.".txt";
+			print_xml_response(get_xml_resp_ok("<boolean>0</boolean>"));
+			return('false'); 
+		}
+	} else {
+		print_xml_response(get_xml_resp_ok("<boolean>0</boolean>"));
+		return('false'); 
+	}
+
+	print_xml_response(get_xml_resp_ok("<boolean>1</boolean>"));
+    return('true'); # Doesn't work :(  retursn it in an <string></string>
+}
+
+
+#Blogger function to delete post, metaWeblog don't implement this
+sub blogger_deletePost
+{
+    my ($appkey, $postid, $username, $password, $publish) = @_;
+    my $methodName = "blogger.deletePost";
+    die "Expecting " . $#{$method_details->{$methodName}->[0]} . " arguments for $methodName" unless ($#{$method_details->{$methodName}->[0]} == ($#_ + 1));
+	$postid=~ s/[^0-9a-zA-Z_\-:]/x/g;
+	
+	unlink "$blogdir/$postid".".txt";
+
+    print_xml_response(get_xml_resp_ok("<boolean>1</boolean>"));
+    return('true'); # Doesn't work :(  retursn it in an <string></string>
+}
+
+sub system_listMethods()
+{
+    my $method_list    = "<array><data>\n";
+    my @blah = ();
+
+    foreach (keys %$method_details) {
+	$method_list .= "<value>$_</value>\n";
+	push @blah, $_;
+    }
+    $method_list .= "</data></array>";
+
+    return(\@blah);
+}
+
+sub system_methodSignature($)
+{
+    my $method_name    = shift;
+    my $method_found   = 0;
+    my @methods        = ();
+
+    foreach (keys %$method_details) {
+	if ($_ eq $method_name) {
+	    my @parameters = $method_details->{$_}[0];
+	    push @methods, @parameters;
+	    $method_found = 1;
+	    last;  # in theory there could be multiple signatures, but we know there is no
+		   # overloading int he Blogger API (at least not yet)
+	}
+    }
+
+    die "Can't introspect: method unknown" if (!$method_found);
+    return (\@methods);
+}
+
+sub system_methodHelp($)
+{
+    my $method_name    = shift;
+    my $method_found   = 0;
+    my $method_str;
+
+    foreach (keys %$method_details) {
+	if ($_ eq $method_name) {
+	    $method_str = $method_details->{$_}[1];
+	    $method_found = 1;
+	    last;
+	}
+    }
+
+    die "Can't introspect: method unknown" if (!$method_found);
+    return ($method_str);
+}
+
+
+sub get_introspection_data
+{
+    #### This is all the data for the introspection methods.
+    ####
+    ####
+    my $method_details = {'metaWeblog.newPost' =>
+		          [
+			   ["string","string", "string", "string", "string", "boolean" ],
+			   "Accepts the following paramters: blogid (name of journal), username, password, content, publish (not used), and makes a post to the LiveJournal named in blogid.  On success returns a string containing the unique ID of the posted item."
+			   ],
+		      #### blogger.editPost
+                      'metaWeblog.editPost' =>
+			  [
+			   ["boolean","string", "string", "string", "string", "boolean" ],
+			   "Accepts the following paramters: appkey (client app string), postid, username, password, content, publish (not used), and then edits the post specified with the postid parameter.  On success returns 1 (as a boolean)."
+			   ],
+		      #### blogger.deletePost
+                      'blogger.deletePost' =>
+			  [
+			   ["boolean","string","string", "string", "string",  "boolean" ],
+			   "Accepts the following paramters: appkey (client app string), postid, username, password, publish (not used), will delete the post specified with the postid parameter.  On success returns 1 (as a boolean)."
+			   ],
+		      #### blogger.getUsersBlogs
+                      'blogger.getUsersBlogs' =>
+			  [
+			   ["array", "string", "string", "string" ],
+			   "Accepts the following paramters: appkey (client app string), username, password.  A list of the specified users journals are returned in an array.  Each journal is described in the array by a &lt;struct&gt; containing three member items: url, blodid, blogName.)."
+			   ],
+		      #### blogger.getRecentPosts
+                      'metaWeblog.getRecentPosts' =>
+			  [
+			   ["array", "string", "string", "string", "int" ],
+			   "Accepts the following paramters: blogid, username, password, numberOfPosts.  An array of structs - each containing one recent post - is returned.  The structs contain four elements: userid, dateCreated, postid, content."
+			   ],
+		      #### blogger.getPost
+                      'metaWeblog.getPost' =>
+			  [
+			   ["array", "string", "string", "string" ],
+			   "Accepts the following paramters: appkey (client app string), postid, username, password.  Returns a struct (like the ones returned with getRecentPosts).  The struct contain four elements: userid, dateCreated, postid, content."
+			   ]
+					     };
+
+    return($method_details);
+}
+
+
+#### print_xml_response :: prints the HTTP headers, then the XML response.
+##
+sub print_xml_response($)
+{
+    my $response = shift;
+    my $len = length($response);
+
+    print "Connection: close\n";
+    print "Content-Length: $len\n";
+    print "Content-Type: text/xml\n";
+    print "Date: " . scalar(localtime) . "\n";
+    print "Server: tswoam.co.uk\n";
+    print "\n";
+
+    print $response . "\n";
+
+    exit 0;
+}
+
+
+#### get_xml_resp_ok :: Using the supplied error code + fualt string message, 
+##	 ** NOTE ** We probably shouldn't need this, as the Frontier::RPC2 module
+##		    should do the XML generation, but I can't figure a way to force
+##		    Frontier::RPC2 to generate a <string> response for the ITEMID 
+##		    which is a number
+sub get_xml_resp_ok($ )
+{
+    my $response_str = shift;
+    my $xml_resp_text = "";
+    
+    $xml_resp_text = "<?xml version=\"1.0\"?>
+<methodResponse>
+	<params>
+		<param>
+			<value>$response_str</value>
+			</param>
+		</params>
+	</methodResponse>";
+
+    return($xml_resp_text);
+}
+
+
+
+#### check_request :: check we get a POST request, with some text/xml content and a
+##		      Content-Length: header.
+sub check_request() 
+{
+    # Get our CGI request information.
+    my $method = $ENV{'REQUEST_METHOD'} || "";
+    my $type   = $ENV{'CONTENT_TYPE'}   || "";
+    my $length = $ENV{'CONTENT_LENGTH'} || 0;
+
+    # Perform some sanity checks.
+    &http_error(405, "Method Not Allowed") unless $method eq "POST";
+    &http_error(400, "Bad Request")        unless $type eq "text/xml";
+    &http_error(411, "Length Required")    unless $length > 0;
+
+    return($length);
+}
+
+
+#### http_error :: send an HTTP header indicting an error.  (originally taken from the 
+##		   XML-RPC How-To)
+sub http_error ($$) 
+{
+    my ($code, $message) = @_;
+
+    print "Status: $code $message\n";
+    print "Content-Type: text/html\n\n";
+    
+    print "<html><head><title>$code $message</title></head>\n";
+    print "<body bgcolor='#ffffff'>\n";
+    print "<h1>$code $message</h1>\n";
+    print "<br />Unexpected error while processing XML-RPC request.<br /><br />\n";
+    print "<br />This script handle's XML-RPC requests.  <a href='http://www.xmlrpc.com'>Click here</a> for details.<br /><br />\n";
+    print "</body></html>\n";
+
+    exit 0;
+}
+
+sub xml_enc ($$)
+{
+	my ($string) = @_;
+
+	$string =~ s/&/&amp;/g;
+	$string =~ s/</&lt;/g;
+	return($string);
+}
+

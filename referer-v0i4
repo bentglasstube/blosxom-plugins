@@ -1,0 +1,183 @@
+# Blosxom Plugin: referer
+# Author(s): James Vasile (james@brutalhugs.com)
+# Version: 0.4
+# See the perldoc info at the bottom for more details
+
+package referer;
+
+# --- Configurable variables -----
+
+# How many days old do referrals have to get before they age off the screen?
+my $Age_limit = 2;
+
+# How many times does a URL need to show before we make it visible?
+my $Min_hits = 1;
+
+# Maximum referrals to display on the screen?  0 for no limit
+my $Max_referrers = 0;
+
+# Print number of referrals from each URL?
+my $Print_num_hits = 1;
+
+# HTML to prepend to $referer::recent
+my $Head="		<div id=\"menurefer\" class=\"menus\"><strong>Recent Referrers</strong><br />";
+
+# HTML to append to $referer::recent
+my $Foot="		</div>";
+
+# Rejects - these are domains that you want to exclude from your display.  For example, search engine spiders and the like.
+my @Rejects = qw !
+google.com
+altavista.com
+excite.com
+!;
+
+# Real_names - these are replacement values for the domain names that show up in your referral list.
+# If you specify replacement values here, Blosxom will print the names of the blogs instead of their domain names.
+my %Real_names = (
+'brutalhugs.com' => 'Brutal Hugs',
+'mollyzero.org' => 'Molly Blog'
+);
+
+#----------------------------------------------------
+
+$recent; #access as $referer::recent
+
+
+use Time::Local;
+my $DataFile = $blosxom::plugin_state_dir.'/'."referer.dat";
+
+###########################################################
+sub start {
+	my $current_time = timelocal(localtime);
+	my (undef, undef, $local_url) = split /\//, $blosxom::url.'/', 4;
+	my (undef, undef, $new_url) = split /\//, $ENV{'HTTP_REFERER'}.'/', 4;
+	
+	#open data file
+	local *FH;
+   if( -e "$DataFile") {
+		open FH, "+<$DataFile" or ($recent = "Couldn't read refer<br />" and return 0);
+	} else {
+		open FH, "+>$DataFile" or ($recent = "Couldn't create refer<br />" and return 0);
+	}
+	flock(FH, 2);      
+
+	#get refers
+	my %refer;
+	my ($discarded, $kept);
+	while (<FH>) {
+		chomp;
+		my ($r, $mtime) = split /\t/;
+		if ($current_time - $mtime < $Age_limit * 60 * 60 * 24) {
+			my (undef, undef, $domain) = split /\//, $r.'/', 4;
+			$domain =~ s/^www\.//;
+  			$refer{$domain}{$r} .= "\t$mtime" ;
+  			$kept++;
+		} else {
+			$discarded++;
+		}
+	}
+	
+	#trim data file if needed
+	if ($discarded > $kept*5) {
+		if (truncate (FH, 0) and seek (FH, 0, 0)) {
+			foreach my $domain (keys %refer) {
+				foreach my $r (keys %{$refer{$domain}}) {
+					my (undef, @mtimes) = split /\t/, $refer{$domain}{$r};
+					foreach (@mtimes) {print FH "$r\t$_\n" if ($current_time - $_ < $Age_limit * 60 * 60 * 24);}
+				}
+			}
+		} else {
+			$recent = "Couldn't truncate and rewind refer data<br />";
+			close FH;
+			return 0;
+		}
+	}
+
+	#Handle current refer
+	if ($new_url && $new_url ne $local_url) {
+		my $domain = $new_url;
+		$domain =~ s/^www\.//;
+		unless (grep /^$domain$/, @Rejects) {
+			$refer{$domain}{$ENV{'HTTP_REFERER'}} .= "\t$current_time";
+			print FH $ENV{'HTTP_REFERER'}."\t$current_time\n";
+		}
+	}	
+	close FH;
+	
+	#weed out those with too few hits
+	my %referers;
+	foreach my $domain (keys %refer) {
+		my $most_hits=-1;
+		my $total_hits=0;
+		my $hottest_url="";
+		foreach my $r (keys %{$refer{$domain}}) {
+			my (undef, @mtimes) = split /\t/, $refer{$domain}{$r};
+			if ($#mtimes >= $most_hits) {
+				$most_hits=$#mtimes;
+				$hottest_url = $r;
+			}
+			$total_hits += $#mtimes+1;
+		}
+		$referers{$domain} = [$total_hits, $hottest_url];
+		delete $referers{$domain} unless $total_hits >= $Min_hits;
+	}
+
+	#sort and output
+	$recent = $Head;
+	my @sorted = map {[$_->[0], $_->[1], $_->[2]]} sort { $b->[1] <=> $a->[1] } map {[$_, $referers{$_}->[0], $referers{$_}->[1]]} keys %referers;
+	$#sorted = $Max_referrers-1 if $Max_referrers;
+	foreach (@sorted) {$recent .= "<a href=\"$_->[2]\">".($Real_names{$_->[0]} ? $Real_names{$_->[0]} : $_->[0])."</a>".($Print_num_hits ? " ($_->[1])" : '')."<br />\n";}
+	$recent .= $Foot;
+
+	0;
+}
+
+
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: referrer
+
+=head1 SYNOPSIS
+
+This plugin allows you to automatically link back to people that link to your blog.  It populates $referer::recent with the most recent referrers to your blog.  It orders the list by number of hits referred and is smart enough to combines hits from different referrers but from the same domain.  It won't detect hits from the domain on which your blog is hosted so that users don't see your obsessive reloading of your page.  It also has the ability to let you specify pretty names for the blogs that connect to you so users see links to Bob's Blog instead of bob_blog.com or whatnot.
+
+=head1 AUTHOR
+
+James Vasile <james@brutalhugs.com>
+
+=head1 SEE ALSO
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Copyright 2003, James Vasile
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

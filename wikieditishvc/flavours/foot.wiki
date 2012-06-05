@@ -1,0 +1,26 @@
+    <div class="wikieditish">
+      <!-- Any response goes here -->
+      <p id="response">$wikieditish::response</p>
+      <!-- wikieditish form: -->
+      <form method="post" action="$blosxom::url/$blosxom::path_info#response">
+        <label for="title-field">Title:</label>
+	<br>
+	<input name="title" id="title-field" size="50" value="$wikieditish::title">
+	<br><br>
+	<label for="body-field">Content:</label>
+	<br>
+	<textarea name="body" id="body-field" rows="25" cols="75">$wikieditish::body</textarea>
+	<br><br>
+	<label for="pass-field">Password:</label>
+	<br>
+	<input name="password" id="pass-field" size="20" type="password">
+	<br><br>
+	<label for="revert-button">Disregard changes and revert to the previous saved version:</label>
+	<input name="revert" type="checkbox" id="revert-button" value="yes">
+	<br><br>
+        <input type="hidden" name="plugin" value="wikieditish">
+        <input type="submit" value="Save">
+      </form>
+    </div>
+  </body>
+</html>

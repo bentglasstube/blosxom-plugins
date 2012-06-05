@@ -1,0 +1,61 @@
+# Blosxom Plugin: rewriteuri
+# Author: Bob Schumaker <cobblers@pobox.com>
+# Version: 0+1i
+# http://www.cobblers.net/blog/dev/blosxom
+# License: Public Domain
+# Loosely based on the blosxom plugin 'ASIN' by Nelson Minar <nelson@monkey.org>
+
+package rewriteuri;
+
+# --- Configurable variables -----
+
+# The path to download files for 'download:' URIs
+$downloaddir = "files";
+
+# Amazon associate ID for 'asin:' URIs
+$associateID = 'bschumaker';
+
+%rewriteuri = ();
+
+# --------------------------------
+
+$rewriteuri{"download"} = sub {
+    my ($url) = @_;
+    $url =~ s%"download:(.+)"%"\"http://$hostinfo::hostname/$downloaddir/$1\""%ies;
+    return $url;    
+};
+
+$rewriteuri{"asin"} = sub {
+    my ($url) = @_;
+
+    $url =~ s%"asin:(.+)"%"\"http://www.amazon.com/exec/obidos/ASIN/$1/ref=nosim/$associateID\""%ies;
+    return $url;    
+};
+
+# --------------------------------
+
+sub start {
+    1;
+}
+
+sub head {
+  my($pkg, $path, $head_ref) = @_;
+
+  for (;;) {
+    do {
+      -r "$blosxom::datadir/$path/config.rewriteuri" and require "$blosxom::datadir/$path/config.rewriteuri" and last;
+    } while ($path =~ s/(\/*[^\/]*)$// and $1);
+    last;
+  }
+  1;
+}
+
+sub story {
+    my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    foreach my $tag (keys %rewriteuri) {
+    	$$body_ref =~ s/(<a\s[^>]*href="$tag:[^>]+>)/&{$rewriteuri{$tag}}($1)/geis;
+    }
+    1;
+}
+
+1;

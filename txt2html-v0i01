@@ -1,0 +1,137 @@
+package txt2html;
+use strict;
+use warnings;
+
+=head1 NAME
+
+txt2html - Blosxom plugin to convert plain text files to HTML
+
+=head1 VERSION
+
+This describes version B<0.01> of txt2html.
+
+=cut
+
+our $VERSION = '0.01';
+
+=head1 DESCRIPTION
+
+This uses the HTML::TextToHTML module (used by the txt2html script)
+to convert the $body of a story from text into HTML.
+This checks the $meta::markup variable to see whether or not
+it should do any conversion.  If $meta::markup equals 'txt2html'
+then it will convert this story.
+
+=head1 INSTALLATION
+
+=head2 Installation
+
+Drop the txt2html plug-in into your Blosxom plugins folder.  You may have to
+prefix it with a number to make sure that it runs before other modules which
+expect the $body of the story to be in HTML.
+
+This also depends on the B<meta> plugin or the B<type_sniffer> plugin
+to set the $meta::markup variable.
+
+=head2 Configuration
+
+The following configuration variables can be set by editing the
+plugin file.
+
+=over
+
+=item B<%options>
+
+Set the options for the text-to-HTML processing.  See L<HTML::TextToHTML>
+for details.  Certain options are meaningless in this context and will
+be ignored, since this is not being processed as a full file, but as
+just body content. Therefore options such as 'append_file', 'prepend_file'
+and 'append_head' will not work, as well as options which refer to doing
+things to the headers.  But that's okay, since you can do things like
+that with flavours and other plugins.
+
+Note that one can use the B<config> plugin to change this on a
+per-category or per-flavour basis.
+
+=cut
+
+my %options = (
+    underline_length_tolerance=>3,
+    underline_offset_tolerance=>3,
+    xhtml=>1,
+);
+
+=over
+
+=cut
+
+use CGI qw/:standard/;
+
+=head1 PLUGIN FUNCTIONS
+
+=head2 start
+
+=cut
+
+sub start {
+    return 1;
+} # start
+
+=head2 story
+
+story($pkg, $path, $filename, $story_ref, $title_ref, $body_ref)
+
+Convert the $$body_ref to HTML if $meta::markup is 'txt2html'.
+
+=cut
+
+sub story {
+    my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+    if (defined $meta::markup
+	and $meta::markup =~ /^\s*txt2html\s*$/i)
+    {
+	use HTML::TextToHTML;
+	my %full_options = (
+			    %options,
+			   );
+	my $conv = new HTML::TextToHTML(%full_options);
+	my $body = $conv->process_chunk($$body_ref);
+	$$body_ref = $body;
+    }
+
+    1;
+} # story
+
+=head1 REQUIRES
+
+Perl 5.6.0
+CGI
+Fcntl
+
+=head1 SEE ALSO
+
+Meta, Markdown, textile
+
+=head1 BUGS
+
+Please report any bugs or feature requests to the author.
+
+=head1 AUTHOR
+
+    Kathryn Andersen (RUBYKAT)
+    perlkat AT katspace dot com
+    http://www.katspace.com
+
+=head1 COPYRIGHT AND LICENCE
+
+Copyright (c) 2004 by Kathryn Andersen
+
+This program is free software; you can redistribute it and/or modify it
+under the same terms as Perl itself.
+
+=cut
+# vim: ft=perl ts=8 sw=4 sts=4 ai cinkeys="0{,0},0),!,o,O,e"
+
+1; # End of txt2html
+__END__

@@ -1,0 +1,18 @@
+# This package was designed by Kevin Scaldeferri as an
+# example of how to potentially disable the RSS that is
+# built into the blosxom.cgi package.
+# version: 0i1
+
+package norss;
+
+my $orig_template = $blosxom::template;
+
+sub template {
+   my ($path, $chunk, $flavour) = @_;
+
+   if ($flavour eq "rss") {
+     $flavour = "error";
+   }
+
+   return $orig_template->($path, $chunk, $flavour);
+}

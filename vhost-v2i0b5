@@ -1,0 +1,142 @@
+# Blosxom Plugin: vhost
+# Author(s): Stephen Depooter <sbdep@woot.net>
+# Version: 2.0b5
+# Documentation: See the bottom of this file or type: perldoc readme
+
+package vhost;
+
+# --- Configurable variables -----
+
+# Provide a hash of hostnames and directories that will be the
+# Blosxom Datadir and pluginstate directory for each hostname.
+# Note that you need to create the state directory and make it world writeable 
+# so that the webserver can write to it appropriately.
+
+
+# The format for each line should be the following "domain name" => ["datadir", "plugin state dir"],
+
+my %vhosts = (
+	"http://sbdep.dyndns.info" => ["/home/sbdep/blosxom", "/home/sbdep/.weblog/plugins/state"],
+	"http://me.woot.net" => ["/home/jdrew/blosxom", "/home/jdrew/.weblog/plugins/state"],
+);
+
+# --------------------------------
+
+use CGI qw/:standard/;
+
+sub start {
+  
+  my $hostname = url(-base=>1) or return 0;
+  my $dir = $vhosts{$hostname}[0] or return 0;
+  my $plugin_state_dir = $vhosts{$hostname}[1] or return 0;
+
+  $blosxom::datadir = $dir;
+
+  $blosxom::plugin_state_dir = $plugin_state_dir;
+  
+  1;
+}
+
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: vhost
+
+=head1 SYNOPSIS
+
+This plugin is designed for people that wish to have multiple Blosxom weblogs, each with
+their own vhost.  
+
+It traps requests for the script that use the listed vhost and sets $blosxom::datadir to 
+the specified location.
+
+
+=head2 Usage
+
+Be sure this plug-in sits BEFORE all other plug-ins.  To force this, rename it 
+to 00vhost.
+ 
+This plugin works in concert with the "config" plug-in, without which it
+won't allow individual weblogs to override the global Blosxom configuration by
+placing config files in their $datadir.
+
+Aside from this simple renaming, about all that should be needed is to 
+set a DirectoryIndex to /blosxom.cgi with a ScriptAlias /blosxom.cgi to the 
+actual script for the directory where the domain is server from,
+replacing the paths as appropriate to your particular setup, of course.
+
+
+=head2 Warning
+
+Be sure to choose a $datadir _outside_ of the user's personal 
+Web-accessible document-root.  In other words, don't use a $datadir of
+/home/$username/www/weblog or the like, where anything under /home/$username/www
+is world-readable.
+
+=head2 Limitations
+
+This plug-in doesn't yet allow for individual weblogs to have their own plugin direcotries.  I based this off the isp plugin
+which mentioned this as well since there is a race condition between multiple plugin directories.
+
+=head1 VERSION
+
+v0.2
+
+=head1 AUTHOR
+
+Stephen Depooter <sbdep@woot.net>  http://sbdep.dyndns.info/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Please address all bug reports to the author.
+
+This plugin does not cooperate well with categories on its own.  To use categories, you need to use an address like
+http://yourvhost/blosxom.cgi/your/category/here/ or use mod_rewrite in apache in order to 
+make apache look at the script on its own.
+
+In my setup I use the following rewrite rules in the .htaccess file, but it should work
+the same from the apache config file as well.
+
+DirectoryIndex blosxom.cgi
+RewriteEngine on
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^(.*)$ /blosxom.cgi/$1 [L,PT]
+
+This causes apache to rewrite the URL in the server if the request is not for a file. 
+This means that requests for a specific file will be processed and the webserver will return the file, 
+but otherwise, the path info and or the date info in the URL will be passed to the blosxom
+script.  This allows this plugin to cooperate with permanent links based on date as well as categories.
+
+
+=head1 LICENSE
+
+Blosxom and this Blosxom Plug-in
+Copyright 2003, Stephen Depooter
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

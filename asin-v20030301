@@ -1,0 +1,46 @@
+# Blosxom Plugin: ASIN
+# Author: Nelson Minar <nelson@monkey.org>
+# Version: 20030301
+# http://www.nelson.monkey.org/~nelson/weblog/
+# License: Public Domain
+
+# ASIN is a Blosxom plugin that simplifies linking into Amazon's catalog.
+# A link in a story like this:
+#   <a href="asin:B000003RGY">the album I'm listening to</a>
+# Turn into a link like this:
+#   <a
+# href="http://www.amazon.com/exec/obidos/ASIN/B000003RGY/ref=nosim/nelsonminar">the album I'm listening to</a>
+# This link format is not a guaranteed standard, in particular the ref=nosim
+# part. For the authority see
+#   https://associates.amazon.com/exec/panama/associates/resources/build-links/individual-item-link.html
+
+# Installation:
+#   Modify the $associateID (or don't :-)
+#   Drop asin into your plugins directory
+
+# Todo:
+#   Generalize this to any pseudoURI, not just asin:
+
+package asin;
+
+$associateID = 'nelsonminar';
+
+sub start {
+    1;
+}
+
+sub rewriteASIN {
+    my ($url) = @_;
+    $url =~ s%"asin:(.+)"%"\"http://www.amazon.com/exec/obidos/ASIN/$1/ref=nosim/$associateID\""%ies;
+    return $url;    
+}
+
+# Modify the body of stories by rewriting asin: URIs to real URLs
+sub story {
+    my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    # Rewrite any <a href="asin:..."> tag in the post body
+    $$body_ref =~ s/(<a\s[^>]*href="asin:[^>]+>)/rewriteASIN($1)/geis;
+    1;
+}
+
+1;

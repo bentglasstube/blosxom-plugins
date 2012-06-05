@@ -1,0 +1,131 @@
+# Blosxom Plugin: storyfilter
+# Author: Mike Downey
+# Version: 0.16
+
+package storyfilter;
+
+# usage: add keyword=xyz to the query string to display any stories
+# which contain that keyword in in the meta-keywords variable.
+# Keywords are saved to a disk cache as and when they are viewed.
+# if $categoryiskeyword == 1 then /keyword works as well
+# ?refresh=y refreshes keyword cache for any currently displayed stories
+# (same as using $refresh = 1)
+# $autokeywords == 1 means that the directory/category names will
+# be added to the keywords as well
+
+
+# -------- Configure variables --------
+
+my $keywordfile = "$blosxom::plugin_state_dir/keyword.cache";
+
+my $categoryiskeyword = 0;	# allows /keyword as well as ?keyword=
+my $autokeywords = 1;		# picks keywords from categories
+my $refresh = 1;		# refreshes any entries as they are displayed
+
+# -------------------------------------
+
+use CGI qw/:standard/;
+
+my %keyword_stories;
+my $keywordfilter;
+my $filechanged;
+my $localkeywords;
+
+$keywordlinks;
+
+sub start {
+
+	# Read in the keyword cache
+	open KWF, $keywordfile;
+	while(my $line=<KWF>){
+		chomp $line;
+		my ($fn,$kw) = split ("#",$line);
+		$keyword_stories{$fn}=$kw;
+	}
+	close KWF;
+
+	# get the keyword to filter on from CGI
+	$keywordfilter = CGI::param("keyword");
+
+	# if the path is a single word (no subcategories) and no keyword is
+	# selected then use that as a keyword
+	if (($blosxom::path_info !~ m#/#) && !$keywordfilter && $categoryiskeyword){
+		$keywordfilter=$blosxom::path_info;
+		$blosxom::path_info=""; 		# Naughty! these variables should be read-only!
+	}
+
+	# decides whether we refresh the cache for visible stories
+	$refresh ||= CGI::param("refresh");
+
+	1;
+}
+
+# if we want to filter on a keyword, go ahead and do it
+sub filter {
+	my ($pkg, $files_ref) = @_;
+	if (defined $keywordfilter){
+		my $storyfn;
+
+		foreach $storyfn (keys %$files_ref){
+			if (!($keyword_stories{$storyfn} =~ /$keywordfilter/))
+				{ delete $files_ref->{$storyfn}; }
+		}
+	}
+	1;
+}
+
+# for each story, take the keywords and add to the cache array
+sub story {
+
+	my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+	if (!$filename)			# There seems to be a bug somewhere where deleting from
+		{			# the $files_ref in filter causes the final post to be
+		$$story_ref = '';	# duplicated but only in the top level category and with
+		return 1;		# a unix date of 0 (1-1-1970). This work-around prevents it.
+		}
+	
+	# Add the path elements to the meta::keywords
+	if ($blosxom::path && $autokeywords)
+		{ ($localkeywords = $meta::keywords.$blosxom::path) =~ s#/#,#g; }
+
+	# Add the keywords to the cache array (only if we need to)
+	if (defined $localkeywords){
+		my $storyfilename = "$blosxom::datadir$path/$filename.txt";
+		if ((!$keyword_stories{$storyfilename}) or $refresh) {
+			$keyword_stories{$storyfilename}=$localkeywords;
+			$filechanged = 1;
+		}
+	}
+
+	# Build up the keyword links
+	my @words = split (",",$localkeywords);
+	my %wordlinks, $word;
+	foreach $word (@words){
+		if ($word) # ignore blank lines
+			{$wordlinks{$word} = "<a href=\"$blosxom::url?keyword=$word\">$word</a>";}
+	}
+	if ($localkeywords) 
+		{$keywordlinks = "Keywords: ".join(" ", values %wordlinks);}
+
+	$localkeywords="";
+	
+	1;
+}
+
+
+sub last {
+	my $fn,$kw;
+	if ($filechanged) {
+		open KWF,"> $keywordfile";
+		foreach $kw (keys %keyword_stories)
+			{print KWF "$kw#$keyword_stories{$kw}\n";}
+		close KWF;
+	}
+	1;
+}
+
+1;
+
+__END__
+

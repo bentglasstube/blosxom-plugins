@@ -1,0 +1,102 @@
+# Blosxom Plugin: blogshares 
+# Author(s): Tatsuhiko Miyagawa <miyagawa@bulknews.net> 
+
+# Changes:
+# 0.01 	Wed Aug 13 23:15:37 JST 2003
+# 	first release
+
+package blogshares;
+$VERSION = 0.01;
+
+use strict;
+use vars qw($bsapi $cache $cache_ttl @keys);
+
+$bsapi     = "http://www.blogshares.com/api/blog.php?url=%s" unless defined $bsapi;
+$cache     = "$blosxom::plugin_state_dir/blogshares.xml"     unless defined $cache;
+$cache_ttl = 60 unless defined $cache_ttl;
+
+my $Debug = 0;
+
+use FileHandle;
+use File::stat;
+
+sub start {
+    1;
+}
+
+sub head {
+    my($pkg, $currentdir, $head_ref) = @_;
+
+    unless (-r $cache && -M _ < $cache_ttl / (60 * 24)) {
+	require LWP::Simple;
+	my $url = sprintf $bsapi, CGI::Util::escape($blosxom::url);
+	warn "getting $url" if $Debug;
+	my $rc = LWP::Simple::getstore($url, $cache);
+	LWP::Simple::is_success($rc) or warn("Can't store $url to $cache"), return;
+    }
+
+    my $fh = FileHandle->new($cache) or return;
+    my $xml = join '', <$fh>;
+    $fh->close;
+
+    no strict 'refs';
+    undef $$_ for @keys;
+    @keys = ();
+
+    my $want = ($xml =~ m!<bloginfo>\n(.*)<industries!s)[0];
+    while ($want =~ m!<(\w+)>(.*?)</\1>!g) {
+	my($key, $val) = ($1, $2);
+	warn "match: $key => $val" if $Debug;
+	$$key = $val =~ /^[\d\.]+/ ? sprintf("%.2f", $val) : $val;
+	push @keys, $key;
+    }
+
+    return 1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: blogshares
+
+=head1 SYNOPSIS
+
+Purpose: Fetches blog shares info from blogshares.com via XML API and
+ppopulates $blogshares::* variabls which can be used in your flavours.
+
+Maintains a cached XML file
+C<$blosxom::plugin_state_dir/blogshares.xml> which expires in
+C<$cache_ttl> minutes.
+
+=head1 USAGE
+
+  <div class="blogshares">
+  <h3>BlogShares</h3>
+  <a href="$blogshares::bsurl">$blogshares::name</a><br />
+  Valuation: $$blogshares::valuation<br />
+  @ $$blogshares::price - $blogshares::pe P/E
+  </div>
+
+=head1 REQUIREMENT
+
+This plugin requires LWP::Simple module to work.
+
+=head1 AUTHOR
+
+Tatsuhiko Miyagawa <miyagawa@bulknews.net>, http://shibuya.pm.org/
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Copyright 2003, Tatsuhiko Miyagawa
+
+This program is licensed under the GPL or Perl Artistic License.
+
+=cut

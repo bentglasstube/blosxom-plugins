@@ -1,0 +1,35 @@
+# Blosxom Plugin: flavour_static_entries                   -*- perl -*-
+# Author: Kevin Scaldeferri (kevin+blosxom at scaldeferri dot com)
+# Version: 0.01
+# Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+package flavour_static_entries;
+
+use strict;
+use warnings;
+
+# Only generate static entries for these flavours
+# Note that you must have $static_entries = 1 in blosxom.cgi also
+my @flavours = qw( html );
+
+sub start {
+   #only run in static mode
+   return $blosxom::static_or_dynamic eq 'static' ? 1 : 0;
+}
+
+sub skip {
+   # keep if in @flavours list
+   if (grep { $_ eq $blosxom::flavour } @flavours) { return 0; }
+
+   if ( $blosxom::path_info =~ /\./ ) {
+     # skip single entries
+     return 1;
+   } else {
+     # keep indices
+     return 0;
+   }
+
+}
+
+
+1;

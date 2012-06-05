@@ -1,0 +1,140 @@
+# Blosxom Plugin: ping_weblogs_com
+# Author(s): Rael Dornfest <rael@oreilly.com> 
+# Version: 2.0b4
+# Documentation: See the bottom of this file or type: perldoc ping_weblogs_com
+
+package ping_weblogs_com;
+
+# --- Configurable variables -----
+
+# What URL should this plugin ping?
+my $ping_url = "http://newhome.weblogs.com/pingSiteForm?name=" . encode($blosxom::blog_title) . "&url=" . encode($blosxom::url);
+
+# What external program should this plugin use to ping Weblogs.com?
+# 'lynx -source'
+# 'wget --quiet -U "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1)" -O -';
+# 'curl -m 30 -s'
+my $get_app = '';
+
+# --------------------------------
+
+use FileHandle;
+use File::stat;
+
+# Keep track of the newest story's mtime
+my $newest = 0;
+
+sub start {
+  $get_app or return 0;
+print STDERR "here\n";
+  1;
+}
+
+sub filter {
+  my($pkg, $files_ref) = @_;
+
+  $newest = $files_ref->{( sort { $files_ref->{$b} <=> $files_ref->{$a} } keys %$files_ref )[0]};
+
+  1;
+}
+
+sub end {
+  # If no timestamped touch-file or newest is newer than the touch-file...
+  if ( !-e "$blosxom::plugin_state_dir/.ping_weblogs_com.output" or $newest > stat("$blosxom::plugin_state_dir/.ping_weblogs_com.output")->mtime ) {
+
+    my $response = '';
+    my $ping_success = 0;
+    my $fh = new FileHandle;
+    $fh->open(qq{$get_app "$ping_url" |});
+    while (<$fh>) {
+      $response .= $_;
+      $_ =~ /Thanks for the ping/ and $ping_success++, last;
+    }
+    $fh->close();
+
+    $ping_success or return 0;
+
+    # Touch the touchfile (creates if doesn't already exist)
+    open TOUCH, "> $blosxom::plugin_state_dir/.ping_weblogs_com.output";
+    print TOUCH $response;
+    close TOUCH;
+  
+    return 1;
+  }  
+
+  return 1;
+}  
+
+sub encode {
+  my($string) = @_;
+
+  my %encodings;
+  for (0..255) {
+    $encodings{chr($_)} = sprintf("%%%02X", $_);
+  }
+
+  $string =~ s/([^A-Za-z0-9\-_.!~*'()])/$encodings{$1}/g;
+  return $string;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: ping_weblogs_com
+
+=head1 SYNOPSIS
+
+Purpose: Notifies weblogs.com [http://www.weblogs.com] that your weblog
+has been updated upon encountering any new story. 
+
+Maintains a touch-file ($blosxom::plugin_state_dir/.ping_weblogs_com.output)
+to which to compare the newest story's creation date.  Fills the
+touch-file with the HTML results of the latest ping.
+
+=head1 VERSION
+
+2.0b3
+
+Version number coincides with the version of Blosxom with which the 
+current version was first bundled.
+
+=head1 AUTHOR
+
+Rael Dornfest  <rael@oreilly.com>, http://www.raelity.org/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Blosxom and this Blosxom Plug-in
+Copyright 2003, Rael Dornfest 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

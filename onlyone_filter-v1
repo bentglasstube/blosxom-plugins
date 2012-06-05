@@ -1,0 +1,42 @@
+# blosxom 2 plugin onlyone_filter
+# author: stu mackenzie
+# support: zero
+
+# This plugin aims to restrict posted entries to *only* the dir specified 
+# in the calling url. I imagine it will produce no stories when called 
+# with a date.
+
+package onlyone_filter;
+
+sub start {
+  1;
+}
+
+sub filter {
+  my ($pkg,$files_ref,$others_ref) = @_;
+                                            # get the most-est path we've got;
+  my $pi = "$blosxom::datadir/$blosxom::path_info";
+  $pi =~ s/[^\/]+\..*$//;                   # then get rid of any file name & extension;
+  $pi =~ s/\/*$//;                          # then get rid of any trailing slashes;
+  $pi =~ s/$/\//;                           # finally, add a trailing slash
+
+  my @files_list = keys %$files_ref;        # get the whole set of file paths
+  foreach my $file (@files_list) {          # loop thru 'em, and...
+    $file =~ m/^$pi[^\/]+?\.$blosxom::file_extension$/
+        or delete $files_ref->{$file};      # delete any that aren't in the called dir
+  }
+}
+
+1;
+
+__END__
+
+
+At whatever directory a blog is called, only stories within that directory will be 
+displayed. For instance, if you call:
+  www.example.com/cgi-bin/blosxom.cgi/animals/mammals/rodents/
+then only stories in the /rodents directory will be displayed
+
+Likewise, if you call: 
+  www.example.com/cgi-bin/blosxom.cgi/animals/mammals/rodents/index.html
+then only stories in the /rodents directory will be displayed

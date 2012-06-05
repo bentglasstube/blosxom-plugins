@@ -1,0 +1,100 @@
+## Cool URIs for Blosxom, by Rob Hague -*-perl-*-
+
+package cooluri; 
+
+# --- Configurable variables -----
+# --------------------------------
+
+use CGI qw/:standard :netscape/; # for path_info()
+
+sub filter {
+    my($pkg, $files_ref) = @_;
+    if ($blosxom::static_or_dynamic eq 'dynamic' and
+        path_info() =~ m!^/\d[^/]*/\d[^/]*/\d[^/]*/([a-zA-Z][^/.]*)$!) {
+        $filename = $1;
+        foreach (keys %$files_ref) {
+            m!/$filename\.txt$! or delete $files_ref->{$_};
+        }
+    }
+    1;
+}
+
+sub start { 1; }
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: CoolURI
+
+=head1 SYNOPSIS
+
+Purpose: Hack URIs to allow extension free, date based permalinks, as
+described in http://www.w3.org/Provider/Style/URI
+
+Description
+
+When running dynamically, intercepts any path of the form
+/yyyy/mm/dd/name and returns that document in the default flavour.
+
+Configuration
+
+None
+
+Additional Bits Required 
+
+None
+
+Category
+/display ?
+
+Date
+2003-09-06
+
+Todo list
+
+Add an equivalent behaivour for the static case, so that all of the
+indices get generated appropriately (not sure how to do this without
+stamping on all other entries-overiding plugins; does this matter,
+though?)
+
+=head1 VERSION
+
+0.1 (First release - tested with Blosxom 2.0)
+
+=head1 AUTHOR
+
+Rob Hague <rob@rho.org.uk> http://www.rho.org.uk/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.blosxom.com
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+CoolURI Blosxom Plug-in
+Copyright 2003, Rob Hague
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

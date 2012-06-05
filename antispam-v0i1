@@ -1,0 +1,86 @@
+#Bloxsom Plugin:AntiSpam
+#Author: Fletcher T. Penney
+#Version: 0.1
+
+package antispam;
+
+# --- Configurable variables ----
+
+
+
+# -------------------------------
+
+$ignore = 0;
+$email = '[\w\.]+@\w+(\.\w+)+';
+
+sub start {
+	1;
+}
+
+sub story {
+	my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+	if ($$story_ref =~ m/<!-- noantispam -->/gi || $$body_ref =~ m/<!-- 
+noantispam -->/gi) {
+		$ignore = 1;
+	}
+
+	if ($ignore == 0) {
+		while ($$body_ref =~ /($email)/ig) {
+			$original=$1;
+			$masked="";
+			@decimal = unpack('C*', $original);
+			foreach $i (@decimal) {
+				$masked.="&#".$i.";";
+			}
+			$$body_ref =~ s/$original/$masked/ig;
+		}
+	}
+	1;
+}
+
+1;
+
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: antispam
+
+=head1 DESCRIPTION
+
+This plugin converts any email addresses in your stories into ascii code.  It 
+has no visible or functional effect, other than to change the html source code.  
+So something like this:
+	fletcher@hidden.domain
+
+Looks like this:
+&#102;&#108;&#101;&#116;&#99;&#104;&#101;&#114;&#64;&#97;&#108;&#117;&#109;&#110;&#105;&#46;&#100;&#117;&#107;&#101;&#46;&#101;&#100;&#117;
+
+But when viewed with a web browser, it is translated back into the expected 
+human readable string.  The idea is that some of the spambots can't read this.  
+Though as this technique becomes more popular, I am sure that the spambots will 
+catch on.  But it can't hurt, right?
+
+
+I would like to figure out how to get this work with Writebacks as well to hide 
+email address that are submitted, but haven't gotten around to it.  If someone 
+wants to modify the code and let me know, I can distribute the modified version 
+and give you credit.
+
+Let me know of any bugs!!
+
+=head1 AUTHOR
+
+Fletcher T. Penney  http://fletcher.freeshell.org
+
+
+=head1 LICENSE
+
+This source is submitted to the public domain.  Feel free to use and modify it.  
+If you like, a comment in your modified source attributing credit to myself for 
+my work would be appreciated.
+
+THIS SOFTWARE IS PROVIDED AS IS AND WITHOUT ANY WARRANTY OF ANY KIND.  USE AT 
+YOUR OWN RISK!

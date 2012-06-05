@@ -1,0 +1,139 @@
+# Blosxom Plugin: swish
+# Modified Lucene Search
+# Modified by: Matthew Gregg <greggmc@musc.edu>
+# by : Rael Dornfest <rael@oreilly.com> 
+#      and Sam Ruby <rubys@intertwingly.net>
+# Version: 0.1
+# Documentation: See the bottom of this file or type: perldoc swish
+
+package swish;
+
+# --- Configurable variables -----
+
+# Turn on the Swish++ engine (set to 1 only once the other bits are in place)?
+my $swish_on = 0;
+
+# What's my index?
+my $index = '/var/lib/data/swish.index';
+
+# Path to search++
+my $swish_bin = '/usr/bin';
+
+# --------------------------------
+
+$search;
+
+use CGI qw/:standard/;
+use File::stat;
+use URI::Escape;
+use POSIX qw(strftime);
+use Env qw(@PATH @CLASSPATH);
+
+sub start {
+  $swish_on or return 0;
+  $blosxom::static_or_dynamic eq 'dynamic' or return 0;
+  param('q') or return 0;
+  $search = "Search results for: " . param('q');
+  1;
+}
+
+sub entries {
+  return sub {
+    my(%files, %indexes);
+
+    $query = uri_escape(param('q'));
+    $query =~ s/;//g;
+
+    # Open a pipe from the 'search' command.
+    my $pid = open SEARCH, "-|";
+    die "Cannot fork $!" unless defined $pid;
+    unless ( $pid ) {
+        exec "$swish_bin/search++ -i $index '$query'"
+    }
+    while ( <SEARCH> ) {
+
+          # ignore swish comments
+    	  next if /^#/;
+    
+   	  my( $rank, $file, $size, $title ) = split( / /, $_, 4 );
+       	  $file =~ /\.txt$/ and $files{"$file"} = stat("$file")->mtime;
+    }
+    close(SEARCH);    
+    return (\%files, \%indexes);
+  };
+}
+
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: swish
+
+=head1 SYNOPSIS
+
+Based upon: http://www.blosxom.com/plugins/search/lucene.htm
+
+Purpose: Swish++ [http://homepage.mac.com/pauljlucas/software/swish/] is a C++
+based text search engine.  This plug-in hooks in the results
+of a Swish search, displaying only the stories matching the search query
+(as specified by ?q=keywords).
+
+Populates $swish::search with "Search results for: keywords" for use in
+flavour templates.
+
+Replaces the default $blosxom::entries subroutine.  You'd best put it before
+any other plug-ins that override the default $blosxom::entries subroutine.  
+When ?q=keywords turns on the swish plug-in, it'll then be used instead of
+whatever other entries overrides you have down the chain.  
+
+E.g. My setup is as follows:
+
+01swish
+
+02entries_index
+
+other
+
+plugins
+
+follow
+
+This plug-in is based on the lucene search template
+
+=head1 AUTHOR
+
+Rael Dornfest  <rael@oreilly.com>, http://www.raelity.org/
+
+Modified by: Matthew Gregg <greggmc@musc.edu>, http://www.itlab.musc.edu/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 SWISH
+
+Blosxom and this Blosxom Plug-in
+Copyright 2003, Rael Dornfest 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

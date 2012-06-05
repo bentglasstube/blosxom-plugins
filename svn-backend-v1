@@ -1,0 +1,124 @@
+package svn;
+
+use strict;
+
+require SVN::Core;
+require SVN::Repos;
+require SVN::Fs;
+use Date::Parse;
+use Date::Format;
+# --- Configurable variables -----
+
+our $svnrepos = "/home/clkao/svn/blog";
+our $toplevel = "/";
+my $repos;
+# --------------------------------
+my $files;
+my $revtime;
+
+our $mtime;
+
+sub start {
+    $repos = SVN::Repos::open($svnrepos);
+    1;
+}
+
+sub rev_date {
+    my $rev = shift;
+    my $fs = $repos->fs;
+    return $revtime->{$rev} ||= str2time($fs->revision_prop ($rev, 'svn:date'));
+}
+
+sub svn_created_rev {
+    my ($root, $path) = @_;
+
+    my $hist = $root->node_history ($path);
+
+    while (my $prev = $hist->prev(1)) {
+	$hist = $prev;
+    }
+    return ($hist->location)[1];
+}
+
+sub entries {
+    my $fs = $repos->fs;
+    my $root = $fs->revision_root($fs->youngest_rev);
+    sub svn_entries {
+	my ($dir, $entry) = @_;
+	$entry->kind == $SVN::Node::dir ?
+	    (map {svn_entries($dir.$entry->name.'/', $_)}
+		values %{$root->dir_entries($dir.$entry->name)})
+		: $entry->name =~ m/\.$blosxom::file_extension$/ ?
+		    ($blosxom::datadir.$dir.$entry->name =>
+		     svn_created_rev ($root, $dir.$entry->name)) : ();
+    }
+
+    return sub {
+	$files =
+	{map {svn_entries ($toplevel, $_)} values %{$root->dir_entries($toplevel)}};
+
+	return ({map {$_ => rev_date($files->{$_})} keys %$files},
+		{map {s/^$blosxom::datadir//;
+		      my $d = join('/', (blosxom::nice_date(rev_date($files->{$_})))[5,2,3]);
+		      ($d => $d,
+		       $_ => 1)} keys %$files}, {});
+    }
+}
+
+sub sort {
+    return undef unless $ENV{GATEWAY_INTERFACE};
+    return sub {
+	my ($files, $others) = @_;
+	return sort {
+	    my ($aa, $bb) = ($a, $b);
+	    $aa =~ s/^$blosxom::datadir//;
+	    $bb =~ s/^$blosxom::datadir//;
+	    my $atime = svn_mtime($aa) || $files->{$a};
+	    my $btime = svn_mtime($bb) || $files->{$b};
+	    $btime <=> $atime } keys %$files;
+    };
+
+}
+
+sub svn_mtime {
+    my ($path) = @_;
+    my $fs = $repos->fs;
+    my $rev = $fs->revision_root ($fs->youngest_rev)->node_created_rev ($path);
+    return ($rev != $files->{$blosxom::datadir.$path}) ?
+	rev_date($rev) : undef;
+}
+
+sub story {
+  my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+  return unless $filename;
+
+  my $fs = $repos->fs;
+  my $content = $fs->revision_root($fs->youngest_rev)->file_contents("$path/$filename.$blosxom::file_extension");
+  $mtime = svn_mtime ("$path/$filename.$blosxom::file_extension");
+  $mtime = '<div class="updated">updated: '.ctime($mtime).'</div>'
+      if $mtime;
+  $$title_ref = <$content>;
+  local $/;
+  $$body_ref = <$content>;
+  return 1;
+
+}
+
+package filetime;
+
+sub TIESCALAR {
+    my $class = shift;
+    my $filetime = shift;
+    return bless [$filetime], $class;
+}
+
+sub FETCH {
+    my $self = shift;
+    return $self->[0]
+}
+
+sub STORE {
+    die "no store please";
+}
+
+1;

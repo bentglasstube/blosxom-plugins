@@ -1,0 +1,26 @@
+# Blosxom Plugin: x_double_posting_blocker
+# Author(s): color99
+# Version: 0.42  Date: 2005.11.28
+# ブラウザリロード時の２重投稿防止プラグイン
+
+package x_double_posting_blocker;
+
+use CGI::Carp qw(fatalsToBrowser);  #エラー時にはブラウザへ表示する
+use CGI qw/:standard/;
+
+# --- Configurable variables -----------
+# '|'で区切って対象プラグインを指定して下さい。
+my $plugins = 'writeback|guestbook|newentry|mailpost';
+# --------------------------------------
+
+sub start {
+  if (request_method() eq 'POST' and (param('plugin') =~ /$plugins/)){
+    my $req_url = $ENV{'REQUEST_URI'}; my $url = url(); # $req_url = ''; # for test
+    $url =~ s/^included:/http:/; # Fix for Server Side Includes (SSI) from blosxom.cgi
+    $req_url ? print "Location: http://$ENV{'HTTP_HOST'}$req_url\n\n"
+             : print "Location: $url\n\n"
+  }
+  1;
+}
+
+1;

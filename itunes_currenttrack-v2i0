@@ -1,0 +1,172 @@
+#!/usr/bin/perl -w
+package iTunes_currentTrack;
+
+use Win32::OLE;
+use Time::Local;
+
+# --- Configurable variables -----
+$debug_level ||= 2;
+$use_caching    = 1 unless defined $use_caching;
+$pre_html = "<A HREF=\"";
+$post_html= "</A><BR>";
+$search_url ="http://www.google.com/search?q=";
+
+my $package = "iTunes_currentTrack";
+my $cachefile  = "$blosxom::plugin_state_dir/$package.cache";
+my $cache;
+my $html;
+my $save_cache = 1;
+my $cached_iTunes_currentTrack;
+
+sub debug {
+    my ($level, @msg) = @_;
+
+    if ($debug_level >= $level) {
+	print STDERR "$package debug $level: @msg\n";
+    }
+}
+
+sub prime_cache {
+    my ($cached_iTunes_currentTrack) = @_;
+    return 0 if !$use_caching;
+    eval "require Storable";
+    if ($@) {
+	debug(1, "cache disabled, Storable not available"); 
+	$use_caching = 0; 
+	return 0;
+    }
+    if (!Storable->can('lock_retrieve')) {
+	debug(1, "cache disabled, Storable::lock_retrieve not available");
+	$use_caching = 0;
+	return 0;
+    }
+    $cache = (-r $cachefile ? Storable::lock_retrieve($cachefile) : undef);
+    
+    @now = localtime;
+    $now[4] += 1;
+    $now[5] += 1900;
+    $today = "$now[5]/$now[4]/$now[3]";
+    if ($cache &&  
+	$cache->{today} eq $today) {
+	debug(1, "Using cached state");
+        debug(2, "cached_iTunes_currentTrack $cache->{iTunes_currentTrack}");
+        $iTunes_currentTrack = $cache->{iTunes_currentTrack};
+	return 1;
+    }
+    $cache = {iTunes_currentTrack => $iTunes_currentTrack, today => $today};
+    return 0;
+}
+
+sub save_cache {
+    return if (!$use_caching || !$save_cache);
+    debug(1, "Saving cache");
+    -d $blosxom::plugin_state_dir
+	or mkdir $blosxom::plugin_state_dir;
+    Storable::lock_store($cache, $cachefile);
+}
+
+
+sub start {
+
+debug(1, "Start iTunes_currentTrack");
+
+$iTunesApp = new Win32::OLE("iTunes.Application");
+$current = $iTunesApp->CurrentTrack;
+
+$track = sprintf("%s-%s",$current->Artist,$current->Name);
+
+$html =sprintf("%s%s%s%s%s%s",$pre_html,$search_url,$track,"\">",$track,$post_html);
+
+$iTunes_currentTrack = $html;
+
+$cache= {iTunes_currentTrack => $iTunes_currentTrack,today => $today};
+debug(1, "Current Track is $iTunes_currentTrack");
+save_cache();  
+
+}
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: iTunes_currentTrack
+
+=head1 SYNOPSIS
+
+Purpose: Displays the current Track playing in iTunes. If iTunes is not playing it wil reproduce 
+the last track played from the cache.
+
+Uses CSS class
+
+
+Description
+
+Purpose: Displays the current Track playing in iTunes. If iTunes is not playing it wil reproduce 
+the last track played from the cache.
+
+Configuration
+
+$debug_level ||= 1;
+
+Set debuglevel to 0 when the plugin works OK.
+
+Additional Bits Required 
+
+Category
+/display ?
+
+Date
+07-06-2004
+
+Todo list
+
+History
+
+2.O Initial version
+
+
+=head1 VERSION
+
+2.0
+
+Version number coincides with the version of Blosxom with which the 
+current version was first bundled.
+
+=head1 AUTHOR
+
+Peter Florijn  <tooh@tooh.myweb.nl>, http://tooh.myweb.nl/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+This Blosxom Plug-in
+Copyright 2003, Peter Florijn 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

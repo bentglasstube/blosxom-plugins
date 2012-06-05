@@ -1,0 +1,60 @@
+# Blosxom Plugin: prunesort
+# Author: Simon Fraser
+# Version: 0.1
+# Documentation: prunesort is a hack that allows for some depth control when using
+#                blosxom in static mode. Use it in collaboration with
+#                bottomupconfig, setting $prunesort::localdepth in your config
+#                files.
+#
+
+package prunesort;
+
+$localdepth = 0;
+
+sub start {
+  # we only make sense in static mode
+  return $blosxom::static_or_dynamic eq 'dynamic' ? 0 : 1;
+}
+
+sub sort
+{
+  return sub
+  {
+    my($files_ref) = @_;
+
+    my $archive_load;
+    if ($blosxom::static_or_dynamic eq 'dynamic') {
+      $archive_load = ($blosxom::path_info_yr ne "")
+    } else {
+      $archive_load = ($blosxom::path_info =~ m/^[\/\d]+$/);
+    }
+
+    if ($localdepth ne 0 and !$archive_load)
+    {
+      @files_list = sort keys %$files_ref;
+  
+      my $myroot = $blosxom::datadir ."/" . $blosxom::path_info;
+      
+      if ($blosxom::debug)
+      {
+        printf $blosxom::debug_file "Prunesort root: $myroot (path_info $blosxom::path_info)\n";
+      }
+      
+      $myroot =~ s/\/$//;
+      $myroot =~ s/\/[^\/]+\.[^\/]+$//;
+
+      foreach (@files_list)
+      {
+        if ($_ !~ /$myroot([^\/]*\/[^\/]*){0,$localdepth}$/)
+        {
+          delete $files_ref->{$_};
+        }
+      }
+    }
+
+    # default sort the remainder
+    return sort { $files_ref->{$b} <=> $files_ref->{$a} } keys %$files_ref;
+  };
+}
+
+1;

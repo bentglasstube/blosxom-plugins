@@ -1,0 +1,32 @@
+# Blosxom Plugin: ljuser
+# Author(s): Ivan Grynov <rmrf@mail.ru>
+# Version: 1.0
+# Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+
+package ljuser;
+
+use strict;
+
+# --- Configurable variables -----------
+
+# --- Plug-in package variables --------
+
+# --------------------------------------
+
+sub start {
+  return 1;
+}
+
+sub story {
+    my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+    $$body_ref =~ s!<lj\s+user\s*=\s*"?(\S+?)"?\s*>!<span class="ljuser" style="white-space:nowrap;"><a href="http://livejournal.com/userinfo.bml?user=$1"><img src="http://stat.livejournal.com/img/userinfo.gif" alt="[info]" width="17" height="17" style="border:0pt none; vertical-align:bottom;"></a><a href="http://www.livejournal.com/users/$1/"><b>$1</b></a></span>!gi;
+    $$body_ref =~ s!<lj\s+comm\s*=\s*"?(\S+?)"?\s*>!<span class="ljuser" style="white-space:nowrap;"><a href="http://livejournal.com/userinfo.bml?user=$1"><img src="http://stat.livejournal.com/img/community.gif" alt="[info]" width="16" height="16" style="border:0pt none; vertical-align:bottom;"></a><a href="http://www.livejournal.com/community/$1/"><b>$1</b></a></span>!gi;
+
+    return 1
+}
+
+1;
+
+# vim:syntax=perl:

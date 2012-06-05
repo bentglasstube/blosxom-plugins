@@ -1,0 +1,157 @@
+# Blosxom Plugin: Links Used
+# Author: Gregory Bair <http://www.pionar.com>
+# Version: 3.0
+# Blosxom Home: http://www.blosxom.com
+#
+# linksused
+#
+# Generate a list of links included in a journal entry.
+#
+# Description
+#
+#   Linksused will create a list of links referenced in a story to
+#   provide a handy-dandy little index.  The text of these links can be
+#   either the URL they point to or plain text.  If you set the flag to
+#   use a text link (rather than the URL), the text will be the contents
+#   of the title attribute of the anchor if it exists or the original
+#   link text. 
+#
+#   That is, if your story includes this link:
+#
+#   <a href="http://www.blosxom.com/" title="Blosxom homepage">blosxom</a>
+#
+#   then linksused would include the following link:
+#
+#   <a href="http://www.blosxom.com/">Blosxom homepage</a>
+#
+#   if you set the flag to "link" or this link:
+#
+#   <a href="http://www.blosxom.com/">http://www.blosxom.com/</a>
+#
+#   if the flag is set to "url".  Further, if you are using the URL as
+#   the link text, you have the option of limiting its length with the
+#   urllength variable. 
+#
+#   The list of links is packaged up as an unordered list (<ul>) with
+#   each link being a list item (<li>).  The list will have a header
+#   which can be set by changing the value of the link_hdr variable. 
+#
+#   This plugin was originally written by Gregory Bair.  
+#
+# Usage
+#
+#   Simply drop include "$linksused::linksused" in your story flavour 
+#   file whereever you want the list to appear.
+#
+# Configuration
+#
+#   There are three variables you can use to configure linksused:
+#
+#     o link_or_url  - Controls whether the linked text will be actual
+#                      text or the linked URL
+#     o urllength    - If the URL is listed as the link, this controls
+#                      the maximum length.  URL's longer than this will
+#                      be truncated and have an elipse (...) appended.
+#     o link_hdr     - Title displayed above the list of links
+#
+#   All three variables can be left set to their default values.
+#     
+#
+# Update History:
+#
+#   Date        Version Pgmr    Description
+#   Unknown     V2.0    GB      Last Released Version from Gregory Bair
+#   01.24.2005  V3.0    RLS     Added use of the title attribute as the
+#                               text of the linksused links.  Also put
+#                               the links into an unordered list (<ul>)
+#                               and added a variable to control the
+#                               title of the list (list_hdr).
+#
+
+package linksused;
+
+#----------------------------------------------------------------------
+# Configuration Section
+#
+# Do you want the whole link listed, or just the URL?
+# Values are "link" and "url"
+
+  $link_or_url = "link";
+
+# If you want the URL to be the linked text in the list of links used,
+# what is the maximum length you want the URL to be?  That is, if the
+# URL linked to is "http://www.somedomain.com/this/that/theotherthing"
+# and you set urllength to be 30, you the visible text for your link
+# would be: "http://www.somedomain.com/this..." (but it would link to
+# the full URL, of course.)
+
+  my $urllength = 70;
+
+# What to you want as the title of your list of links?  Put it here...
+
+  $link_hdr = 'Related Links';
+  
+# That's it!
+#
+#----------------------------------------------------------
+
+sub start
+{
+  1;
+}
+
+sub story
+{
+  
+    my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    if ($link_or_url eq "link") {
+#       @linklist = ($$body_ref =~ m/(<a href=".*?">.*?<\/a>)/gsi);
+       @linklist = ($$body_ref =~ m/(<a +href.*?\/a>)/gsi);
+       foreach $item (@linklist) {
+         if ( $item =~ m/title="(.*?)"/i ) {
+            my $desc = $1;
+            $item =~ s/>(.*?)</>$desc</;
+         }
+         $linksused .= qq!<li>$item</li>\n!;
+       }
+    }  elsif ($link_or_url eq "url") {
+       @linklist = ($$body_ref =~ m/(<a href=".*?">.*?<\/a>)/gsi);
+       foreach $item (@linklist) {
+         $item =~ /<a href="(.*?)">/i;
+         if (length($1) > $urllength) {
+            my $short = substr($1, 0, $urllength);
+            $linksused .= qq!<li><a href="$1">$short...</a>!;
+         }  else {
+            $linksused .= qq!<li><a href="$1">$1</a>!;
+         }
+       }
+    }
+    if ($linksused) {
+       $linksused = "  <b>$link_hdr</b><br />" . qq!<ul>! . $linksused;
+       $linksused .= qq!</ul>!;
+    }  else {
+       $linksused = "";
+    }
+    1;
+}
+
+1;
+
+=head1 NAME
+
+Blosxom Plugin: linksused
+
+=head1 SYNOPSIS
+
+Populates $linksused::linksused with a list of the links referenced to in that story.  Maybe not so useful, but I think it's neat, and it taught me a bit about Perl regular expressions.
+
+=head1 AUTHOR
+
+Gregory Bair greg@pionar.com, http://www.pionar.com/
+
+=head1 Changelog
+
+2 - Got rid of HTML::LinkExtor module and used regexp matching instead.  
+    Offered choice of link url or linked text.
+    Very much improved over v1.
+1 - Initial version

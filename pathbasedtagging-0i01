@@ -1,0 +1,84 @@
+# -*- perl -*-
+# Blosxom Plugin: pathbasedtagging
+# Author(s): Axel Beckert <blosxom@deuxchevaux.org>, http://noone.org/blog
+# Version: 0.01
+# Licensing: GPL v2 or newer, http://www.gnu.org/licenses/gpl.txt
+# Tagging plugin web page: http://noone.org/blog?-tags=Tagging
+# Path Based Tagging plugin download: http://noone.org/blosxom/pathbasedtagging
+# Blosxom web page: http://blosxom.ookee.com/
+
+### Documentation:
+#
+# This is a plugin for blosxom.
+#
+# Installation:
+#
+#  You should use plugin sorted by numbers with this plugin. Drop it
+#  into your blosxoms plugin directory and prefix it with a quite low
+#  two digit number (e.g. 02) which should be lower than the number of
+#  plugins having an entries subroutine, e.g entries_index or
+#  entries_cache. The tagging plugin itself should have a higher
+#  number than those plugins. (I use 02pathbasedtagging,
+#  05entries_index and 25tagging.)
+#
+#  If you want, change some of the configuration variables below.
+#
+# What it does:
+#
+#  In your blog, it handles any (virtual) directory named tag or tags
+#  special and remaps the beginning of the URL and the tags coming
+#  after that virtual directory in a way the tagging plugin can work
+#  as usual.
+#
+# Configuration:
+#
+#  You can change the regular expression for matching the special
+#  directory name. You may want to configure the tagging plugin to use
+#  the blosxom_tags linking style.
+#
+# How to use it:
+#
+#  Instead of URLs like http://blog/cgi-bin/blosxom.cgi?-tags=foo,bar
+#  you now can use http://blog/cgi-bin/blosxom.cgi/tags/foo/bar
+#
+# Version History:
+#
+#  0.01:   Initial release, together with tagging 0.04
+#
+
+package pathbasedtagging;
+
+use CGI qw(:standard);
+
+###
+### Configuration
+###
+
+my $re = qr/tags?/i;
+
+###
+### The plugin itself
+###
+
+sub start {
+    1;
+}
+
+sub entries {
+    if ($blosxom::path_info =~ m!(^|/)$re/!) {
+	$blosxom::path_info = $`;
+	my $tags = $';
+
+	# Allow multiple tags separated by slashes
+	$tags =~ s(/)(,)g;
+
+	# Pass them via CGI.pm to the tagging plugin which does all
+	# the filtering
+        CGI::param(-name => '-tags', -value => $tags);
+    }
+
+    # Keep the default method of searching entries
+    return undef;
+}
+
+1;

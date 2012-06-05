@@ -1,0 +1,380 @@
+# Blosxom Plugin: textrite
+# Author(s): Rick Hogan
+# Version: 0+1i
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+use strict;
+package textrite;
+
+# --- Configurable variables -----
+my $wrap_para=1; # default to wrapping entire story in paragraph
+                 # remove this if you want a custom <p></p> story
+                 # wrapper in your story.html
+
+my $css_rules=1; # use CSS rulers instead of deprecated <hr>
+
+my $blockquote_min=33; # number of words needed to infer a blockquote
+                        # is needed for quoted phrase.
+my $blockquote_leave_quotes=0; # will leave original quotes on a blockquote
+my $image_dir="/Images/";
+# --------------------------------
+
+sub start 
+{ 
+    1;
+}
+
+sub foot {
+  my($pkg, $currentdir, $foot_ref) = @_;
+
+#  $$foot_ref=&rite($$foot_ref);
+
+  return 1;
+}
+
+sub head {
+  my($pkg, $currentdir, $head_ref) = @_;
+
+ # $$head_ref=&rite($$head_ref);
+
+  return 1;
+}
+
+
+sub story {
+    my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref)=@_;
+    $$body_ref=&rite($$body_ref);
+    return 1;
+}
+
+sub rite
+{
+    my $text=shift;
+
+    study $text;
+
+    # rules
+    if(not $css_rules) {
+	$text=~ s/-{5,}/<hr>/g; # horizontal line
+	$text=~ s/["="]{5,}/<hr>/g;
+	$text=~ s/["."]{5,}/<hr>/g;
+    } else {
+	my $ruler="<div class=\"ruler\" style=\"width: 80%; margin-bottom: 0.5em; margin-top: 0.5em; padding-top: 2px; border-top: ";
+	$text=~ s/-{5,}/$ruler 1px solid;\"><\/div>/g;
+
+	$text=~ s/["="]{5,}/$ruler 1px solid; border-bottom: 2px solid;\"><\/div>/g;
+
+	$text=~ s/["."]{5,}/$ruler 4px dotted;\"><\/div>/g;
+    }
+
+    $text=~ s/\&(?!\w+\Q;\E)/\&amp;/g; # possible HTML (entities)
+
+#    $text=~ s/\</\&lt;/g; # possible HTML (tags)
+#    $text=~ s/\>/\&gt;/g; # possible HTML (tags)
+    $text=~ s/\Q...\E/\&hellip;/g; # doh, fixed 0.3i (thanks LCA)
+
+    # various marks
+    $text=~ s/[(]c[)]/\&copy;/g;
+    $text=~ s/[(]tm[)]/\&trade;/g;
+    $text=~ s/[(]r[)]/\&reg;/g;
+    $text=~ s/[(]reg["."]?[)]/\&reg;/g;
+	       
+    # symbols
+    $text=~ s/(?<!-)->/\&rarr;/g; # ->, not the --> of a comment (0.2i)
+    $text=~ s/<\-/\&larr;/g; # (0.2i)
+
+    # inline images
+    $text=~ s/<img src=\"?(.+)["."](jpe?g|jfif|mng|gif|png)\"?(.*?)>/<img src=\"$blosxom::url$image_dir$1.$2\"$3>/g;
+
+
+    # spacing rules
+    $text=~ s/([MDF]r?s?["."])/$1\&thinsp;/g; # (0.2i)
+    $text=~ s/(Corp["."])/$1\&thinsp;/g; # (0.2i)
+    $text=~ s/(Capt["."])/$1\&thinsp;/g; # (0.2i)
+    $text=~ s/(Gen["."])/$1\&thinsp;/g; # (0.2i)
+
+    $text=~ s/(?<=[A-Z])["."](?=[A-Z])/.\&thinsp;/g; # intra-acronym (0.2i)
+	       
+    # traditional emphasis
+    my $ttail="<\/em>\&thinsp;";
+    $text=~ s/\bcf["."]([\s[:punct:]])/<em class=\"trad\">cf.$ttail$1/g; # (0.2i)
+    $text=~ s/\bet["."]([\s[:punct:]])/<em class=\"trad\">et.$ttail$1/g; # et alia (0.2i)
+    $text=~ s/\bc["."]\s?(?=\d)/<em class=\"trad\">c.$ttail/g; # circa (0.2i)
+    $text=~ s/\bq["."]v["."]([\s[:punct:]])/<em class=\"trad\">q.\&thinsp;v.$ttail$1/g; # quod vid # (0.2i)
+    $text=~ s/\bi["."]e["."]([\s[:punct:]])/<em class=\"trad\">i.\&thinsp;e.$ttail$1/g; # in exemplis (0.2i)
+
+    $text=~ s/\b[aA]["."][dD]["."]\s?/A.\&thinsp;D.\&thinsp;/g;
+    $text=~ s/\b[Bb]["."][cC]["."]\s?/B.\&thinsp;C.\&thinsp;/g;
+
+	       
+    # dashes
+    $text=~ s/\b  \b/\&emsp;/g;
+    $text=~ s/---/ \&mdash; /g;
+    $text=~ s/(?<!<\Q!\E)--/ \&ndash; /g; # possible HTML (comments) !--
+    $text=~ s/--(?!\Q>\E)/ \&ndash; /g; # possible HTML (comments) -->
+
+    # modal environs (quote, blockquote, lists)
+    # single-line mode
+    if($text=~ /(<sl>)([\w\/[:punct:]\s\n]*?)(<\/sl>)/) {
+	my $in=$1; my $out=$3; my $subtext=$2;
+	my $new_subtext=$subtext;
+	$new_subtext=~ s/^\n//g; # get rid of first \n, if any
+	$new_subtext=~ s/\n/<br \/>\n/g;
+	$text=~ s/$in$subtext$out/$new_subtext/g;
+    }
+    # quoting groups
+    $text=~ s/(["<"]["<"])([\w\/[:punct:]\s\n]*?)([">"][">"])/\&laquo;$2\&raquo;/g; # french quotes (0.3i)
+    $text=~ s/(?<!\=)(\Q"\E)([\w\/[:punct:]\s\n][^<=>]*?)(\Q"\E)(?![>])/\&ldquo;$2\&rdquo;/g; # double quotes
+    $text=~ s/(\Q``\E)([\w\/[:punct:]\s\n]*?)(\Q''\E)/\&lsquo;$2\&rsquo;/g; # LaTeX-like (double-single quotes)
+    $text=~ s/(\Q`\E)([\w\/[:punct:]\s\n]*?)(\Q'\E)/\&lsquo;$2\&rsquo;/g; # single quotes
+
+    # blockquote (0.3i)
+    if($text=~ /(\&l[ad]quo;)([\w\/[:punct:]\s\n]+?)(\&r[ad]quo;)/g) { # double-quotes only (english and french)
+        my $quoted=$2;
+        my $lq=$1; my $rq=$3;
+	my @quoted_words=split " ", $quoted;
+	if($#quoted_words >= $blockquote_min) {
+	    if(not $blockquote_leave_quotes) {
+		$lq=""; $rq="";
+	    }
+	    $text=~ s/\&ldquo;$quoted\&rdquo;/<blockquote>\n$lq$quoted$rq\n<\/blockquote>\n/gm;
+	}
+    }
+
+    # lists (unordered) (0.3i)
+    $text=~ s/(?<=[\n\t])["*"]\s*([\w\/[:punct:]\s][^\n]+)?\n/<li>$1<\/li>\n/g; # by asterisk
+    $text=~ s/\n([\n\t]+)(?=<li>)/\n$1<ul>\n/g; # insert list-begin
+    $text=~ s/(?<=\<\/li\>)\n\n/\n<\/ul>\n\n/g; # insert list-end
+
+    # lists (ordered) (0.3i)
+    $text=~ s/(?<=[\n\t])[\d+]["."")"]?\s*([\w\/[:punct:]\s][^\n]+)\n/<li>$1<\/li>\n/g; # by numbers
+    $text=~ s/(?<=[\n\t])\Q#\E\s*([\w\/[:punct:]\s][^\n]+)\n/<li>$1<\/li>\n/g; # by number sign
+    $text=~ s/\n([\n\t]+)(?=<li>)/\n$1<ol>\n/g; # insert list-begin
+    $text=~ s/(?<=<\/li>)\n\n/\n<\/ol>\n\n/g; # insert list-end
+			  
+
+    # normal multiple-chars into symbols
+    $text=~ s/c5/\&ccedil;/g;
+    $text=~ s/([NnOo])~/\&$1tilde;/g; # (0.3i)
+
+    $text=~ s/\b1\/2\b/\&frac12;/g; # (0.3i)
+    $text=~ s/\b1\/4\b/\&frac14;/g; # (0.3i)
+    $text=~ s/\b3\/4\b/\&frac34;/g; # (0.3i)
+
+# diacriticals like LaTeX
+    $text=~ s/\\Ae/\&AElig;/g;
+    $text=~ s/\\ae/\&aelig;/g;
+    $text=~ s/\\Oe/\&Ouml;/g;
+    $text=~ s/\\oe/\&ouml;/g;
+    $text=~ s/\\Ue/\&Uuml;/g;
+    $text=~ s/\\ue/\&uuml;/g;
+    $text=~ s/\\sz/\&szlig;/g;
+
+# assumed generic diacriticals (need non-tag checks here)
+    $text=~ s/(?<!\&)Ae/\&AElig;/g; # fixed 0.3i
+    $text=~ s/(?<!\&)ae/\&aelig;/g; # fixed 0.3i
+    $text=~ s/(?<!\&)sz/\&szlig;/g; # fixed 0.3i
+
+# accents like LaTeX 
+    $text=~ s/\\'([AaEeIiOoUu])/\&$1acute;/g; # (0.3i)
+    $text=~ s/\\`([AaEeIiOoUu])/\&$1grave;/g; # (0.3i)
+
+# diaeresis like LaTeX
+    $text=~ s/\\:a/\&auml;/g;
+    $text=~ s/\\:e/\&euml;/g;
+    $text=~ s/\\:i/\&iuml;/g;
+    $text=~ s/\\:o/\&ouml;/g;
+    $text=~ s/\\:u/\&uuml;/g;
+    $text=~ s/\\:y/\&yuml;/g;
+    
+    # ordinary symbols
+#   $text=~ s/\_/\&lowbar;/g; # possible HTML (names, urls)
+#    $text=~ s/\#(?=\d)/\&num;/g; # possible HTML (anchors) # doesn't work with Mozilla
+#    $text=~ s/\%(?![\Q;\"\E])/\&percnt;/g; # HTML (width/css)? # doesn't work with Mozilla
+#    $text=~ s/\|/\&verbar;/g; # doesn't work with Mozilla
+    $text=~ s/\^/\&circ;/g;
+    $text=~ s/<A9>/\&copy;/g;
+    $text=~ s/["!"]["="]/\&ne;/g; # not equal sign (0.3i)
+    $text=~ s/f(?=\/?(1["."]8|2|2["."]8|4|5["."]6|8|11|16|22|32|64|128))/\&fnof;/g; # camera f-stops (0.3i)
+#frasl with html check here?
+
+    $text=~ s/\n\n/\n\n<\/p>\n<p class=\"story_para\">\n\n/g;
+ 
+# following code is under the GNU Public License
+ 
+#   ISO-latin1 translation of following is from:
+# 
+#   $Id: SGMLTools.pm,v 1.40 1998/10/13 11:54:59 cg Exp $
+#   <A9> Copyright 1996, Cees de Groot.
+#   by Farzad Farid, adapted by Greg Hankins
+
+	       $text=~ s/<C0>/\&Agrave;/g;
+	       $text=~ s/<C1>/\&Aacute;/g;
+	       $text=~ s/<C2>/\&Acirc;/g;
+	       $text=~ s/<C3>/\&Atilde;/g;
+	       $text=~ s/<C4>/\&Auml;/g;
+	       $text=~ s/<C5>/\&Aring;/g;
+	       $text=~ s/<C6>/\&AElig;/g;
+	       $text=~ s/<C7>/\&Ccedil;/g;
+	       $text=~ s/<C8>/\&Egrave;/g;
+	       $text=~ s/<C9>/\&Eacute;/g;
+	       $text=~ s/<CA>/\&Ecirc;/g;
+	       $text=~ s/<CB>/\&Euml;/g;
+	       $text=~ s/<CC>/\&Igrave;/g;
+	       $text=~ s/<CD>/\&Iacute;/g;
+	       $text=~ s/<CE>/\&Icirc;/g;
+	       $text=~ s/<CF>/\&Iuml;/g;
+	       $text=~ s/<D1>/\&Ntilde;/g;
+	       $text=~ s/<D2>/\&Ograve;/g;
+	       $text=~ s/<D3>/\&Oacute;/g;
+	       $text=~ s/<D4>/\&Ocirc;/g;
+	       $text=~ s/<D5>/\&Otilde;/g;
+	       $text=~ s/<D6>/\&Ouml;/g;
+	       $text=~ s/<D8>/\&Oslash;/g;
+	       $text=~ s/<D9>/\&Ugrave;/g;
+	       $text=~ s/<DA>/\&Uacute;/g;
+	       $text=~ s/<DB>/\&Ucirc;/g;
+	       $text=~ s/<DC>/\&Uuml;/g;
+	       $text=~ s/<DD>/\&Yacute;/g;
+	       $text=~ s/<DE>/\&THORN;/g;
+	       $text=~ s/<DF>/\&szlig;/g;
+	       $text=~ s/<E0>/\&agrave;/g;
+	       $text=~ s/<E1>/\&aacute;/g;
+	       $text=~ s/<E2>/\&acirc;/g;
+	       $text=~ s/<E3>/\&atilde;/g;
+	       $text=~ s/<E4>/\&auml;/g;
+	       $text=~ s/<E5>/\&aring;/g;
+	       $text=~ s/<E6>/\&aelig;/g;
+	       $text=~ s/<E7>/\&ccedil;/g;
+	       $text=~ s/<E8>/\&egrave;/g;
+	       $text=~ s/<E9>/\&eacute;/g;
+	       $text=~ s/<EA>/\&ecirc;/g;
+	       $text=~ s/<EB>/\&euml;/g;
+	       $text=~ s/<EC>/\&igrave;/g;
+	       $text=~ s/<ED>/\&iacute;/g;
+	       $text=~ s/<EE>/\&icirc;/g;
+	       $text=~ s/<EF>/\&iuml;/g;
+	       $text=~ s/<B5>/\&mu;/g;
+	       $text=~ s/<F0>/\&eth;/g;
+	       $text=~ s/<F1>/\&ntilde;/g;
+	       $text=~ s/<F2>/\&ograve;/g;
+	       $text=~ s/<F3>/\&oacute;/g;
+	       $text=~ s/<F4>/\&ocirc;/g;
+	       $text=~ s/<F5>/\&otilde;/g;
+	       $text=~ s/<F6>/\&ouml;/g;
+	       $text=~ s/<F8>/\&oslash;/g;
+	       $text=~ s/<F9>/\&ugrave;/g;
+	       $text=~ s/<FA>/\&uacute;/g;
+	       $text=~ s/<FB>/\&ucirc;/g;
+	       $text=~ s/<FC>/\&uuml;/g;
+	       $text=~ s/<FD>/\&yacute;/g;
+	       $text=~ s/<FE>/\&thorn;/g;
+	       $text=~ s/<FF>/\&yuml;/g;
+ 
+ # end: SGMLTools.pm
+
+#	$text=~ s/\b([A-Z]{2,}?)\b/<span class=\"all_caps\">$1<\/span>/g; # wrap all-caps to css later
+
+    # wrap first and last paragraph (thanks to LCA)
+    if($wrap_para) {
+       if($text!~ /^\s*<p/) {
+          $text="<p class=\"story_para\" id=\"first\">\n".$text."</p>\n";
+       }
+    }
+
+    return $text;
+}
+
+1;
+
+=head1 NAME
+
+Blosxom Plug-in: textrite
+
+=head1 SYNOPSIS
+
+Replaces typographical marks with the correct HTML entities, like 
+quotes, assorted dashes, copyrights, trademarks, the ampersand and ellipses.  
+Textrite also swaps the 8 bit ASCII for their proper HTML entities and handles 
+the conversion of LaTeX-style internationalised text. Lastly, it parses and
+marks up the paragraph units it finds.
+
+Much of the inspiration for this came from Linuxdoc SGML, probably the easiest
+markup I've ever used.
+
+=head1 CHANGES
+
+0.3i removed # = &num;, | = &verbar;, and % = &percnt; translations: browser doesn't support HTML4 specifications for this!
+0.3i more symbols (f-stops use ordinal-f, fractions, &c.)
+0.3i translation of fractions with equivalents as HTML entities
+0.3i LaTeX-style accents are now transformed into their HTML entities
+0.3i <img src> in stories point to $blosxom::url, optionally adds $image_dir 
+0.3i automatically blockquote 33 (default) or more words if quoted
+0.3i "* item" are unordered list items: depth delimited by tabs
+0.3i "1. item", "# item" are ordered list items: depth delimited by tabs
+0.3i double-quotes now handle newlines in them (bugfix)
+
+0.2i first paragraph has an id of "first", so you can add CSS dropcaps, &c.
+0.2i story now wrapped in <p class="para"> (bugfix)
+0.2i ----- (or more) = horizontal rule
+0.2i ===== (or more) = double horizontal rule
+0.2i ..... (or more) = dotted horizontal rule
+0.2i -> and <- translated into proper arrows
+0.2i better spacing rules for titles (Mrs., &c.) and acronyms
+0.2i emphasis placed on traditional abbreviations (cf, qv, ie, &c.)
+
+=head1 VERSION
+
+0.3i
+
+=head1 AUTHOR
+
+Rick Hogan  <gloveless .at. sympatico .pt. ca>
+
+=head1 CONTRIBUTORS
+
+Lim Chee Aun (fix top-level paragraph bug)
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head TODO
+
+modal: Verse, (preformatted?)
+put hrefs to obvious urls?
+
+=head1 BUGS
+
+One known: wrapping a double-quoted string in a tag (like <>"string"<>)
+results in misquoting.  The workaround is using double single-quotes 
+(like <>``string''<>) or adding carriage returns or the like.
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Blosxom and this Blosxom Plug-in
+Copyright 2003, Rael Dornfest 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+

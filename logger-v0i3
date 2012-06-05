@@ -1,0 +1,136 @@
+# Blosxom Plugin: logger
+# Authors: 
+# 	Andrew Mills (mischief@toad.net) and 
+# 	Fletcher T. Penney (http://fletcher.freeshell.org)
+# Version: 0+3i
+# Info: http://www.toad.net/~mischief/archives/logger
+
+package logger;
+
+# --- Configurable variables ---
+	# where are you keeping the log file?
+	$log = "/home5/mischief/blosxom/logger.dat";
+
+	# what data are you interested in tracking? (1 = track, 0 = do not track)
+	$timedatestamp = 1;
+	$remotehost = 1;
+	$remoteIP = 1;
+	$useragent = 1;
+	$documentURI = 1;
+	$referrer = 1;
+
+	# what character do you want to use for separating your columns?
+	$separator = "|";
+
+	# List of ip addresses to ignore.  Use '|' as a separator if you have more than one
+	# ie. $ip_ignore = '192.168.1.1|192.168.1.2'
+	# set to 'disable' to turn off restrictions
+
+	$ip_list = 'disable';
+
+# ------------------------------
+
+sub start {
+1;
+}
+
+# find out the visitor's IP address
+if ($remoteIP)    { $remoteIP = $ENV{'REMOTE_ADDR'}; }
+
+# if the visitor's IP address is not on the ignore list
+if ($remoteIP !~ /($ip_list)/) 
+	{
+	# get their environment information
+	if ($remotehost)  { $remotehost = $ENV{'REMOTE_HOST'}; }
+	if ($useragent)   { $useragent = $ENV{'HTTP_USER_AGENT'}; }
+	if ($documentURI) { $documentURI = $ENV{'REQUEST_URI'}; }
+	if ($referrer)    { $referrer = $ENV{'HTTP_REFERER'}; }
+
+	# and the time and date they visited
+	if ($timedatestamp)
+		{
+		($sec, $min, $hr, $mday, $mon, $year, $wday, $yday, $isdst)=localtime(time);
+		$year=$year+1900;
+		$mon += 1;
+		}
+
+	# and then write all this data into the log file
+	open (LOG, ">>$log") or die "cannot write to file: $!.";
+	if ($timedatestamp) { print LOG "$mon/$mday/$year$separator$hr:$min:$sec$separator" or die "cannot write to file: $!."; }
+	if ($remotehost) { print LOG "$remotehost$separator" or die "cannot write to file: $!."; }
+	if ($remoteIP) { print LOG "$remoteIP$separator" or die "cannot write to file: $!."; }
+	if ($useragent) { print LOG "$useragent$separator" or die "cannot write to file: $!."; }
+	if ($documentURI) { print LOG "$documentURI$separator" or die "cannot write to file: $!.; }
+	if ($referrer) { print LOG "$referrer" or die "cannot write to file: $!."; }
+	print LOG "\n" or die "cannot write to file: $!."; # one line per visit, hence this newline
+	close(LOG);
+	}
+1;
+
+sub end {
+1;
+}
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: logger
+
+=head1 SYNOPSIS
+
+This plugin stores CGI environment variables in a text file, much like a mini-server log. It stores this information in a text file you specify with the $log variable.  You should be able to access environment variables with $logger::remoteIP, $logger::referrer and so on, if you wanted to display any of the environment variable values within your template for some reason.
+
+=head1 VERSION
+
+Version 0+3i
+
+had bug report from Fletcher that logger plug in crashed web servers if file permissions were not set to allow writing.
+added "or die" to each line that write to the log file
+do not have means to test this fix and see if it works.  Use at your own risk!
+
+Version 0+2i
+
+=head2 VERSION HISTORY: 0+2i
+
+added date and time stamp code to logger plug in.  
+appended documentation to end of plugin in PerlDoc format.
+Fletcher contributed code to filter out IPs you do not want to include in your logs and refined the log file location variable. THANK YOU, FLETCHER!
+
+=head2 VERSION HISTORY: 0+1i
+
+initial test version
+
+=head1 AUTHORS
+
+Andrew Mills, mischief@toad.net
+Fletcher T. Penney, http://fletcher.freeshell.org
+
+=head1 BUGS
+
+I am sure there are plenty because I am a novice Perl programmer. Please report them to me at mischief@toad.net.
+
+Logger plugin does not currently support file locking, which it really should. I am trying to figure out how file locking works in Perl-- will add after I figure out how to do it.
+
+=head1 LICENSE
+
+Blosxom Logger Plug-in
+Copyright 2003, by Andrew Mills
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

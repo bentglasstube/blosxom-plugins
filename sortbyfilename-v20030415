@@ -1,0 +1,20 @@
+# by Todd Larason
+package sortbyfilename;
+use FileHandle;
+sub start{1;}
+sub sort {
+  return sub {
+   my ($fr) = @_;
+    return map {$_->[1]}
+           sort {$a->[0] cmp $b->[0]}
+           map {[sortbytitle::filename($_), $_]}
+           keys %$fr;
+  };
+}
+
+sub filename {
+   my ($fn) = @_;
+   $fn =~ s:.*/::;
+   return $fn;
+}
+1;

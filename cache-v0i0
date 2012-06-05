@@ -1,0 +1,44 @@
+# Blosxom Plugin: cache                                            -*- perl -*-
+# Author: Todd Larason (jtl@molehill.org)
+# Version: 0+0i
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/blosxom
+# Include plugin Home/Docs/Licensing:
+#  http://molelog.molehill.org/blox/Computers/Internet/Web/Blosxom/Cache/
+package cache;
+
+# --- Configuration Variables ---
+# seconds a cached page stays valid for
+
+my $cachekeep = 300;
+
+#--------------------------------
+
+use CGI;
+use File::stat;
+
+sub cache_filename {
+    my $url = self_url;
+    $url =~ tr:/:!:;
+    return "$blosxom::plugin_state_dir/.cache.$url";
+}
+
+sub start {
+    my $filename = cache_filename();
+
+    if (-r $filename and time - stat($filename)->mtime < $cachekeep) {
+	my $fh = new FileHandle;
+	if ($fh->open("< $filename")) {
+	    print STDOUT <$fh>, "<hr>cached: $filename<hr>";
+	    exit(0);
+	}
+    }
+    1;
+}
+
+sub end {
+    my $filename = cache_filename();
+    my $fh = new FileHandle;
+    print $fh $blosxom::output if ($fh->open("> $filename"));
+    1;
+}
+1;

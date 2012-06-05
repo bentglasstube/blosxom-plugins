@@ -1,0 +1,209 @@
+# Blosxom Plugin: xref
+# Author(s): Robert Hahn <rh-blosxom@tenletters.com> http://www.tenletters.com/rhahn
+# Version: 0+1i
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+# Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+# Copyright 2004 Robert Hahn
+# Released under the same License as Blosxom
+
+
+package xref;
+
+
+# --- Configurable variables -----
+
+
+# --------------------------------
+
+%xref_files; # used for cycle detection, and also for repairing the links
+$begin = 1;
+
+sub start {
+  1;
+}
+
+sub story {
+  my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+  # call loadfile with the title and body of the current story.
+  ($$title_ref, $$body_ref) = &loadfile($begin, $$title_ref, $$body_ref);
+  return 1;
+}
+
+sub loadfile {
+  my ($xref, $title, $body) = @_;
+
+  my $contents;
+
+  # this block only gets executed the first time loadfile is called
+  if ($xref == $begin) {
+    $xref = "";
+    if ($title =~ /^xref: (.*?)$/ or $body =~ /^xref: (.*?)$/ ) {
+      $xref = $1;
+    }
+  }
+
+  # if this is the first time through, then at this point,
+  # we're going to be in one of two situations:
+  # 
+  # 1) we've found a post with an xref line in it.
+  #    - jump into the workhorse loop
+  # 2) we didn't find a post with an xref line in it.
+  #    - skip past the workhorse loop and return the same 
+  #      $title & $body that got passed in.
+
+  # if this is the second -> n time through, then it'll 
+  # always be 1) above.
+
+  if ($xref) {
+    open FILE, "$blosxom::datadir/$xref" or die "blosxom plugin xref: Unable to open file: $!\n";
+    $contents = join ('', <FILE>);
+    close FILE;
+
+    # we've now got the file the xref pointed to.  Split
+    # it up and grab the new $title and $body.
+
+    @content = split /\n/, $contents;
+    $title = shift @content;
+    $body = join "\n", @content;
+
+    # up until this point, we don't yet know whether the
+    # file we just loaded also contains an xref.
+
+    if ($contents =~ /^xref: (.*?)$/m) {
+
+      # ok, so it does have an xref. Let's find out what it is.
+
+      if (exists $xref_files{$1}) {
+        die "blosxom plugin xref: cycle detected.  Please check '$blosxom::datadir/$1' and ensure it points to the correct file.\n";
+      }
+      
+      $xref_files{$xref} = '';
+      ($title, $body) = &loadfile($1, $title, $body);
+    }
+  }
+
+  return ($title, $body);
+}
+
+# This routine must not be used.  In it's current state, it's missing
+# the candidate file it needs to update the xref posts to.  Even if that
+# is provided, it will then error (on UNIX systems in a CGI context, at
+# least) once it attempts to open a file for writing, citing 'Permission
+# denied'.  In a future release, this script will be modified to have
+# two modes - a CGI mode for Blosxom, and a command-line mode for
+# repairing links.  The command-line mode will be using this routine.
+
+sub repairfiles {
+  my ($candidate_file, @files) = @_;
+
+  foreach my $file (@files) {
+    open FILE, "$blosxom::datadir/$file" or die "blosxom plugin xref: repairfiles(): Unable to open file: $!\n";
+    $contents = join ('', <FILE>);
+    close FILE;
+
+    if ($contents =~ /^xref: (.*?)$/m && $1 ne $candidate_file) {
+	$contents =~ s/$1/$candidate_file/;
+        open FILE, ">$blosxom::datadir/$file" or die "blosxom plugin xref: repairfiles(): Unable to open file: $!\n";
+        print FILE $contents;
+        close FILE;
+    }
+  }
+
+}
+1;
+
+__END__
+=head1 NAME
+
+Blosxom Plug-in: xref
+
+=head1 SYNOPSIS
+
+This plugin is designed to enable blosxom users to 'cross post' articles under multiple categories.
+
+=head1 PREQUISITES
+
+None.
+
+=head1 DETAILS
+
+To use this plugin, it's important to understand the model being used.  Blosxom works best knowing that each file it finds corresponds to a post.  The plugin aims to play to that strength.
+
+To cross-post an article, create a text file in the location where you wish the cross-post to show up.  This file can have anything you want in it, but there MUST be one line that looks like the following:
+
+  xref: path/to/file.txt
+
+At the minimum, then, the file need only have that line.
+
+When this plugin encounters that line, it opens up the file at $blosxom::datadir/path/to/file.txt and first checks to see if it has any xrefs in it. If it does, then it continues to search the file indicated by the xref.  If a real article is found, the contents of the article are parsed into title and body, and the results are 'pasted in place' of the original xref file.
+
+Because of the way this plugin works, it's probably clear by now that it is absolutely imperative that it be the first to load.
+
+This system is extremely flexible. If you want to move an xref post to another location, do so and the system automatically compensates.
+
+If you want to relocate the *original article* to a new location, however, do so, but create an xref post in the vacated position so that old xref posts have a path to follow to get to the article.
+
+A future release will incorporate the ability to 'repair' xref posts so that they always point to the original article instead of another xref post.  In this way it will be possible to contain the number of xref posts to an absolute minimum.
+
+You should also be aware of another consequence of this system.  All articles showing up in the xref'ed location will have the xref'ed location's date/time stamp.  At this point in time, I'm choosing to call that a feature, not a bug (seriously).  If this is undesirable, you can always touch the xref post to match the timestamp of the original.
+
+This plugin is believed to work flawlessly in static mode, but hasn't been tested at this time.
+
+=head1 CUSTOMIZATION
+
+There is no customization possible.
+
+=head1 VERSION
+
+0+1i First Release.
+
+=head1 AUTHOR
+
+Robert Hahn  
+  rh-xref@tenletters.com
+  [http://www.tenletters.com/rhahn/]
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: 
+  [http://www.raelity.org/apps/blosxom/]
+
+Blosxom Plugin Docs: 
+  [http://www.raelity.org/apps/blosxom/plugin.shtml]
+
+Link for this plug-in: 
+  as yet unknown.
+
+=head1 BUGS
+
+Address bug reports and comments to the author
+
+=head1 LICENSE
+
+Blosxom
+Copyright 2003, Rael Dornfest 
+
+xref
+Copyright 2004, Robert Hahn
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+

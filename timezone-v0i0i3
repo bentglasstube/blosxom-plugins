@@ -1,0 +1,169 @@
+# Blosxom Plugin: timezone
+# Author(s):    0.0.1: Raffi Krikorian <r@bitwaste.com>, 
+#               0.0.2-0.0.3: Mark Ivey <zovirl@zovirl.com>
+# Version: 0.0.3
+# Documentation: See the bottom of this file or type: perldoc timezone
+
+package timezone;
+
+use POSIX qw(tzname tzset);
+use Time::Local; 
+
+# --- Configurable variables -----
+
+# what timezone is the blog author in
+# (leave blank to use the server's default timezone)
+my $blog_timezone = "PST8PDT";
+
+# --------------------------------
+my $debug = 0;
+
+use vars qw( $name $offset);
+
+# this calls set_variables() multiple times because DST might be in
+# effect for some dates and not others. 
+
+sub start {
+    $ENV{TZ} = $blog_timezone if $blog_timezone;
+    # use the current time
+    set_variables(time());
+    1;
+}
+
+sub head {
+    # use the current time
+    set_variables(time());
+}
+
+sub story {
+    # use the story's time
+    set_variables( timelocal(0, $blosxom::min, $blosxom::hr,
+        $blosxom::da, $blosxom::mo_num-1, $blosxom::yr));
+}
+
+sub date {
+    my ($pkg, $currentdir, $date_ref, $mtime, $dw,$mo,$mo_num,$da,$ti,$yr) = @_;
+    # use the given time
+    set_variables($mtime);
+}
+
+sub foot {
+    # use the current time
+    set_variables(time());
+}
+
+sub set_variables
+{
+    my $time_gmt = shift || time();
+    warn "timezone::set_variables($time_gmt)\n" if $debug > 0;
+
+    my $isdst = (localtime($time_gmt))[8];        # is DST in effect?
+    POSIX::tzset();
+    my @tz_name = POSIX::tzname();       # ($std, $dst)
+    $name = $isdst ? $tz_name[1] : $tz_name[0];
+    
+    $offset = get_tz_offset($time_gmt);
+}
+
+sub get_tz_offset
+{
+    # GMT time in seconds
+    my $time_gmt = shift || time();
+    # get local time in seconds
+    my $time_local = timegm(localtime($time_gmt));
+    warn "timezone::get_tz_offset() local: " . scalar gmtime($time_local) .
+                    " gmt: " . scalar gmtime($time_gmt) . "\n" if $debug > 0;
+    
+    # get the timezone offset in minutes 
+    my $offset_minutes = ($time_local - $time_gmt)/60;
+    warn "timezone::get_tz_offset() offset is $offset_minutes minutes\n" 
+        if $debug > 0;
+    
+    # convert offset to +/-HHMM
+
+    my $offset = sprintf("%02d%02d",  abs($offset_minutes)/60, 
+                                      abs($offset_minutes)%60);
+    $offset = ( ($offset_minutes >= 0) ? "+$offset" : "-$offset" ); # get sign
+    
+    return $offset;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: timezone
+
+=head1 SYNOPSIS
+
+Lets Blosxom timestamps use a different timezone than the server.  Exports 2 
+variables, $timezone::name and $timezone::offset, so flavors can 
+display the timezone.
+
+=head1 VERSION
+
+0.0.3
+
+=head1 AUTHOR
+
+Version 0.0.1: Raffi Krikorian <r@bitwaste.com>, http://www.bitwaste.com/. 
+Original version.
+
+Version 0.0.2: Mark Ivey <zovirl@zovirl.com>, http://zovirl.com.  Added
+$timezone::name and extra documentation.
+
+Version 0.0.3: Mark Ivey.  Added $timezone::offset.
+
+=head1 DESCRIPTION
+
+The format for $blog_timezone is the same as for the tzset C function 
+(www.die.net/doc/linux/man/man3/tzset.3.html).  Leave it empty
+to use the server's default timezone.
+
+$timezone::name and $timezone::offset can be used in flavors, like this:
+...posted: $hr:$min $timezone::name ($timezone::offset)...
+
+$timezone::name gives the 3 letter name of the timzone (such as PST or PDT) 
+while $timezone::offset gives the offset from GMT in +/-HHMM format (such as 
+-0800 or -0700).
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+This plugin can't be disabled by appending an underscore to the filename 
+(timezone_).  I don't think this should cause any problems, but I might be 
+wrong.
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+timezone Blosxom Plugin Copyright 2003, Raffi Krikorian 
+
+Portions Copyright 2003-2004, Mark Ivey
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

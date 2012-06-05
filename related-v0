@@ -1,0 +1,173 @@
+# Blosxom Plugin: related-links
+# Author(s): Brian Del Vecchio <bdv@hybernaut.com>
+# Version: 0 (proof of concept)
+# for more information see http://www.hybernaut.com/bdv/related.html
+
+# Copyright 2004 Brian Del Vecchio
+# Released under the same License as Blosxom
+
+package related;
+
+use File::stat;
+use XML::LibXML;
+use LWP;
+
+my $cache_dir = "$blosxom::plugin_state_dir/related_cache";
+my $cache_time = 600; # seconds
+my $max_links = 10;
+
+# change this to your del.icio.us credentials
+my $username = "*****"; # replace with your del.icio.us username
+my $password = "*****"; # replace with your del.icio.us password
+
+my %allposts;
+
+sub start { 1; }
+sub filter { 1; }
+
+sub story {
+    my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+    my $tags = $meta::tags;
+
+    if ($tags) {
+	# produce a list of related tags, linkified
+	my $tlinks = get_tag_links($tags);
+	$$story_ref =~ s/\[\[related-tags\]\]/$tlinks/g;
+	
+	# produce a list of related links, tagified
+	my $rlinks = get_related_links($tags);
+	$$story_ref =~ s/\[\[related-links\]\]/$rlinks/g;
+    }
+
+    1;
+}
+
+
+sub get_related_links {
+    my ($tags) = @_;
+
+    if (!-d $cache_dir) {
+	mkdir $cache_dir;
+    }
+
+    %allposts = ();
+
+    $ua = LWP::UserAgent->new;
+    my $parser = XML::LibXML->new();
+
+    # support for multiple tags
+    # right now del.icio.us doesn't have a union query,  
+    # so we perform multiple queries and merge the results
+
+    foreach my $tag ( split ' ', $tags ) {
+
+	my $cache = "$cache_dir/$tag.xml";
+
+	# use tricks from 'syndicated' plugin to cache result documents
+
+	if (!stat($cache) || time - stat($cache)->mtime >= $cache_time) {
+
+	    my $url = "http://" . $username . ":" . $password . 
+		"\@del.icio.us/api/posts/recent?count=10&tag=" . $tag; 
+
+	    my $req = HTTP::Request->new(GET => $url);
+	    my $resp = $ua->request($req);
+	
+	    # if ($resp->is_error)...
+
+	    open(FILE,'>',$cache);
+	    print FILE $resp->content;
+	    close FILE;
+	    
+	}
+
+
+	# parse the xml result for the current tag
+
+	my $tree = $parser->parse_file($cache);
+	my $root = $tree->getDocumentElement;
+	my @posts = $root->getElementsByTagName('post');
+
+	# add the posts for this tag to allposts.
+	# this is complicated, but has the effect of removing dupes
+
+	foreach my $post (@posts) {
+	    my $hash = $post->getAttribute('hash');
+
+	    if ($allposts{$hash}) {
+
+		# rank up links with multiple tag matches
+		$allposts{$hash}{match}++;
+
+	    } else {
+
+		$allposts{$hash} = 
+		    { href => $post->getAttribute('href'),
+		      tags => $post->getAttribute('tag'),
+		      desc => $post->getAttribute('description'),
+		      extn => $post->getAttribute('extended'),
+		      time => $post->getAttribute('time'),
+		      hash => $post->getAttribute('hash'),
+		      match => 1
+		    };
+
+	    }
+	}
+    }
+
+    # Now walk through the list of posts and generate HTML
+
+    my $html;  # generated html
+    my $count = 0;
+
+    # sort the results by tag matches, then date (newest first)
+    foreach $post ( sort sort_links keys %allposts ) {
+
+	# take the newest $max_links
+	last if ($count ++ >= $max_links);
+
+	$p = $allposts{$post};
+
+	$html .= 
+	    "<p class='delLink'>" .
+	    "  <a href='" . $p->{href} . "' title='" . $p->{extn} .
+	    "'>" .
+	    $p->{desc} . "</a><br />\n";
+
+	$html .= get_tag_links($allposts{$post}{tags});
+
+	$html .= "</p>";
+
+    }
+
+    return $html;
+    1;
+}
+
+# convert a space-separated list of tags into delicious tag links
+sub get_tag_links {
+    my ($tags) = @_;
+
+    my $html = "\n";
+    my $class = 'delTagLink';
+    
+    foreach my $t ( split ' ', $tags ) { 
+	$html .= "<a class='" . $class . "' href='http://del.icio.us/" . $username . "/" . $t . "'>" . $t . "</a> ";
+    }
+
+    $html .= "\n";
+
+    return $html;
+    1;
+}
+
+# sort by number of tag matches, then timestamp.
+# more tag matches means more relevant link.
+sub sort_links { 
+    $allposts{$b}{match} <=> $allposts{$a}{match} 
+      ||
+    $allposts{$b}{time} cmp $allposts{$a}{time} 
+}
+
+1;

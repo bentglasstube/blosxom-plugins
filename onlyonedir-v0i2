@@ -1,0 +1,54 @@
+# Blosxom Plugin: onlyonedir
+# Author: Stu MacKenzie <http://groups.yahoo.com/group/blosxom/messages>
+# Version: v0.2 2004-09-09
+# License: MIT/Public Domain
+# blox home: http://www.enilnomi.net/download.html
+
+# When onlyonedir is active, blosxom is prevented from displaying 
+# entries in the parent directories of the called path. 
+# For example, with these directories:
+#   /animals
+#   /animals/mammals
+#   /animals/mammals/rodents
+# pointing your browser to 
+#   www.example.com/cgi-bin/blosxom.cgi/animals/mammals
+# will display only the stories in the /mammals directory; 
+# nothing from /animals will be displayed. 
+# Similarly, if you call 
+#   www.example.com/cgi-bin/blosxom.cgi/animals/mammals/rodents
+# only the stories in /rodents will appear; nothing from 
+# /animals or /aniamls/mammals will be displayed.
+#
+# To disable onlyonedir via config file, use this line: (without the #)
+# $onlyonedir::onlyonedir_on = 0;
+#
+# IMPORTANT NOTE:
+# If the called directory contains *no* entry files, blosxom will 
+# produce an empty page. To guard against this condition, you should 
+# think about using the empty_message plugin, or use config files to 
+# turn off onlyonedir in directories that contain no entry files. Also 
+# note that your config plugin must run during filter() to be effective 
+# in controlling onlyonedir; I suggest you use Fletcher Penney's version, 
+# and not the original config plugin by Rael Dornfest.
+
+package onlyonedir;
+
+$onlyonedir_on = 1 
+    unless defined $onlyonedir_on;
+
+sub start {1;}
+
+sub filter {
+  $onlyonedir_on or return 0;               # only run when requested
+
+  my ($pkg,$files_ref,$others_ref) = @_;
+                                            # leave one trailing slash on called path
+  (my $pi = "$blosxom::datadir/$blosxom::path_info") =~ s/\/*$/\//;
+  foreach (keys %$files_ref) {              # delete paths that aren't in the called dir
+    $_ =~ m/^$pi[^\/]+?\.$blosxom::file_extension$/ or delete $files_ref->{$_};
+  }
+}
+
+1;
+
+__END__

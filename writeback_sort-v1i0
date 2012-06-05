@@ -1,0 +1,60 @@
+# Blosxom Plugin: writeback_sort
+# Author(s): Randall Hand
+# Version: 1.0
+# Documentation: See below.
+
+package writeback_sort;
+use File::stat;
+
+# --- Configurable variables -----
+
+# -- Set to the directory of your writeback files
+#   In the writeback plugin, it's $writeback_dir
+$writeback_dir = "$blosxom::plugin_state_dir/writeback";
+
+# -- Set to your writeback extension
+#   In the writeback plugin, it's $file_extension
+$writeback_extension = "wb";
+
+# --------------------------------
+
+sub start {
+  1;
+}
+
+sub sort {
+  return sub {
+    my($files_ref) = @_;
+
+    return sort {   
+        my $time_a;
+        my $time_b;
+
+        $time_a = $files_ref->{$a};
+        $time_b = $files_ref->{$b};
+
+        $file = $a;
+        $file =~ s/$blosxom::datadir/$writeback_dir/;
+        $file =~ s/txt$/$writeback_extension/;
+
+        if (-e $file) {
+            $time_a = stat($file)->mtime;
+        }
+        $file = $b;
+        $file =~ s/$blosxom::datadir/$writeback_dir/;
+        $file =~ s/txt$/$writeback_extension/;
+
+        if (-e $file) {
+            $time_b = stat($file)->mtime;
+        }
+    
+        $time_b <=> $time_a;
+
+        } keys %$files_ref;
+    
+  };
+}
+  
+1;
+
+

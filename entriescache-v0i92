@@ -1,0 +1,515 @@
+# Blosxom Plugin: entries_cache -*- perl -*-
+# Author(s): Fletcher T. Penney <http://fletcher.freeshell.org/> 
+# Modified by Steve Schwarz <http://agilitynerd.com/>
+# Version: 0.92
+# Based on entries_index by Rael Dornfest
+# Documentation help contributed by Iain Cheyne
+
+package entriescache;
+
+# --- Configurable variables -----
+
+$delay = 0;		# How many minutes delay before entries are re-indexed?
+			# Set to 0 to force reindexing everytime - this
+			# will provide the same behavior as Rael's
+			# entries_index.  Though, I am not sure why one 
+			# would do this.  At least use a small cache time to
+			# improve performance....
+			# SAS - I set this to zero so comments and new files
+			# are immediately visible.
+$indexname = "$blosxom::plugin_state_dir/.entries_cache.index";
+$others_indexname = "$blosxom::plugin_state_dir/.entries_cache.others";
+
+
+$use_date_tags = 1;	# Set to 1 to enable parsing meta- keywords
+			# for date tags
+
+$use_UK_dates = 0;	# Default is mm/dd/yy (US)
+			# Set to 1 to use dd/mm/yy (UK)
+
+$update_meta_date = 0;		# Add a meta_date tag if it doesn't exist
+	# This will require that perl has write access to your story files
+	# and that you are using the meta plugin.
+	
+	# NOTE: As of version 0.91, you do not NEED the meta plugin...
+
+	# Be sure to save your text files with UNIX line endings
+	# (any decent text editor should be able to do this) or use the blok
+	# plugin (http://www.enilnomi.net/download.html#blok).
+	# There is some logic in entries_cache to fix this, but do not rely
+	# on it.
+
+	# Lastly, make sure there is at least one blank line between the
+	# entry title and the body. Again, there is some logic in
+	# entries_cache to fix this, but do not rely on it.
+	
+	# The default meta-keywords are compatible with Eric Sherman's
+	# entries_index_tagged defaults:
+	
+	# http://primitiveworker.org/blo.g/development/blosxom/entries_index_tagged/
+
+$meta_timestamp = "meta-creation_timestamp:" unless defined $meta_timestamp;
+	# timestamp_tag is the non-human readable date stamp format
+	# used by entries_index, entries_cache, entries_index_tagged,
+	# and blosxom
+
+$meta_date = "meta-creation_date:" unless defined $meta_date;
+	# date_tag is a human readable version
+
+$strip_meta_dates = 1;		# Strip meta-tags from story so that 
+	# they are not displayed.  Unnecessary if you are running the 
+	# meta plugin.
+
+$debug = 0;	# Debugging flag
+
+# --------------------------------
+
+use File::stat;
+use File::Find;
+use CGI qw/:standard/;
+use Time::Local;
+
+my $time = time();
+my $reindex = 0;
+
+sub start {
+	# Force a reindex
+	$reindex = 1 if (CGI::param('reindex'));
+	return 1;
+}
+
+
+sub entries {
+	
+	return sub {
+		my(%files, %indexes, %others);
+	
+		# Read cached index
+		if ( open CACHE, $indexname) {
+			while ($line = <CACHE>) {
+				# Improved backwards compatibility with entries_index
+				if ($line =~ /\s*'?(.*?)'?\s*=>\s*(\d*),?/) {
+					$files{$1} = $2;
+				}
+			}
+			close CACHE;
+			# See if it's time to reindex
+			$reindex = 1 if ( stat($indexname)->mtime lt ($time - $delay*60) );
+		} else {
+			# No index found, so we need to index
+			$reindex = 1;
+		}
+
+		# Read cached others index
+		if ( open CACHE, $others_indexname) {
+			while ($line = <CACHE>) {
+				# Improved backwards compatibility with entries_index
+				if ($line =~ /\s*'?(.*)'?\s*=>\s*(.*),?/) {
+					$others{$1} = $2;
+				}
+			}
+			close CACHE;
+			# See if it's time to reindex
+			$reindex = 1 if ( stat($others_indexname)->mtime lt ($time - $delay*60) );
+		} else {
+			# No index found, so we need to index
+			$reindex = 1;
+		}
+
+
+		# Perform reindexing if necessary
+		# This code was originally copied from entries_index by Rael Dornfest
+		# Check to see if previously indexed files exist, and then rescan
+		# the datadir for any new files, while preserving the old times
+
+		# Static mode requires some of the code in this section, and the
+		# speed hit is unimportant for static blogs
+		
+		if ($blosxom::static_or_dynamic eq "static") {
+			$reindex = 1;
+		}
+
+
+		if ($reindex eq 1) {
+			
+			# If any files not available, err on side of caution and reindex
+			for my $file (keys %files) { -f $file or do { $reindex++; delete $files{$file} }; }
+			for my $other (keys %others) { -f $other or do { $reindex++; delete $others{$other} }; }
+
+
+			find(
+				sub {
+					my $d; 
+					my $curr_depth = $File::Find::dir =~ tr[/][]; 
+
+					#	if ( $blosxom::depth and $curr_depth > $blosxom::depth ) {
+					#	# We are beyond depth, so remove files
+					#	$files{$File::Find::name} and delete $files{$File::Find::name};
+					#	$others{$File::Find::name} and delete $others{$File::Find::name};
+					#	return;
+					#}
+    
+     				# Adding support for %others
+     				if (
+					$File::Find::name =~ 
+						m!^$blosxom::datadir/(?:(.*)/)?(.+)\.$blosxom::file_extension$!
+						and $2 ne 'index' and $2 !~ /^\./ and (-r $File::Find::name)
+					) {
+				    # SAS modified so if meta-creation_date or file timestamp are in the future
+				    # and we don't want future entries the file won't be included in the file list
+				    # the index list
+				    if (!$blosxom::show_future_entries and 
+					((extract_date($File::Find::name, $files{$File::Find::name}) > time) or
+					 (stat($File::Find::name)->mtime > time))) {
+					$files{$File::Find::name} and delete $files{$File::Find::name};
+					$others{$File::Find::name} and delete $others{$File::Find::name};
+				    } else {
+					        ( $files{$File::Find::name} || ++$reindex )
+						and ( $files{$File::Find::name} = 
+							extract_date($File::Find::name,$files{$File::Find::name}) ||
+							$files{$File::Find::name} ||
+							stat($File::Find::name)->mtime )
+						 
+						# Static
+						and (
+							param('-all') 
+							or !-f "$blosxom::static_dir/$1/index." . $blosxom::static_flavours[0]
+#							or stat("$blosxom::static_dir/$1/index." . $blosxom::static_flavours[0])->mtime < stat($File::Find::name)->mtime
+# Trying to fix for static mode
+							or stat("$blosxom::static_dir/$1/index." . $blosxom::static_flavours[0])->mtime < $files{$File::Find::name}
+						)
+						and $indexes{$1} = 1
+						and $d = join('/', (blosxom::nice_date($files{$File::Find::name}))[5,2,3])
+						and $indexes{$d} = $d
+						and $blosxom::static_entries and $indexes{ ($1 ? "$1/" : '') . "$2.$blosxom::file_extension" } = 1;
+					    }
+					} else {
+						!-d $File::Find::name and -r $File::Find::name and $others{$File::Find::name} = stat($File::Find::name)->mtime
+					}
+				}, $blosxom::datadir
+			);
+
+
+			if ( $reindex ) {
+				# The index was recreated, so we should record the new version
+				if ( open ENTRIES, "> $indexname" ) {
+					foreach (sort keys %files) {
+						print ENTRIES "$_=>$files{$_}\n";
+					}
+					close ENTRIES;
+				} else {
+					warn "couldn't > $indexname: $!\n";
+				}
+
+				if ( open ENTRIES, "> $others_indexname" ) {
+					foreach (sort keys %others) {
+						print ENTRIES "$_=>$others{$_}\n";
+					}
+					close ENTRIES;
+				} else {
+					warn "couldn't > $others_indexname: $!\n";
+				}
+			}
+		}
+	return (\%files, \%indexes, \%others);
+	}
+}
+ 
+ 
+sub extract_date {
+	my ($file, $indexed_date) = @_;
+	my $new_story = "";
+	my ($sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst);
+	
+	warn "Entries_Cache: Checking $file for meta-tag\n\tComparing to $indexed_date\n" if ($debug == 1);
+	
+	# This is an attempt for compatibility with Eric Sherman's entries_index_tagged
+	# But it does not handle as many date formats, as there are too many additional
+	# necessary modules that I am not willing to require
+	
+	if ( $use_date_tags != 0) {
+	
+		open (FILE, $file);
+		$line = <FILE>;		# Read first line ( ie the title)
+		$new_story .= $line;
+		
+		# now, parse the story, and try to correct misformatted stories
+		while ($line = <FILE>) {
+			if ($line =~ /^$meta_timestamp\s*(\d+)/) {
+				# If present, this format is used
+				close File;
+				$result = $1;
+				warn "Entries_Cache: Found meta_timestamp $result for $file\n" if ($debug == 1);
+				return $result;
+			}
+			
+			if ($line =~ /^$meta_date\s*(.*)/) {
+				close File;
+				$result = $1;
+				warn "Entries_Cache: Found meta-date $result for $file\n" if ($debug == 1);
+				return parsedate($result);
+			}
+			
+			if ( $line !~ /^meta.*?:/i) {
+				# line doesn't start with meta...  (ie story was not formatted
+				# for meta-tags), or the meta-tags are finished
+				
+				if ($update_meta_date eq 1) {
+					# Don't mess with stories unless using UNIX line endings.
+					
+					if (($line =~ /\r/) || ($new_story =~ /\r/)) {
+						warn "Entries_Cache: File $file has non-UNIX line endings; cannot update metatags...\n";
+						return 0;
+					}
+					
+					warn "Entries_Cache: Updating meta-tag for $file\n" if ($debug == 1);
+					if ($indexed_date eq 0 || $indexed_date == "") {
+						$indexed_date = stat($file)->mtime;
+						warn "Entries_Cache: No date for $file, using $indexed_date\n" if ($debug == 1);
+					}
+					
+					($sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst) = localtime($indexed_date);
+					$year += 1900;
+					$mon += 1;
+					$hour = sprintf("%02d",$hour);
+					$min = sprintf("%02d",$min);
+					$sec = sprintf("%02d",$sec);
+
+					warn "Entries_Cache: Adding meta-tag to $file, using $meta_date $mday/$mon/$year $hour:$min:$sec\n" if ($debug == 1);
+				
+					if ($use_UK_dates eq 1) {
+						$new_story .= "$meta_date $mday/$mon/$year $hour:$min:$sec\n\n";
+					} else {
+						$new_story .= "$meta_date $mon/$mday/$year $hour:$min:$sec\n\n";
+					}
+					
+					if ( $line !~ /^\s*$/) {
+						# If this line wasn't empty, then add it to story
+						$new_story .= $line;
+					}
+					
+					while ($line = <FILE>) {
+						# read remainder of story
+						$new_story .= $line;
+					}
+					
+					close FILE;
+					open (FILE, "> $file") or warn "Unable to update date meta-tag on $file\n";
+					print FILE $new_story;
+					close FILE;
+					return 0;
+				} else {
+					close File;
+					return 0;
+				}
+			}
+
+			$new_story .= $line;
+		}
+	}
+	return 0;	
+}
+
+sub parsedate {
+	my ($datestring) = @_;
+	#warn "Parsing $datestring\n";
+	
+	# Possible formatting
+	# Month can be 3 letter abbreviation or full name (in English)
+	# Time must be hh:mm or hh:mm:ss  in 24 hour format
+	# Year must be yyyy
+	# The remaining 1 or 2 digits are treated as date
+	# ie: May 25 2003 18:40 
+	# order is not important as long as pieces are there
+		
+	# Convert the datestring to a time() format
+
+	# Find "Shorthand" Date
+	if ( $datestring =~ /\d\d?\/\d\d?\/\d\d\d?\d?/) {
+		if ( $use_UK_dates eq 0) {
+			# Use US Formatting
+			$datestring =~ s/(\d\d?)\/(\d\d?)\/(\d\d\d?\d?)//;
+			$mon = $1 - 1;
+			$day = $2;
+			$year = $3;
+		} else {
+			# Use UK Formatting
+			$datestring =~ s/(\d\d?)\/(\d\d?)\/(\d\d\d?\d?)//;
+			$mon = $2 - 1;
+			$day = $1;
+			$year = $3;
+		}
+		
+		# Now, clean up year if 2 digit
+		# You may change the 70 to whatever cutoff you like
+		$year += 2000 if ($year < 70 );
+		$year += 1900 if ($year < 100);
+	}
+	
+	# Find Month
+	$mon = 0 if ($datestring =~ s/(Jan|January)//i);
+	$mon = 1 if ($datestring =~ s/(Feb|February)//i);
+	$mon = 2 if ($datestring =~ s/(Mar|March)//i);
+	$mon = 3 if ($datestring =~ s/(Apr|April)//i);
+	$mon = 4 if ($datestring =~ s/(May)//i);
+	$mon = 5 if ($datestring =~ s/(Jun|June)//i);
+	$mon = 6 if ($datestring =~ s/(Jul|July)//i);
+	$mon = 7 if ($datestring =~ s/(Aug|August)//i);
+	$mon = 8 if ($datestring =~ s/(Sep|September)//i);
+	$mon = 9 if ($datestring =~ s/(Oct|October)//i);
+	$mon = 10 if ($datestring =~ s/(Nov|November)//i);
+	$mon = 11 if ($datestring =~ s/(Dec|December)//i);
+
+	# Find Time
+	if ($datestring =~ s/(\d\d?):(\d\d)(:\d\d)?//) {
+		$hour = $1;
+		$min = $2;
+		$sec = $3;
+	}
+	
+	if ($datestring =~ s/(\d\d\d\d)//) {
+		$year = $1;
+	}
+	
+	if ($datestring =~ s/(\d\d?)//) {
+		$day = $1;
+	}
+	
+	return timelocal($sec,$min,$hour,$day,$mon,$year);
+	
+}
+
+sub story {
+	return 1 if (! $strip_meta_dates);
+	# This code based on Rael's meta plugin
+	my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+	
+	# Strip date-based meta tags from body
+	$$body_ref =~ s/^$meta_timestamp.*//g;
+	$$body_ref =~ s/^$meta_date.*//g;
+	
+	
+	return 1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: entries_cache
+
+=head1 SYNOPSIS
+
+Purpose: This plugin reserves original creation timestamp on weblog 
+entries, allowing for editing of entries without altering the original 
+creation time. It maintains an index ($blosxom::plugin_state_dir/
+.entries_cache.index) of filenames and their creation times. It also adds 
+new entries to the index the first time Blosxom come across them. In 
+addition, it is possible to rely on entries_cache inserting date-based meta 
+tags automatically into entries - this is enabled by the $use_date_tags 
+setting. This makes the entries more portable. Note that if this approach 
+is used, the meta plugin is required: http://www.blosxom.com/downloads/
+plugins/meta.  (NOTE: As of version 0.91 you can use this without the meta
+plugin.)
+
+Replaces the default $blosxom::entries subroutine
+
+The entries_cache plugin is a "souped-up" version of the entries_index 
+plugin.  It maintains file modification times in the same manner as the 
+original plugin, but goes one-step further. It uses the modification time 
+of the index file to determine whether to rescan the datadir.  If $delay 
+minutes have not passed, it relies on the cached information.
+
+You can force a manual scan by appending ?reindex=y to the end of your base 
+url.
+
+The reason for this change is that the original blosxom and the 
+entries_index plugin rescan the datadir each time a page is viewed. This 
+plugin allows you to cache the information to speed up processing times on 
+most page views.  According to several posts on the blosxom mailing list, 
+this is one of the big processor hogs. With a $delay setting of 60 minutes, 
+there will only be one page view each hour that has to wait for the full 
+directory scan. To be honest, I have not noticed much of a speed boost 
+during my testing yet, but I imagine it would only appear for sites with a 
+large number of files to be indexed.
+
+
+=head1 VERSION
+
+0.92
+
+=head1 VERSION HISTORY
+0.92    Checks if meta-creation_date is in the future and only displays
+        entry if $show_future_entries is set. Otherwise future articles
+        (by meta-creation_date or file modified time) are not displayed.
+        Don't think this breaks static rendering... haven't tested it.
+        
+0.91	Improved documentation courtesy of Iain Cheyne - THANKS!!!
+		Now, if you are not running the meta plugin, you will not see any meta tags in your stories
+
+0.9		Added parser that detects stories that are not properly formatted for meta-tags and reformats them so that they are.
+		Additionally, it will not update files that have improper line endings ( ie non-UNIX endings).
+ 
+0.8		Fixed typo that caused index to be rebuilt every time...  :)
+
+0.7		Major revisions - fixed the "Year 1900" bug and an issue with statically generated blogs misbehaving
+
+0.61	Fixed bug reading old styled cache files
+
+0.6		Added feature to automatically create meta-tags from indexed
+				time/date
+				
+0.52	Fixed a bug where a new index might not be written
+
+0.51	Added dd/mm/yy(yy) and mm/dd/yy(yy) date formatting
+
+0.5		Complete rewrite - add support for %others, meta- tags, added backwards compatibility to using the .entries_index.index file from rael's plugin
+
+0.2		Removed reliance on Data::Dumper, making it suitable for use on Earthlink
+
+=head1 AUTHOR
+
+Fletcher T. Penney
+Modified by Steve Schwarz
+based on original code by:
+Rael Dornfest  <rael@oreilly.com>, http://www.raelity.org/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+entries_cache plugin
+Copyright 2003, Fletcher Penney
+except for portions copied from entries_index and entries_index_tagged
+
+Blosxom and original entries_index plugin
+Copyright 2003, Rael Dornfest 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

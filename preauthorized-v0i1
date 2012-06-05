@@ -1,0 +1,99 @@
+# Blosxom Plugin:Preauthorized
+# Author: 
+# Version: 0.1
+
+# Based on Fletcher T. Penney's "login".
+
+package preauthorized;
+
+# --- Configurable variables -----
+
+# Where is your excludefile - this controls which user is able to see which 
+# files the excludefile is built using regular expressions in the format:
+# user=page
+# user is a regexp to match allowed user (.* matches all VALIDATED users)
+# page is a regexp to match pages or directories (.* matches all pages)
+#
+# Examples:
+# A blank or nonexistent file allows full access to anyone, logged in or not
+# myusername=.*
+#	Only someone logged in as myusername can access any files on the 
+#       web site
+# (myuser1|myuser2)=private
+#	Only these two people can access a file or directory named private, 
+#       private1, privatestuff, etc
+# .*=priv$
+#	Any VALIDATED user can view the directory named priv, but this 
+#       doesn't affect one named private
+#
+# 
+my $excludefile = "$blosxom::datadir/requireuser";
+
+# --------------------------------
+
+use CGI qw/:standard/;
+
+$username = $ENV{'REMOTE_USER'};
+
+sub start {
+     open (REQUIRE, $excludefile);
+     @requiredlist = <REQUIRE>;
+     close REQUIRE;
+    1;
+}
+
+sub filter {
+    my ($pkg, $files_ref) = @_;
+    my @files_list = keys %$files_ref;
+    
+    # Now filter the files
+    foreach $file (@files_list) {
+	$localfile = $file;
+	$localfile =~ s/\/\//\//g;		#An improperly formatted url such as:
+	# /my/document/dir/secret//files would slip through
+	foreach $required (@requiredlist) {
+
+	    if ($required =~ /(.*)=(.*)/) {
+		$requser=$1;
+		$reqfile=$2;
+
+		if ($username eq "" or $localfile =~ /^$blosxom::datadir(\/)?$reqfile/) {
+		    delete $files_ref->{$file} if (($username !~ /$requser/) or $username eq "");
+		}
+	    }
+	}
+    }
+    
+
+    1;
+}
+
+1;
+
+__END__
+
+    =head1 NAME
+
+    Blosxom Plug-in: preauthorized
+
+    =head1 DESCRIPTION
+
+    Preauthorized performs filtering of content as per the login plugin, 
+    however it relies on the blog reader having already authenticated 
+    themself via a .htaccess type approach.
+    The file, $excludefile, defines which users can access certain parts of 
+    your site.  The format for the files is explained above.
+
+    =head1 AUTHOR
+
+    Based on work by Fletcher T. Penney - http://fletcher.freeshell.org
+
+
+    =head1 LICENSE
+
+    This source is submitted to the public domain.  Feel free to use and 
+    modify it.  If you like, a comment in your modified source attributing 
+    credit for my original work would be appreciated.
+
+    THIS SOFTWARE IS PROVIDED AS IS AND WITHOUT ANY WARRANTY OF ANY KIND.  
+    USE AT YOUR OWN RISK!

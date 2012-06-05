@@ -1,0 +1,22 @@
+# by Todd Larason
+package sortbytitle;
+use FileHandle;
+sub start{1;}
+sub sort {
+  return sub {
+    my ($fr) = @_;
+    return map {$_->[1]}
+           sort {$a->[0] cmp $b->[0]}
+           map {[sortbytitle::title($_), $_]}
+           keys %$fr;
+  };
+}
+my $fh = new FileHandle;
+sub title {
+   my ($fn) = @_;
+   $fh->open($fn);
+   my $title = $fn->getline;
+   $fh->close;
+   return $title;
+}
+1;

@@ -1,0 +1,249 @@
+# Blosxom Plugin: deloxom
+# Version: 0.3.1
+# http://www.negatendo.net/~brett/deloxom.html
+
+package deloxom;
+
+# --- Configurable variables -----
+
+#WARNING: It is extremely important that your state directory is readable/writable by blosxom!
+
+#Also note that if you tweak these variables make sure to delete the cache files in the
+#state directory to have your changes appear.
+
+#WARNING - NOTICE - ACHTUNG!: Depending on your server configuration, it may be possible for outside users to browse to this plugin and SEE YOUR LOGIN AND PASSWORD! Do whatever you can to prevent the outside world from seeing your plugins.  Let only blosxom use them.  I hope to release a version of this plugin that reads your login and password from an outside or hash protected file soon.
+
+#you need a del.icio.us account
+$delicious_login = 'login';
+$delicious_password = 'password';
+
+#you can show up to 100 links at one time
+$num_links_to_show = 15;
+
+#1 means yes, 0 means no
+$show_tags = 1;
+$show_dateline = 1;
+
+# --------------------------------
+
+# --- Other variables ------------
+
+$version = "0.3.1";
+$api_url = 'http://del.icio.us/api';
+#$api_url = 'http://api.del.icio.us/1.0/api/etc'; #may change to this someday
+$api_net_loc = 'del.icio.us:80';
+$api_realm = 'del.icio.us API';
+$cache = "$blosxom::plugin_state_dir/deloxom.cache";
+
+# --------------------------------
+
+#depending on your perl config., you may need to install the modules below
+
+use LWP::UserAgent;
+use HTTP::Request::Common;
+
+#you shouldn't have to configure anything beyond this point
+
+sub start {
+	my $configOK = 1;
+	my $out = '';
+	
+	#test config vars (login and password)
+	if (($delicious_login eq 'login') or ($delicious_password eq 'password')) {
+		$out = 'You need to configure your del.icio.us login and password first!';
+		$configOK = 0;
+	}
+	
+	#test for the presence of our test cache file, and if it's not there check write and read
+	stat($cache.".test") or $testCache = 1;
+	if ($testCache eq 1) {
+		#test writing to the test cache file (we want to run this test before the api call)
+		if ($fhTest = new FileHandle "> $cache.test") {
+			$fhTest->close();
+		} else {
+			$out = 'DELOXOM ERROR: Can\'t write test cache file! Make sure your state directory is writeable by blosxom.';
+			$configOK = 0;
+		}
+	
+		#test reading from the test cache file (we want to run this test before the api call)
+		if ($fhTest = new FileHandle "> $cache.test") {
+			$fhTest->close();
+		} else {
+			$out = 'DELOXOM ERROR: Can\'t read test cache file! Make sure your state directory is readable by blosxom.';
+			$configOK = 0;
+		}
+	}
+	
+	if ($configOK eq 1) {
+		#check the cache if it exists
+		if (($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,$atime,$mtime,$ctime,$blksize,$blocks) = stat($cache)) {
+			#see if it's been an hour or more since cache was last modified
+			if ((time - $mtime) < 3600) {
+				$useCache = 1;
+			}
+		}
+					
+		#use the cache or re-fetch the xml
+		if ($useCache eq 1) {
+			$fh = new FileHandle "< $cache" or $readFailed = 1;
+			while (<$fh>) { $out .= $_; }
+			$fh->close();
+		} else {
+			#if it's time to make the api call again, than do it
+			my $browser = LWP::UserAgent->new( );
+			$browser->agent("Deloxom Plugin/$version");
+			$browser->credentials($api_net_loc, $api_realm, $delicious_login => $delicious_password);
+			my $response = $browser->get($api_url."/posts/recent?count=".$num_links_to_show."");
+		
+			if ($response->is_success) {
+				$out = rewrite_xml($response->content());
+				#write $out to cache
+				$fh = new FileHandle "> $cache" or $writeFailed = 1;
+				print $fh $out;
+				$fh->close();
+			} else {
+				#rewrite $out to request error
+				$out = $response->error_as_HTML();
+			}
+		}
+	}
+	#send to plugin variable
+	$deloxom = $out;
+}
+
+sub rewrite_xml { #translates the xml into our html presentation
+	$content = @_[0];
+	
+	#html start
+	my $html = "<div class=\"deloxom\">\n<ul class=\"deloxomList\">\n";
+
+	my $hadlinks = 0;
+	my $current_dateline = 0;
+
+	while ($content =~ m/(<post.+\/>)/o)
+	{
+		$post = $1;
+		
+		#get dateline (if requested) and add
+		if ($show_dateline eq 1) {
+			$post =~ /<post.+\s*time="(.*?)T(.*?)"[\s|>]/;
+			if ($current_dateline ne $1)
+			{
+				$current_dateline = $1;
+				#close our current ul if new date and there are links so far
+				if ($hadlinks ne 0)
+					{$html .= "</ul>\n";}
+				#new date means new dateline and ul
+				$html .= "<div class=\"deloxomDateline\">".$current_dateline."</div>\n<ul class=\"deloxomList\">";
+			}
+		} else {
+			#if no dateline and the <ul> hasn't been added yet, add it
+			if ($hadlinks = 0) {
+				$html .= '<ul class=\"deloxomList\">';
+			}
+		}
+
+		#get link
+		$post =~ /<post.+\s*href=(.*?)[\s|>]/;
+		$link = "<div class=\"deloxomItem\"><a href=".$1." class=\"deloxomLink\">";
+		$html .= "<li>".$link;
+		
+		#get description
+		$post =~ /<post.+\s*description="(.*?)"[\s|>]/;
+		$html .= $1."</a>";
+		
+		#get extended (if exists)
+		if ($post =~ /<post.+\s*extended="(.*?)"[\s|>]/) 
+			{ $html .= "<div class=\"deloxomDescription\">".$1."</div>"; }
+		
+		#get tags (if exist and requested) and format as links
+		if ($show_tags eq 1) {
+			if ($post =~ /<post.+\s*tag="(.*?)"[\s|>]/) {
+				@tags = split(/\s/, $1);
+				$taglinks = '';
+				for $tag (@tags) {
+					$taglinks .= "&nbsp;<a href=\"http://del.icio.us/$delicious_login/$tag\" class=\"deloxomLink\">$tag</a>";
+				}
+				$html .= "<div class=\"deloxomTags\">(tags:".$taglinks.")</div>";
+			}
+		}
+		
+		#clear this post
+		$content =~ s/<post.+\/>//o;
+		
+		#end deloxomItem div and add a linebreak for code readability
+		$html .= "</div>\n";
+		
+		$hadlinks = 1;
+	}
+	
+	if ($hadlinks eq 0) { $html .= '<div class="deloxom">No links yet!</div>'}
+	
+	#close ul and the overall div html end
+	$html .= "</ul>\n</div>\n";
+	
+	return $html;
+}
+
+#other blosxom calls (are these required to be here even?)
+sub template {
+	return undef;
+}
+sub entries {
+	return undef;
+}
+sub interpolate {
+	return undef;
+}
+sub sort {
+	return undef;
+}
+
+__END__
+
+=head1 Name
+
+deloxom 0.3.1
+
+=head1 Synopsis
+
+$deloxom::deloxom provides a formatted list of your latest links posted at del.icio.us: http://del.icio.us
+
+=head1 Description
+
+Add $deloxom::deloxom to your head.$flavor or tail.$flavor depending on where you want your latest del.icio.us links to show up.
+
+You must have an account at del.icio.us.
+
+A few key elements of the HTML are wrapped in styled divs or have their own class attributes so you can format the appearance of the list using cascading style sheets.  This is how the HTML looks:
+
+<div class="deloxom"> <!--- "deloxom" wraps entire list. --->
+<div class="deloxomDateline"> <!--- The dateline if $show_dateline is 1.  Seperate ULs will be created for each date if you choose to show the dateline.  If you don't, only one UL will be created. ---> </div>
+<ul class="deloxomList"> <!--- The list of links. --->
+<li>
+<a class="deloxomLink" href="#"></a> <!--- Your link. --->
+</li>
+<!--- "deloxomDescription" wraps the extended description. --->
+<div class="deloxomDescription"></div>
+<!--- "deloxomTags" wraps tag links.  Tags will only appear if $show_tags is 1. --->
+<div class="deloxomTags">
+(tags: <a href="#" class="deloxomTagLink"></a>) <--- The href itself also has a class attribute. --->
+</div>
+</ul>
+</div>
+
+Deloxom will write to and read from two files in your state directory: deloxom.cache.test and deloxom.cache.  Note that deloxom.cache will be the formatted HTML that Deloxom outputs.  Feel free to include this file elsewhere in your site outside the realm of the blosxom script.
+
+=head1 Download
+
+You can find deloxom here: http://www.negatendo.net/~brett/deloxom.html
+
+=head1 Note
+
+It is extremely important that your state directory is readable/writable by blosxom!
+
+Your del.icio.us links are only downloaded from del.icio.us every hour or so.  Do not change this setting or you may have your del.icio.us account banned.
+
+=head1 Author
+
+Brett O'Connor (oconnorb AT dogheadbone.com)

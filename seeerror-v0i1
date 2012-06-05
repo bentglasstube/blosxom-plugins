@@ -1,0 +1,50 @@
+# Blosxom Plugin: seeerror					   -*- perl -*-
+# Author: Todd Larason (jtl@molehill.org)
+# Version: 0+1i
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/blosxom
+# Categories plugin Home/Docs/Licensing:
+#   http://molelog.molehill.org/blox/Computers/Internet/Web/Blosxom/SeeError/
+
+package seeerror;
+
+# ------------------------- Configuration Variables --------------------------
+# Directory to create the temporary files in.
+# Criteria:
+# *  It MUST exist
+# *  It MUST be writable
+# *  It SHOULD be readable outside Blosxom
+$tmp_dir ||= "/tmp";
+
+# Attempt to deal with fatal errors?  Should only be enabled if you need it.
+$handle_die = 0
+  unless defined $handle_die;
+# ----------------------------------------------------------------------------
+
+use FileHandle;
+use CGI;
+
+my $tmp_file = sprintf "$tmp_dir/bloserr-$$-$^T-%s.txt", CGI::remote_host();
+open STDERR,"> $tmp_file";
+
+if ($handle_die) {
+    $SIG{__DIE__} = sub {
+	print "content-type: text/html\n\n<h1>Possibly-Fatal Error</h1>$@";
+    };
+}
+
+sub start {1;}
+sub end {
+    close STDERR;  # force a flush
+    my $fh = new FileHandle;
+    $fh->open("< $tmp_file");
+    my $errors = join '',<$fh>;
+    $fh->close;
+    if ($errors) {
+	$errors =~ s:&:&amp;:g;
+	$errors =~ s:<:&lt;:g;
+	print "<h1>Error Output</h1><pre>$errors</pre>";
+    }
+    unlink($tmp_file);
+    return 1;
+}
+1;

@@ -1,0 +1,193 @@
+# Blosxom Plugin: categorytree
+# Author(s): Eric Davis <edavis <at> foobargeek <dot> com>
+# Version: $Id: categorytree,v 1.7 2004/02/27 20:53:58 edavis Exp $
+# Documentation: See the bottom of this file or type: perldoc categorytree
+
+# Modifications for indentation and counts by: Eric Davis http://www.foobargeek.com
+
+package categorytree;
+
+# --- Configurable variables -----
+
+# If both $iWantIndents and $iDontWantSlashes are set then
+# $iWantIndents is shown and $iDontWantSlashes is overridden.
+# If neither are set then the normal directoy path with slashes
+# is displayed.
+
+# Set this to show an indented list tree.
+my $iWantIndents = 1;
+
+# This is the text used to indent a line one level to the right.
+# You could use special character codes (i.e. lines, corners, etc)
+my $indent = qq{&nbsp;&nbsp;};
+
+# Use these settings to show the number of entries in a category.
+my $iWantTheCount      = 1;
+my $showCategoryIfZero = 0;
+my $showCountIfZero    = 0;
+
+# These strings are tacked onto the beginning/end of the count.
+my $countPreStr        = "- ";
+my $countPostStr       = "";
+
+# Set this to 1 if you want the slashes removed from your display
+# menu.  Only valid if $iWantIndents is 0.
+my $iDontWantSlashes = 0;
+
+# Make this equal to what you want the non-leading slashes
+# replaced with when $iDontWantSlashes is 1.
+my $slashReplacement = " :: ";
+
+# --------------------------------
+
+$display; # $categorytree::display 
+
+use File::Find;
+use File::Basename;
+
+sub start
+{
+    return 1;
+}
+
+sub filter
+{
+    my ($pkg, $files_ref) = @_;
+    my %categorycount;
+
+    foreach (keys %$files_ref)
+    {
+        $_ =~ s/$blosxom::datadir//;
+        $tmp = dirname($_);
+
+        while (!($tmp =~ /^\/$/))
+        {
+            if (exists($categorycount{$tmp}))
+            {
+                $categorycount{$tmp} += 1
+            }
+            else
+            {
+                $categorycount{$tmp} = 1;
+            }
+
+            $tmp = dirname($tmp);
+        }
+    }
+
+    @categorytree = sort keys %categorycount;
+
+    $display .= qq{<ul class="categorytree">\n};
+
+    foreach $thing (@categorytree)
+    {
+        if (($categorycount{$thing} != 0) || $showCategoryIfZero)
+        {
+            my $displayString = $thing;
+            my $thisin;
+
+            if ($iWantIndents)
+            {
+                $displayString =~ s!^\/!!;
+
+                while ($displayString =~ s!((&nbsp\;)*)\w+\/!$1!)
+                {
+                    $thisin .= $indent;
+                }
+            }
+            elsif ($iDontWantSlashes)
+            {
+                $displayString =~ s!^\/!!;
+                $displayString =~ s!\/!$slashReplacement!g;
+            }
+
+            $display .= qq{<li class="categorytree_item">$thisin<a href="$blosxom::url$thing">$displayString</a>};
+            if ($iWantTheCount)
+            {
+                if (($categorycount{$thing} != 0) || $showCountIfZero)
+                {
+                    $display .= qq{ $countPreStr$categorycount{$thing}$countPostStr};
+                }
+            }
+
+            $display .= qq{</li>\n};
+        }
+    }
+
+    $display .= qq{</ul>};
+
+    return 1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plugin: categorytree
+
+=head1 USAGE
+
+Just drop this into your blosxom plugins directory. Then, you can insert the
+B<$categorytree::display> variable into your flavour files wherever you want
+a list of your categories to go.  Each line holds the name of one category,
+each one linked to the appropriate place in your blosxom weblog.
+
+By default a tree style list with indents is shown.  This is controlled by
+the B<$iWantIndents> config variable.  If B<$iWantIndents> is set to 0
+then then the normal directory path with slashes is displayed.  The
+B<$iDontWantSlashes> and B<$slashReplacement> variables are used to modify
+the normal directory path output.
+
+You can also show the number of blogs in each category by setting
+B<$iWantTheCount> equal to 1.  This will show the number of blogs to the
+right of the category name.  A parent category will show the number of
+blogs in itself and all children.  If B<$showCategoryIfZero> is equal to 1
+then an empty category is displayed.  If B<$showCountIfZero> is equal to 1
+then zero counts are displayed.  Lastly you can specify the text before
+and after the count with B<$countPreStr> and B<$countPostStr>.
+
+The following class identifiers are used for CSS control of the list:
+
+B<categorytree>: the unordered list as a whole
+
+B<categorytree_item>: a single category item in the unordered list
+
+Note that you will want to run this plugin very early (i.e. before any other
+plugins that might modify the entries list).  Rename this plugin to
+B<01categortytree> or something similar based on your plugin runtime
+priority naming scheme.
+
+=head1 VERSION
+
+1.7    now runs during blosxom filter and no longer uses File::Find
+       now much faster generation times since disk access is no more
+       fixed bug with indents (links were underlining indent spaces)
+
+=head1 VERSION HISTORY
+
+1.6    fixed bug where File::Find output being parsed incorrectly
+
+1.5    fixed to use configured blosxom file extension instead of .txt
+
+1.4    added newlines to output to html code is easier to read
+
+1.3    now generates XHTML 1.0 strict code
+
+1.2    fixed problem with how the global variable was defined
+
+1.1    initial implementation
+
+=head1 AUTHORS
+
+Eric Davis <edavis <at> foobargeek <dot> com> http://www.foobargeek.com
+
+=head1 LICENSE
+
+This source is submitted to the public domain.  Feel free to use and modify it.
+If you like, a comment in your modified source attributing credit for my original
+work would be appreciated.
+
+THIS SOFTWARE IS PROVIDED AS IS AND WITHOUT ANY WARRANTY OF ANY KIND.  USE AT YOUR OWN RISK!
+

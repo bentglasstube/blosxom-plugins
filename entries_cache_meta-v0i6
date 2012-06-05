@@ -1,0 +1,437 @@
+# vim: ft=perl
+# Blosxom Plugin: entries_cache_meta
+# Author(s): Jason Thaxter <sseye@ahab.com>
+# Version: 0.6
+
+package entries_cache_meta;
+
+# --- Configurable variables -----
+
+#
+# Caching variables
+#
+
+# How many minutes delay before entries are re-indexed?
+# (In minutes)
+# default: 15
+# zero means never auto-reindex
+$cache_period;
+
+# reindex password via query string to force re-indexing
+# default: none (re-index by time only)
+$reindex_passwd;
+
+# if true, this will warn when the cachefile can't be locked
+# default: off
+$write_lock_warn;
+
+#
+# Meta-related variables
+#
+
+# What prefix should I expect prepended to each meta tag?
+# default: meta-
+$meta_prefix;
+
+# If set, this meta variable will enable you to set modification times
+# e.g.:
+#   meta-last_modified: 2003/01/12 10:33:33
+# see pod docs re: time format
+# default: mtime
+$meta_mtime;
+
+# enabled
+# default: 1
+# set to zero to disable this plugin
+# good for use w/ config plugin
+$enabled;
+
+# --------------------------------
+
+# defaults
+$cache_period = 15 if not defined $cache_period;
+$meta_prefix ||= 'meta-';
+$meta_mtime = 'mtime' unless defined $meta_mtime;
+$enabled    = 1       unless defined $enabled;
+
+# standard perl modules
+use Fcntl qw(:DEFAULT :flock);
+use File::stat;
+use File::Find;
+use Data::Dumper;
+
+# standard for blosxom
+use CGI qw/:standard/;
+
+# we'll use Date::Parse if we have it
+$have_date_parse;
+eval { require Date::Parse; };
+if ($@) {
+    use Time::Local;
+}
+else {
+    $have_date_parse = 1;
+}
+
+%cache;    # the cache
+%indexes = ();    # nothing - we don't do static
+$reindex;         # reindex or not
+*CACHE;           # for the cache file
+$reindexed;       # flag for "save cache"
+
+# the filename where the cache is stored
+$cachefile = "$blosxom::plugin_state_dir/entries_cache_meta";
+# and a temporary one while generating the cache
+$cache_tmp = "$cachefile.TMP";
+
+sub start {
+
+    return 0 if ( not $enabled or param('-all') );
+
+    # Read cache and reindex if failed or otherwise directed
+    (
+        (
+            not( $reindex_passwd and param('reindex') eq $reindex_passwd )
+              and not( $cache_period
+                and -f "$cachefile"
+                and stat($cachefile)->mtime lt( time() - $cache_period * 60 ) )
+        )
+          and ( open( MYCACHE, $cachefile )
+            and $index = join '', <MYCACHE>
+            and $index =~ /\$VAR1 = /
+            and eval($index)
+            and !$@
+            and %cache = %$VAR1
+            and close MYCACHE )
+
+      )
+      or $reindex = &lokkit( \*CACHE );
+
+    return 1;
+}
+
+sub entries {
+
+    # If we haven't flagged a need to re-index,
+    # copy from the cache
+    return sub {
+        my %files;
+        foreach ( keys %cache ) {
+
+            # copy into cache if the file exists
+            $files{$_} = $cache{$_}{mtime} if -f $_;
+        }
+        return ( \%files, \%indexes );
+      }
+      unless $reindex;
+
+    # otherwise, do a full reindex
+    return sub {
+
+        # Check to see if previously indexed files exist, and then rescan
+        # the datadir for any new files, while preserving the old times
+
+        for my $file ( keys %cache ) {
+            -f $file or do { $reindexed++; delete $cache{$file} };
+        }
+
+        find(
+            sub {
+
+                # easier to read.
+                $ffname = $File::Find::name;
+
+                # return if we're out of our depth
+                my $curr_depth = $File::Find::dir =~ tr[/][];
+                if ( $blosxom::depth and $curr_depth > $blosxom::depth ) {
+                    $cache{$ffname}
+                      and delete $cache{$ffname};
+                    return;
+                }
+
+                # only bother for real entries
+                return
+                  unless ( $ffname =~
+m!^$blosxom::datadir/(?:(.*)/)?(.+)\.$blosxom::file_extension$!
+                    and $2 ne 'index'
+                    and $2 !~ /^\./
+                    and ( -r "$ffname" )
+                    and ++$reindexed );
+
+                # process meta tags
+                if ( -T "$ffname" and open( FF, "<$ffname" ) ) {
+                    $meta_title = <FF>;
+                    chomp($meta_title);
+                    $cache{$ffname}{title} = $meta_title;
+                    while (<FF>) {
+
+                        # get values
+                        my ( $key, $value ) = m/^$meta_prefix(\w+)\s*:\s*(.+)$/;
+                        last if not $key;
+
+                        # set values
+                        if ( $key ne "$meta_mtime" ) {
+                            $cache{$ffname}{$key} = $value;
+                        }
+
+                        # set modification time
+                        # with a double negative (hey)
+                        else {
+                            if ($have_date_parse) {
+                                $time = Date::Parse::str2time($value);
+                            }
+                            elsif (
+                                my ( $yr, $mo, $day, $hr, $min, $sec, $tz ) = (
+                                    $value =~
+m! (\d{4}) [/\:\-] (\d{2}) [/\:\-] (\d{2}) \s+
+                                      (\d{2}) : (\d{2}) : (\d{2})
+                                      \s*((UTC|GMT)*)!x
+                                )
+                              )
+                            {
+                                if ($tz) {
+                                    $time =
+                                      timegm( $sec, $min, $hr, $day, --$mo,
+                                        $yr );
+                                }
+                                else {
+                                    $time =
+                                      timelocal( $sec, $min, $hr, $day, --$mo,
+                                        $yr );
+                                }
+                            }
+                            else {
+                                warn "unparseable time in $ffname: $value";
+                            }
+                            $cache{$ffname}{mtime} = $time;
+                        }
+                    }
+                    close FF;
+                }
+                else {
+                    warn "couldn't open entry ($ffname): $!";
+                }
+
+                # If we have no meta mtime and no cached time,
+                # stat the file and store it.
+                if ( $cache{$ffname}{mtime} ) {
+                    $files{$ffname} = $cache{$ffname}{mtime};
+                }
+                else {    # make sure blosxom behaves normally
+                    $files{$ffname} = stat($ffname)->mtime;
+                    $cache{$ffname}{mtime} = $files{$ffname};
+                }
+
+                # show or not to show future entries
+                if ( not $blosxom::show_future_entries
+                    and $files{$ffname} > time() )
+                {
+                    delete $files{$ffname} and return;
+                }
+
+            },
+            $blosxom::datadir
+        );
+
+        return ( \%files, \%indexes );    # indexes is bogus: we don't do static
+      }
+}
+
+# put the stuff into $meta:: namespace for story rendering
+# and trim meta tags out of our story
+sub story {
+    my ( $pkg, $path, $filename, $story_ref, $title_ref, $body_ref ) = @_;
+
+    # first, load up our cached meta values
+    foreach my $key ( keys %{ $cache{$filename} } ) {
+        ${"meta::$key"} = $cache{$filename}{$key};
+    }
+
+    # next, remove any meta tags from the body
+    my ( $body, $in_body );
+    foreach ( split /\n/, $$body_ref ) {
+        if ($in_body) {
+            $body .= "$_\n";
+        }
+        elsif (/^$meta_prefix(\w+)\s*:\s*(.+)$/) {
+            ;
+        }
+        else {
+            $in_body = 1;
+            $body .= "$_\n";
+        }
+    }
+
+    $$body_ref = $body;
+
+    return 1;
+}
+
+# save cache - as late as possible
+# this gives other plugins a chance to alter values
+# or, forbid us from caching them!
+sub end {
+    &stuffit( \*CACHE, Dumper \%cache ) if ($reindexed);
+    1;
+}
+
+#####################################################################
+# Internal subs
+#
+
+# Reserve file for writing
+sub lokkit {
+    local *FH = shift;
+
+    # open it
+    my $umask = umask 002;    # group-write is useful
+    sysopen( FH, "$cache_tmp", O_RDWR | O_CREAT )
+      or ( warn "can't open file $cache_tmp: $!" and return );
+    umask $umask;             # restore so it doesn't affect other plugins
+
+    # lock file
+    flock( FH, LOCK_EX | LOCK_NB )
+      or (  close FH
+        and ( not $write_lock_warn or warn "can't lock file: $!" )
+        and return );
+
+    return 1;
+}
+
+# Write and release file
+sub stuffit {
+    local *FH       = shift;
+    local $contents = shift;
+
+    my $err;
+    print FH $contents or $err = "can't write cache $cache_tmp: $!";
+    flock( FH, LOCK_UN ) or $err = "can't unlock cache $cache_tmp: $!";
+    close FH or $err = "can't close cache $cache_tmp: $!";
+
+    if ( not $err ) {
+        rename "$cache_tmp", $cachefile
+          or warn "Error installing cache $cache_tmp: $!";
+    }
+    else {
+        warn $err;
+        unlink "$cache_tmp";
+    }
+}
+
+1;
+
+__END__
+
+=head1 NAME - entries_cache_meta
+
+Blosxom Plug-in: entries_cache_meta
+
+=head1 DESCRIPTION
+
+The entries_cache_meta plugin is Yet Another Caching Plugin, with some
+additional features, notably meta-tagging.
+
+By combining the meta-tag functionality with the entries cache, it becomes
+possible to write or use plugins that access meta-values outside the C<story>
+hook. For example, you could use this plugin to write another one showing the
+most recent entry for each author defined in meta tags.
+
+Additionally, it makes use of file locking to avoid from re-indexing if another
+request already has re-indexing in progress. Simultaneous re-indexing could
+corrupt the cache file, or bog down the server with redundant, expensive tasks;
+the larger and busier the site, the more likely these problems. For added
+security, you must supply a password if you want to force re-indexing via query
+string; this prevents any Blosxom-savvy user from forcing a re-index on your
+site.
+
+=head1 USAGE
+
+A properly permissioned $plugin_state_dir is required. Configuration is
+optional, but there are a few useful configuration variables.
+
+=over 4
+
+=item $cache_period
+
+How often, in minutes, to reindex automatically. If set to zero, re-indexing will never
+be automatic.
+
+=item $reindex_passwd
+
+What query string password forces reindex.  You can force a scan by appending a
+query string, e.g.  C<?reindex=mypassword> to the end of the url.  This will
+also cause meta tags to be updated. However, for security's sake, you must
+set the password in the configuration to use this.
+
+=item $write_lock_warn
+
+Send a warning to the error log when it can't get a write-lock on the cache
+file. This is mostly useful for verifying that write-locking actually does
+something.
+
+=item $meta_prefix
+
+What prefix marks meta variable names. Defaults to C<meta->. An empty string
+should be permitted, but currently it isn't.
+
+=item $meta_mtime
+
+The name of the meta-property for file modification times. If this property is
+present in a given entry, it will override the modification time of the file as
+the entry's time. The default value is "mtime".
+
+The format of the time is obviously important: it can be either
+
+        meta-mtime: YYYY/MM/DD HH:MM:SS [UTC|GMT]
+
+or, if Date::Parse is present, any format parseable by that module. Either way,
+unparseable dates are simply ignored as if the property was not present. This
+feature may be disabled by setting it to an empty string.
+
+=back
+
+=head1 VERSION
+
+Version 0.6
+
+=head1 AUTHOR
+
+Jason Thaxter <sseye@ahab.com>
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+It doesn't currently work in static mode, in part because the premise of static
+mode is to be a performance benefit all on its own. Also because I don't use
+static mode and I'm lazy.
+
+Address bug reports and comments to the Blosxom mailing list
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+entries_cache_meta plugin
+Copyright 2004, Jason Thaxter
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

@@ -1,0 +1,80 @@
+# Blosxom Plugin: amazon_buybox
+# Author: Victor Ganata <aswang@fatoprofugus.net>
+# based on buy_from_amazon plug-in by Rael Dornfest
+# with modifications by Tony Williams
+# and also on examples from the Amazon.com WDK
+# Version: 0.1
+# License: this plugin may be distributed with the same license as Blosxom
+
+package amazon_buybox;
+
+# Description: amazon_buybox is a Blosxom plugin that simplifies linking 
+# into Amazon's catalog.
+
+# An element in a story like
+# <blosxom:amazon-buybox asin="B000003RGY">description</blosxom:amazon-buybox>
+# turns into the following HTML snippet:
+
+# <div class="amazon-desc">description</div>
+# <div class="amazon-image">
+#    <a href="http://www.amazon.com/exec/obidos/ASIN/B000003RGY/ref=nosim/[associate ID]">
+#       <img src="http://images.amazon.com/images/P/B000003RGY.01.TZZZZZZZ.jpg" alt="picture of [description]" />
+#    </a>
+# </div>
+# <form method="POST" action="http://www.amazon.com/o/dt/assoc/handle-buy-box=B000003RGY">
+#    <input type="hidden" name="asin.B000003RGY" value="1" \>
+#    <input type="hidden" name="tag-value" value="[associate ID]" \>
+#    <input type="hidden" name="tag_value" value="[associate ID]" \>
+#    <input type="submit" name="submit.add-to-cart" value="Buy From Amazon.com" \>
+# </form>
+
+# Installation:
+# - Modify the $associateID (or don't :-)
+# - Drop amazon_buybox into your plugins directory
+
+# Configuration:
+
+$associateID = 'fatoprofugusn-20';
+
+# opening and closing tags for element containing the buybox
+$container_open=qq{};        
+$container_close=qq{};
+
+#opening and closing tags for element containing description
+$description_open=qq{<div class="amazon-desc">};
+$description_close=qq{</div>};
+
+# opening and closing tags for element containing image
+$image_open=qq{<div class="amazon-image">};
+$image_close=qq{</div>};
+
+$button_text="Buy from Amazon.com";
+
+sub start {
+    1;
+}
+
+# Modify the body of stories by rewriting <blosxom:amazon-buybox> elements
+sub story {
+    my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    # Rewrite any <blosxom:amazon-buybox asin="[ASIN]"> tag in the post body
+    $$body_ref =~ 
+    s{\<blosxom:amazon-buybox\s+?asin=\"(.*?)\"\s*?\>(.*?)\</blosxom:amazon-buybox\>}
+    {$container_open
+    $description_open$2$description_close
+    $image_open
+    \<a href=\"http://www.amazon.com/exec/obidos/ASIN/$1/ref=nosim/$associateID\"\>
+    \<img src=\"http://images.amazon.com/images/P/$1.01.TZZZZZZZ.jpg\" alt=\"$2\" /\>
+    \</a\>
+    $image_close
+    \<form method=\"POST\" action=\"http://www.amazon.com/o/dt/assoc/handle-buy-box=$1\"\>
+    \<input type=\"hidden\" name=\"asin.$1\" value=\"1\" /\>
+    \<input type=\"hidden\" name=\"tag-value\" value=\"$associateID\" /\>
+    \<input type=\"hidden\" name=\"tag_value\" value=\"$associateID\" /\>
+    \<input type=\"submit\" name=\"submit.add-to-cart\" value=\"$button_text\" /\>
+    \</form\>
+    $container_close}xsg;
+    1;
+}
+
+1;

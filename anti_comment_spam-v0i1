@@ -1,0 +1,24 @@
+# Blosxom Plugin: anti_comment_spam
+# Author(s): Hironori Azuma (andi@ac.wakwak.com)
+# Version: 0.1
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+package anti_comment_spam;
+use strict;
+
+use CGI qw(request_method http);
+
+sub start{
+
+	if(request_method() eq 'POST' && http('HTTP_ACCEPT_LANGUAGE') !~ m!\b(ja|JPN)\b!){
+		print "Status: 403 Forbidden\n";
+		print "Content-type:text/html\n\n";
+		print "<h3>403 Forbidden</h3>";
+		print "You don't have permission to access this file.";
+		exit(0);
+	}
+
+	1;
+}
+
+1;

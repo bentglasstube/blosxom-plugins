@@ -1,0 +1,112 @@
+# Blosxom Plugin: keywords
+# Author(s): Gregor Rayman <rayman@grayman.de> 
+# Special thanks to: Markus Theissinger <markus.theissinger@gmx.de>
+# Version: 0.1
+# Revision: $Id: keywords,v 1.2 2003/11/12 18:57:47 gra Exp $
+
+package keywords;
+
+# --- Configurable variables -----
+
+my $maxwords = 10;
+
+my $story_weight = 3;
+
+# --------------------------------
+
+my %wordhash;
+sub start {
+  1;
+}
+
+sub story {
+    my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    
+    $$body_ref =~ s:<kw>\s*(.*?)\s*</kw>:($wordhash{$1}+=$story_weight,$1):ego;
+    $$body_ref =~ s:<kwx>\s*(.*?)\s*</kwx>:($wordhash{$1}+=$story_weight,""):ego;
+    $$title_ref =~ s:<kw>\s*(.*?)\s*</kw>:($wordhash{$1}+=$story_weight*2,$1):ego;
+    $$title_ref =~ s:<kwx>\s*(.*?)\s*</kwx>:($wordhash{$1}+=$story_weight*2,""):ego;
+      
+    $story_weight-- if $story_weight > 1;
+    return 1;
+}
+
+sub last {
+    my $i = 0;
+    my $comma = "";
+    my $keywords = "";
+    for $word (sort { $wordhash{$b} <=> $wordhash{$a} } keys %wordhash) {
+        $keywords .= "$comma$word";
+        $comma = ", ";        
+        $i++;
+        last if $i >= $maxwords;
+    }  
+    
+    $blosxom::output =~ s!{keywords}!$keywords!ego;
+    
+    return $blosxom::entries;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: keywords
+
+=head1 SYNOPSIS
+
+Extracts marked keywords form the individual stories places them
+to marked spot in the generated text. Can be used to generate
+the <meta name="keywords" value="..."> in HTML header files
+
+The keywords in the individual stories have to be enclosed
+either with the <kw></kw> tag or with the <kwx></kwx> tag.
+The <kw>keywords</kw> we be left in the individual stories, 
+the <kwx>keywords</kwx> will be removed.
+
+The keywords will be sorted by their weighted frequencies. 
+The weight is determined by the variable $story_weight, which will 
+be decremented after each displayed story until it reaches the
+value 1.
+
+Keywords in story's title get the doble weight
+
+The place in the resulting text, where the keywords have to be placed
+must be marked with the placeholder {keywords}.
+
+Example: <meta name="keywords" content="{keywords}">
+
+=head1 AUTHOR
+
+Gregor Rayman  <rayman@grayman.de>, http://www.grayman.de/
+
+=head1 BUGS
+
+Address bug reports and comments to me
+[mailto:rayman@grayman.de].
+
+=head1 LICENSE
+
+Blosxom and this Blosxom Plug-in
+Copyright 2003, Gregor Rayman 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+

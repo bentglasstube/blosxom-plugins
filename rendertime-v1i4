@@ -1,0 +1,88 @@
+# Blosxom Plugin: rendertime
+# Author(s): Eric Davis <edavis <at> foobargeek <dot> com>
+# Version: $Id: rendertime,v 1.4 2003/09/22 16:55:46 edavis Exp $
+# Documentation: See the bottom of this file or type: perldoc rendertime
+
+package rendertime;
+
+# --- Configurable variables -----
+
+# do you want to log render times to a file
+my $logToFile = 1;
+my $logFile = "$blosxom::plugin_state_dir/rendertime.dat";
+
+# --------------------------------
+
+# this code was taken directly from the perl faq
+
+require 'sys/syscall.ph';
+
+my $TIMEVAL_T = "LL";
+my $startTime = pack($TIMEVAL_T, ());
+my $endTime   = pack($TIMEVAL_T, ());
+
+sub start {
+    syscall(&SYS_gettimeofday, $startTime, 0) != -1 or die "gettimeofday: $!";
+    return 1;
+}
+
+sub end {
+    syscall(&SYS_gettimeofday, $endTime, 0) != -1 or die "gettimeofday: $!";
+
+    @start = unpack($TIMEVAL_T, $startTime);
+    @end   = unpack($TIMEVAL_T, $endTime);
+
+    for ($end[1], $start[1]) { $_ /= 1_000_000 }
+
+    $time = sprintf "%.4f", ($end[0]  + $end[1]) - ($start[0] + $start[1]);
+
+    if ($logToFile)
+    {
+        open (LOG, ">>$logFile") or die "cannot write to file: $!.";
+        print LOG "$blosxom::url$ENV{'REQUEST_URI'} ($time)\n";
+        close(LOG);
+    }
+    else
+    {
+        warn "$blosxom::url/$blosxom::path_info ($time)\n";
+    }
+
+    return 1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plugin: rendertime
+
+=head1 USAGE
+
+Just drop this into your blosxom plugins directory and make sure it is the
+first plugin that will be run (i.e. rename to B<00rendertime> or whatever).
+Then for each request this plugin will print a line to the log file showing
+the time, in seconds (x.xxxx), it took to render the page.
+
+If B<$logToFile> is set to 0 then this plugin will print the render time to
+the web server error log.  If you don't want the render time log file located
+in the plugin state directory then change B<$logFile> accordingly.
+
+This plugin requires the B<gettimeofday> system call.
+
+Note that this plugin could parse the render time log file and export a 
+variable containing an average render time per page or something interesting.
+
+=head1 AUTHORS
+
+Eric Davis <edavis <at> foobargeek <dot> com> http://www.foobargeek.com
+
+=head1 LICENSE
+
+This source is submitted to the public domain.  Feel free to use and modify it.
+If you like, a comment in your modified source attributing credit for my original
+work would be appreciated.
+
+THIS SOFTWARE IS PROVIDED AS IS AND WITHOUT ANY WARRANTY OF ANY KIND.  USE AT YOUR OWN RISK!
+

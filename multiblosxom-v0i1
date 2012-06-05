@@ -1,0 +1,90 @@
+# Blosxom Plugin: multiblosxom
+# Author(s): l.m.orchard <deus_x@pobox.com>
+# Version: 0.1
+
+package multiblosxom;
+
+use File::Basename qw(basename);
+
+my $config_base = "/Users/deusx/Sites/blosxom/conf";
+
+sub start {
+    my $config_fn = $config_base.'/'.basename($0).".config";
+    require $config_fn if -r $config_fn;
+}
+
+1;
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: multiblosxom
+
+=head1 DESCRIPTION
+
+Supports the use of config files based on the name by which blosxom is called.
+
+=head1 ABSTRACT
+
+Under unix, symbolic links can be made to the blosxom script, and
+those links can be used to run the script.  With this plugin, blosxom
+can be made to use a different config file for each link.
+
+=head1 SYNOPSIS
+
+Make links to a single blosxom.cgi script:
+
+ ln -s blosxom.cgi blog.cgi
+ ln -s blosxom.cgi comments.cgi
+ ln -s blosxom.cgi news.cgi
+
+Modify this plugin's $config_base variable, and place config files there
+with names based on the script links, ending in .config:
+
+ conf/blog.cgi.config
+ conf/comments.cgi.config
+ conf/news.cgi.config
+
+Now, when the script is called by one of the links, this plugin will load
+the corresponding config file.
+
+=head1 VERSION
+
+v0.1
+
+=head1 AUTHOR
+
+l.m.orchard <deus_x@pobox.com> http://www.decafbad.com
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports to the author.
+
+=head1 LICENSE
+
+This Blosxom Plug-in
+Copyright 2003, l.m.orchard
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

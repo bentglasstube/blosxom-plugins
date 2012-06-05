@@ -1,0 +1,109 @@
+# Blosxom Plugin: dynamic_cache
+# Author(s): MayimMayim
+# Version: 2004-08-29
+
+package dynamic_cache;
+use strict;
+use CGI::Carp qw(fatalsToBrowser);       #エラー時にブラウザへ表示
+
+# --- Configurable variables -----------
+my $cache_dir = "$blosxom::basedir/caches";
+my $redirect_url = '/b';
+my $log_filename = "$blosxom::plugin_state_dir/dynamic_cache.log";
+my $target_flavour = 'html rss htm';
+# --------------------------------------
+
+use CGI qw(:standard);
+
+use FileHandle;
+my $fh = new FileHandle;
+
+my $cachefile ='';
+
+
+sub start {
+	# キャッシュをクリア
+	if(CGI::param('reindex') eq '1'){
+		require File::Path;
+		File::Path::rmtree($cache_dir);
+		logput("CLEAR: $blosxom::path_info?$ENV{'QUERY_STRING'}");
+	}
+
+	# キャッシュしないケース
+	if(#request_method() eq 'POST' ||
+	$ENV{'QUERY_STRING'} ne ''
+	 || $target_flavour!~/$blosxom::flavour/) {
+		logput("PASS : $blosxom::path_info?$ENV{'QUERY_STRING'}");
+		return 0;
+	}
+
+	# キャッシュ対象ファイル
+	$cachefile = "$cache_dir/$blosxom::path_info";
+	defined $blosxom::path_info_yr and $cachefile .="/$blosxom::path_info_yr";
+	defined $blosxom::path_info_mo_num and $cachefile .="/$blosxom::path_info_mo_num";
+	defined $blosxom::path_info_da and $cachefile .="/$blosxom::path_info_da";
+	unless ($blosxom::path_info =~ /\.$blosxom::flavour$/) {
+		$cachefile =~ s!/$!!;
+		$cachefile .= "/index.$blosxom::flavour";
+	}
+
+	# キャッシュがすでに存在する？
+	if(-f $cachefile){
+		if($redirect_url eq''){		#ファイルを読み込んで出力 (no test)
+			if($fh->open("< $cachefile")){
+				print join('', <$fh>);
+				$fh->close;
+				logput("HIT! : $cachefile");
+				exit(0);
+			}
+		}else{						#リダイレクトを使用
+			my $redirect = $cachefile;
+			$redirect =~s/^$blosxom::basedir/$redirect_url/;
+#			print redirect($redirect);
+			print header(-Location=>$redirect);
+			logput("HIT! : $redirect");
+			exit(0);
+		}
+	}
+
+	return 1;
+}
+
+sub last {
+	($redirect_url ne'') and save_cache();
+}
+
+sub end {
+	($redirect_url eq'') and save_cache();
+}
+
+sub save_cache {
+	return unless ($cachefile ne'' || %blosxom::files || %blosxom::others);
+
+	# ディレクトリ作成
+	my ($path) = ($cachefile =~ m!^((.*)/).+\.$blosxom::flavour!);
+	if($path ne ''){
+		require File::Path;
+		File::Path::mkpath($path,0,0755);
+	}
+
+	# キャッシュファイル出力
+	if ($fh->open("> $cachefile")) {
+		print $fh $blosxom::output;
+		close $fh;
+		logput("SAVE : $cachefile");
+	}
+}
+
+# ログ出力
+sub logput{
+	my ($msg) =@_;
+	$msg .= "\t$ENV{REMOTE_ADDR}\t$ENV{HTTP_USER_AGENT}\t$ENV{HTTP_REFERER}\n";
+	if($fh->open(">> $log_filename"))
+	{
+		print $fh $msg;
+		$fh->close;
+	}
+}
+
+1;

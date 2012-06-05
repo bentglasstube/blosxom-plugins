@@ -1,0 +1,7 @@
+# the usual suspects
+(poker|casino|gambling|slots)
+(levitra|paxil|viagra|phentermine|tramadol)
+(credit|loan)
+# specific spammer domains
+smsportali
+

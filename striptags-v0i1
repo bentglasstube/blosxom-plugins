@@ -1,0 +1,26 @@
+# Blosxom Plugin: striptags
+# Author(s): Lukasz Grabun
+# Homepage: http://www.grabun.com/
+# Version: 0.1
+# This code is placed in the public domain 
+
+package striptags;
+
+$title;
+
+# --------------------------------
+
+
+sub start {
+  1;
+}
+
+
+sub story {
+  my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+  $title = $$title_ref;
+  $title =~ s/<[^>]*>//g;
+}
+
+1;

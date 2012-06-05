@@ -1,0 +1,56 @@
+# -*-Mode: cperl;-*-
+# Blosxom Plugin: code_utf8
+# Author(s): Yu-ji Hosokawa <yu-ji at hoso dot net>
+# Version: $Revision: 1.4 $
+# $Id: code_utf8,v 1.4 2003/12/27 20:28:45 yu-ji Exp $
+
+package code_utf8;
+
+use strict;
+use warnings;
+use utf8;
+use Encode ();
+use Encode::Guess;
+
+sub start {
+    1;
+}
+
+sub head {
+    my($pkg, $currentdir, $head_ref) = @_;
+    str2utf8($head_ref);
+    1;
+}
+sub story {
+    my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    str2utf8($story_ref);
+    str2utf8($title_ref);
+    str2utf8($body_ref);
+    1;
+}
+
+sub foot {
+    my($pkg, $currentdir, $foot_ref) = @_;
+    str2utf8($foot_ref);
+    1;
+}
+
+sub last {
+    binmode(STDOUT, "utf8");
+}
+
+sub str2utf8 {
+    my($source_ref) = shift(@_);
+    return if (Encode::is_utf8($$source_ref));
+    my $decoder = guess_encoding($$source_ref, qw(euc-jp shiftjis 7bit-jis));
+    if (not ref($decoder)) {
+	$decoder = guess_encoding($$source_ref, qw(euc-jp));
+	if (not ref($decoder)) {
+	    # warn('Cannot guessed it...');
+	    return;
+	}
+    }
+    $$source_ref = $decoder->decode($$source_ref);
+}
+
+1;

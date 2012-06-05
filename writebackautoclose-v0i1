@@ -1,0 +1,30 @@
+# Blosxom Plugin: writebackautoclose
+# Author(s): Tim Lambert
+# Version: 0.1
+# This code is placed in the public domain 
+# You need the storystate plugin 
+#     http://jclark.org/weblog/WebDev/Blosxom/plugins/storystate
+package writebackautoclose;
+
+# --- Configurable variables -----
+
+#how old (in seconds) do posts have to be for writebacks to default
+#to closed?
+$oldpost = 86400*60; # 60 days
+
+# --------------------------------
+
+
+sub start {
+  1;
+}
+
+
+sub date {
+  my ($pkg, $file, $date_ref, $mtime, $dw,$mo,$mo_num,$da,$ti,$yr) = @_;
+
+  # default to closed for stories older than $oldpost secs
+  $storystate::writeback_default = (time - $mtime) > $oldpost ? 'off' : 'on';
+  1;
+}
+

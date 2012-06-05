@@ -1,0 +1,362 @@
+# Blosxom Plugin: calendar                                         -*- perl -*-
+# Author(s): Chalice <chalicester@gmail.com>, http://northiland.upper.jp//
+# Version: 2005-09-07
+# Documentation: See the bottom of this file or type: perldoc calendar
+
+package calendar;
+
+# --- Configurable variables -----------
+@monthname = qw/January February March April May June July
+  August September October November December/
+  if ($#monthname != 11);
+@monthabbr = qw/Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec/
+  if ($#monthabbr != 11);
+$debug_level ||= 0;
+# -------------------------------------------------------------------
+
+use Time::Local;
+
+$month_calendar  = '';
+$year_calendar 	 = '';
+$calendar 	 = '';
+$prev_month_link = '';
+$next_month_link = '';
+$prev_year_link  = '';
+$next_year_link  = '';
+
+my $package = "calendar";
+my %stories;
+my %template = ();
+my $flav_cache;
+
+sub debug {
+    my ($level, @msg) = @_;
+
+    if ($debug_level >= $level) {
+	print STDERR "$package debug $level: @msg\n";
+    }
+}
+
+sub load_template {
+ my ($bit) = @_;
+ my $fh = new FileHandle;
+    
+ return $flav_cache{$bit} ||=
+  ($fh->open("< $blosxom::datadir/$package.$bit.$blosxom::flavour") ?
+    join '',<$fh> : $template{$blosxom::flavour}{$bit}) ||
+  ($fh->open("< $blosxom::datadir/$package.$bit.$blosxom::default_flavour") ?
+    join '',<$fh> : $template{$blosxom::default_flavour}{$bit}) || 
+  ($fh->open("< $blosxom::datadir/$package.$bit.html") ?
+    join '',<$fh> : $template{html}{$bit}) || 
+  '';
+}
+
+sub report {
+    my ($bit, $year, $month, $day) = @_;
+    my ($monthname, $monthabbr) = ($monthname[$month-1], $monthabbr[$month-1]);
+
+    my $url = $blosxom::url;
+    $url .= "/$year/" if defined($year);
+    $url .= sprintf("%02d/", $month) if defined($month);
+    $url .= sprintf("%02d/",   $day) if defined($day);
+
+    my $f = load_template($bit);
+    $f =~ s/((\$[\w:]+)|(\$\{[\w:]+\}))/$1 . "||''"/gee;
+    return $f;
+}
+
+sub days_in_month {
+    my ($year, $month) = @_;
+    my $days = (31,28,31,30,31,30,31,31,30,31,30,31)[$month-1];
+    if ($month == 2 &&
+	($year % 4 == 0 &&
+	 (($year % 100 != 0) ||
+	  ($year % 400 == 0)))) {
+	$days++;
+    }
+    return $days;
+}
+
+sub build_prev_month_link {
+  my ($year, $month) = @_;
+
+  my $year_orig  = $year;
+  my $month_orig = $month;
+
+  while (1) {
+    $month--;
+    if ($month == 0) {
+      $year--;
+      $month = 12;
+      # XXX assumption: once a log is active, no full years are skipped
+      if ($stories{"$year"} == 0) {
+	$prev_month_link = 
+	    report('prev_month_nolink',
+		   $month_orig == 1 ? $year_orig-1 : $year_orig,
+		   $month_orig == 1 ? 12           : $month_orig-1);
+	return;
+      }
+    }
+    if ($stories{"$year/$month"}) {
+      $prev_month_link = report('prev_month_link', $year, $month);
+      return;
+    }
+  }
+}
+
+sub build_next_month_link {
+  my ($year, $month) = @_;
+
+  my $year_orig = $year;
+  my $month_orig = $month;
+
+  while (1) {
+    $month++;
+    if ($month == 13) {
+      $year++;
+      $month = 1;
+      # XXX assumption: once a log is active, no full years are skipped
+      if ($stories{"$year"} == 0) {
+	$next_month_link = 
+	    report('next_month_nolink',
+		   $month_orig == 1 ? $year_orig-1 : $year_orig,
+		   $month_orig == 1 ? 12           : $month_orig-1);
+	return;
+      }
+    }
+    if ($stories{"$year/$month"}) {
+      $next_month_link = report('next_month_link', $year, $month);
+      return;
+    }
+  }
+}
+
+sub build_prev_year_link {
+  my ($year) = @_;
+  $year--;
+  $prev_year_link = report($stories{"$year"} ? 'prev_year_link' : 'prev_year_nolink', $year);
+}
+
+sub build_next_year_link {
+  my ($year) = @_;
+  $year++;
+  $next_year_link = report($stories{"$year"} ? 'next_year_link' : 'next_year_nolink', $year);
+}
+
+sub build_month_calendar {
+    my $results;
+
+    my (@now, $monthstart, @monthstart);
+    my ($year, $month, $day, $days, $wday);
+    my $highlight_dom = 0;
+
+    # figure out what we want a calendar of, first
+    if (defined($blosxom::path_info_yr)) {
+      $year = $blosxom::path_info_yr;
+      if (defined($blosxom::path_info_mo)) {
+	$month = $blosxom::path_info_mo + 0;
+	if (defined($blosxom::path_info_da)) {
+	  $highlight_dom = $blosxom::path_info_da + 0;
+	}
+      } else {
+	# XXX improvement: find the last post from the year, use
+	# its month.
+	$month = 12;
+      }
+    } else {
+      # no date given at all, do this month and highlight today
+      @now   	     = localtime(time);
+      $year  	     = $now[5] + 1900;
+      $month 	     = $now[4] + 1;
+      $highlight_dom = $now[3] + 0;
+    }
+    debug(2, "highlight_dom = $highlight_dom");
+
+    $days  	= days_in_month($year, $month);
+    $monthstart = timelocal(0,0,0,1,$month-1,$year-1900);
+    @monthstart = localtime($monthstart);
+
+    build_prev_month_link($year, $month);
+    build_next_month_link($year, $month);
+
+    $results = report('month_head', $year, $month);
+
+    # First, skip over the first partial week (possibly empty)
+    # before the month started
+    for ($wday = 0; $wday < $monthstart[6]; $wday++) {
+	$results .= report('week_head', $year, $month) if ($wday == 0);
+	$results .= report('noday', $year, $month);
+    }
+
+    # now do the month itself
+    for ($day = 1; $day <= $days; $day++) {
+	$results .= report('week_head',$year,$month,$day) if ($wday == 0);
+	$results .= report($day == $highlight_dom ? 'this_day' : $stories{"$year/$month/$day"} ? 'day_link' : 'day_nolink', $year, $month, $day);
+	if (++$wday == 7) {
+	    $wday = 0;
+	    $results .= report('week_foot', $year, $month);
+	}
+    }
+
+    # and finish up the last week, if any left
+    if ($wday) {$results .= report('noday',$year,$month) while (++$wday <= 7);}
+    $results .= report('month_foot', $year, $month);
+
+    $month_calendar = $results;
+}
+
+sub build_year_calendar {
+    my $results;
+    my ($year, $month);
+    my $highlight_month = 0;
+
+    # figure out what we want a calendar of
+    if (defined($blosxom::path_info_yr)) {
+      $year = $blosxom::path_info_yr;
+      if (defined($blosxom::path_info_mo)) {
+	$highlight_month = $blosxom::path_info_mo;
+      }
+    } else {
+      @now 	       = localtime(time);
+      $year 	       = $now[5] + 1900;
+      $highlight_month = $now[4] + 1;
+    }
+
+    $prev_year_link = build_prev_year_link($year);
+    $next_year_link = build_next_year_link($year);
+
+    $results = report('year_head', $year);
+    for ($month = 1; $month <= 12; $month++) {
+	$results .= report('quarter_head', $year) if ($month % 3 == 1);
+	$results .= report($month == $highlight_month ? 'this_month' : $stories{"$year/$month"} ? 'month_link' : 'month_nolink', $year, $month);
+	$results .= report('quarter_foot', $year) if ($month % 3 == 0);
+    }
+    $results .= report('year_foot', $year);
+
+    $year_calendar = $results;
+}
+
+sub start {
+    debug(1, "start() called, enabled");
+    while (<DATA>) {
+	last if /^(__END__)?$/;
+	my ($flavour, $comp, $txt) = split ' ',$_,3;
+	$txt =~ s:\\n:\n:g;
+	$template{$flavour}{$comp} = $txt;
+    }
+    return 1;
+}
+
+sub filter {
+  my ($pkg, $files) = @_;
+  debug(1, "filter() called");
+  foreach (keys %{$files}) {
+    my @date = localtime($files->{$_});
+    my $mday  = $date[3];
+    my $month = $date[4] + 1;
+    my $year  = $date[5] + 1900;
+    $stories{"$year"}++;
+    $stories{"$year/$month"}++;
+    $stories{"$year/$month/$mday"}++;
+  }
+  debug(1, "filter() done");
+  return 1;
+}
+
+sub head {
+  debug(1, "head() called");
+
+  build_month_calendar();
+  build_year_calendar();
+  $calendar = report('calendar');
+
+  debug(1, "head() done, length(\$month_calendar, \$year_calendar, \$calendar) = ", length($month_calendar), length($year_calendar), length($calendar));
+  return 1;
+}
+
+1;
+__DATA__
+html month_head <div id="calendar"><div class="hor-cal">$prev_month_link| <a href="$url" title="$monthname">$monthname</a> |
+html week_head \n
+html noday \n
+html day_link <span class="hor-cal-day"><a href="$url">$day</a></span>\n
+html day_nolink <span class="hor-cal-day">$day</span>\n
+html this_day <span class="hor-cal-today"><a href="$url" class="hor-cal-today">$day</a></span>\n
+html week_foot \n
+html month_foot | $next_month_link</div></div>\n
+html prev_month_link <a href="$url" title="Prev to $year/$month">&#171;</a>
+html next_month_link <a href="$url" title="Next to $year/$month">&#187;</a>
+html prev_month_nolink &#171;
+html next_month_nolink &#187;
+html year_head <div id="calendar"><div class="hor-cal">$prev_year_link | <a href="$url">$year</a> | \n
+html quarter_head \n
+html month_link <span class="hor-cal-day"><a href="$url">$monthabbr</a></span>\n
+html month_nolink <span class="hor-cal-day">$monthabbr</span>\n
+html this_month <span class="hor-cal-today"><a href="$url" class="hor-cal-today">$monthabbr</a></span>
+html quarter_foot \n
+html year_foot | $next_year_link</div></div>\n
+html prev_year_link <a href="$url">&#171;</a>
+html next_year_link <a href="$url">&#187;</a>
+html prev_year_nolink &#171;
+html next_year_nolink &#187;
+html calendar <div id="calendar_all">$calendar::month_calendar$calendar::year_calendar</div>
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: bar_calender
+
+=head1 SYNOPSIS
+
+
+=head1 VERSION
+
+2005-09-07
+
+=head1 AUTHOR
+
+Chalice <chalicester@gmail.com>, http://northiland.upper.jp//
+
+=head1 INSTALLATION
+
+Drop bar_calender into your plugins directory.
+
+=head1 CONFIGURATION
+
+
+=head1 REQUIREMENTS
+
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+Blosxom Plugin Docs: http://www.blosxom.com/documentation/users/plugins.html
+
+=head1 BUGS
+
+Address bug reports and comments to:
+blosxom ML: http://www.yahoogroups.com/group/blosxom
+all about blosxom ML: http://www.freeml.com/info/blosxom@freeml.com
+
+=head1 LICENSE
+
+Blosxom and this Blosxom Plug-in
+Copyright 2005, Chalice <chalicester@gmail.com>, http://northiland.upper.jp//
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

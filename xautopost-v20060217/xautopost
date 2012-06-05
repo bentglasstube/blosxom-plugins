@@ -1,0 +1,505 @@
+# Blosxom Plugin: xautopost
+# Author(s): Jim Raposa <blogmaster@jamesraposa.com>
+# http://www.SponsorWorks.net, or http://www.JamesRaposa.com
+# Version: 2006-02-17
+# Documentation: See the bottom of this file or type: 
+# perldoc xautopost
+
+package xautopost;
+
+###
+###---------------------------
+###
+###  Configuration section
+###
+#
+### for pinging purposes
+#
+my $blog_useragant='JamesRaposa.com_BLOG';
+#
+### leave empty if XML::Simple is put into XML dir. under plugins directory
+#
+my $lib_loc = '/homepages/28/d93502204/htdocs/listbug/mymodules/';
+#
+### I've set these up ahead of time, change the "blogpath" variable to drop
+### posts into your appropriate paths.
+### The feed sources are processed in reverse order, so as to allow
+### the posts from what you feel are the most important categories
+### to end up as the most recently posted.
+#
+my %feed_sources;
+undef %feed_sources;
+%feed_sources = (
+  '1'  => { 'blogpath'        => "$blosxom::datadir/Online_Marketing",
+            'url'             => q{http://feeds.feedburner.com/AMWSO},
+            'desc_split'      => q{<div class="feedflare">},
+            'ttags'           => q{advertising, marketing, online marketing},
+            'link_to_article' => 0,
+            'type'            => ''
+          },
+  '2'  => { 'blogpath'        => "$blosxom::datadir/Programming/Perl",
+            'url'             => q{http://www.oreillynet.com/pub/feed/16?format=rss2},
+            'desc_split'      => '',
+            'ttags'           => q{perl, programming, scripting},
+            'link_to_article' => 1,
+            'type'            => ''
+          },
+  '3'  => { 'blogpath'        => "$blosxom::datadir/Programming/Javascript",
+            'url'             => q{http://www.javascript.com/jss.rdf},
+            'desc_split'      => q{},
+            'ttags'           => q{javascript, programming, scripting},
+            'link_to_article' => 1,
+            'type'            => ''
+          },
+  '4'  => { 'blogpath'        => "$blosxom::datadir/Rhode_Island_USA",
+            'url'             => q{http://www.pbn.com},
+            'desc_split'      => q{},
+            'ttags'           => q{Rhode Island, Providence, New England},
+            'link_to_article' => 1,
+            'type'            => 'links',
+            'method'          => 'get',
+            'id_str'          => 'lass="breaking" href='
+          }
+);
+#
+###
+###
+###  End Configuration section
+###
+###---------------------------
+
+use lib $lib_loc;
+
+use LWP::UserAgent;
+use LWP::Simple qw($ua get);
+use XML::Simple;
+
+
+
+
+
+sub start {
+
+# Only spring into action if no stories have been autoposted THIS WEEK
+
+  my $posted=0;
+  my $post_control="$blosxom::datadir/auto_post.ctl";  ## contains last post week-ending (Sunday) date which
+#                                                         makes posts happen only once per week
+  my $ok_to_post=0;
+  my @post_ctl_data=();
+  if (-e $post_control) {
+#
+    get_time_info();
+#
+    if ( open(PCTL,'<' . $post_control) ) {
+      chomp(@post_ctl_data=<PCTL>);
+      close(PCTL);
+      if ($post_ctl_data[0] < $we_yyyymmdd) {
+        $ok_to_post=1;
+      }
+    }
+  }
+  else {
+    $ok_to_post=1;
+  }
+  my $post_lock="$blosxom::datadir/auto_post_lock.lck";
+  if ( $ok_to_post && (! -e $post_lock) ) {
+    if (open (LCK,'>' . $post_lock)) {
+      print LCK time;
+      close(LCK);
+#
+      foreach my $feed_source_key ( sort { $b <=> $a } keys %feed_sources) {
+#
+        my $feed_source_path='';
+        my $feed_source_url='';
+        my $feed_desc_split='';
+        my $ttag='';
+        my $link_to_article_directive=0;
+        my $method='';
+        my $id_str='';
+        if ($feed_sources{$feed_source_key}->{type} eq 'links') {
+          $feed_source_path=$feed_sources{$feed_source_key}->{blogpath};
+          $feed_source_url=$feed_sources{$feed_source_key}->{url};
+          $feed_desc_split=$feed_sources{$feed_source_key}->{desc_split};
+          $ttag=$feed_sources{$feed_source_key}->{ttags};
+          $link_to_article_directive=$feed_sources{$feed_source_key}->{link_to_article};
+          $method=$feed_sources{$feed_source_key}->{method};
+          $id_str=$feed_sources{$feed_source_key}->{id_str};
+          %feed=get_links($feed_source_url,$method,$id_str,'');
+        }
+        else {
+          $feed_source_path=$feed_sources{$feed_source_key}->{blogpath};
+          $feed_source_url=$feed_sources{$feed_source_key}->{url};
+          $feed_desc_split=$feed_sources{$feed_source_key}->{desc_split};
+          $ttag=$feed_sources{$feed_source_key}->{ttags};
+          $link_to_article_directive=$feed_sources{$feed_source_key}->{link_to_article};
+          %feed=get_feed($feed_source_url);
+        }
+        for (my $f=0 ; $f <= 3 ; $f++) {
+          ($title,$link,$desc)=split(/\#\#/,$feed{$f});
+          if ( ($title eq '') || ($link eq '') ) {
+            next;
+          }
+          my $post=$title;
+          if ($desc ne '') {
+            if ($feed_desc_split ne '') {
+              ($desc,@junk)=split($feed_desc_split,$desc);
+            }
+            $desc =~ tr/\n/\n/s;
+            $desc =~ s/^\n*|\n*$//g;    # trim
+            $desc =~ s/\<p\>//gi;
+            $desc =~ s/\<\/p\>//gi;
+            $post.="\n" . $desc;
+          }
+          if ($link_to_article_directive) {
+            $post.="\n\n" . q{Read the entire article <a href="} . $link . q{" target="_blank">here</a>};
+          }
+          if ($ttag ne '') {
+            $post.="\n" . q{<!--ttag:} . $ttag . q{-->};
+          }
+          $post_filename=$title;
+          $post_filename =~ s/^\s*|\s*$//g;    # trim
+          $post_filename =~ tr/ / /s;
+          $post_filename =~ s/\W/\_/g;
+          $post_filename='auto___' . lc($post_filename);
+          my $post_path=$feed_source_path . '/' . $post_filename . '.txt';
+          if (! -e $post_path) {
+            if (open(POST,'>' . $post_path)) {
+              print POST $post;
+              close(POST);
+            }
+            $posted++;
+          }
+#-----------------------------------
+        } # for for
+      }  # for while
+      if (open (PCTL,'>' . $post_control)) {
+        if ((! defined($we_yyyymmdd)) || $we_yyyymmdd eq '') {
+          get_time_info();
+        }
+        print PCTL $we_yyyymmdd;
+        close(PCTL);
+      }
+      unlink($post_lock);
+    } # for open lck
+    if ($posted) {
+##
+##
+##    automatically pings PingOMatic and Technorati, if posts are actually added
+##
+      $ua = new LWP::UserAgent;
+      $ua->agent($blog_useragent);
+      my $req = new HTTP::Request POST => 'http://rpc.pingomatic.com/';
+      $req->content_type('text/xml');
+      $content=q{
+<?xml version="1.0"?>
+<methodCall>
+  <methodName>weblogUpdates.ping</methodName>
+  <params>
+    <param>
+      <value>
+};
+    $content.=$blosxom::blog_description . '</value>';
+    $content.=q{
+    </param>
+    <param>
+      <value>
+};
+    my $url_to_use=$blosxom::url;
+    if ($url_to_use !~ /\/$/) {
+      $url_to_use.='/';
+    }
+    $content.=$url_to_use . 'index.html</value>';
+    $content.=q{
+    </param>
+  </params>
+</methodCall>
+};
+      $req->content($content);
+      my $res = $ua->request($req);
+#$%$%$%$%$%
+    $ua = new LWP::UserAgent;
+    $ua->agent($blog_useragent);
+    my $req = new HTTP::Request GET => escape($url_to_use . 'index.html');
+    my $res = $ua->request($req);
+    if ($res->is_success) {
+      $html=$res->content;
+    }
+#$%$%$%$%$%
+    } # for posted
+  }
+  1;
+}
+1;
+#-------------------------------------------------------------
+sub get_feed {
+  my $request=shift(@_);
+
+  my %items;
+  undef %items;
+
+# Send the request using HTTP GET.
+  my $ua = new LWP::UserAgent;
+  $ua->timeout(100);
+  my $response = get($request);
+
+  my $xml_hash = XMLin($response);
+
+  my $ref=$xml_hash->{channel}->{item};
+
+  my $type=ref($ref);
+
+  if ($type eq 'HASH') {
+    $title=$xml_hash->{channel}->{item}->{title};
+    $link=$xml_hash->{channel}->{item}->{link};
+    $description=$xml_hash->{channel}->{item}->{description};
+    $items{$j}=$title . '##' . $link . '##' . $description;
+  }
+  else {
+    @arr=@$ref;
+    my $max=3;
+    if ($#arr < $max) {
+      $max=$#arr;
+    }
+    for (my $j = 0; $j <= $max; $j++) {
+      $title=$xml_hash->{channel}->{item}->[$j]->{title};
+      $link=$xml_hash->{channel}->{item}->[$j]->{link};
+      $description=$xml_hash->{channel}->{item}->[$j]->{description};
+      $items{$j}=$title . '##' . $link . '##' . $description;
+    }
+  }
+
+  return %items;
+
+}
+#-------------------------------------------------------------
+sub get_time_info {
+  $sent_time=shift(@_);
+##
+##
+##  there are lots of variables here with no preceding "my"
+##  so as to make them available globally.
+##  might cause problems though, so be careful
+##
+  $time_to_use=time;
+  if ($sent_time ne '') {
+    $time_to_use=$sent_time;
+  }
+  ($second , $minute , $hour , $dayofmonth , $month , $year , $weekday , $dayofyear , $isdst) = localtime($time_to_use);
+  @month_names=('Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec');
+  $month_name=$month_names[$month];
+  $lc_month_name=lc($month_name);
+  $realmonth=$month + 1;
+  $four_digit_year=$year+1900;
+  $full_date=$realmonth."\/".$dayofmonth."\/".$four_digit_year;
+  $full_txt_date=$dayofmonth."\/".$month_name."\/".$four_digit_year;
+  $full_literal_date=$dayofmonth.'&nbsp;'.$month_name.'&nbsp;'.$four_digit_year;
+  if ($realmonth == 1) {
+    $last_month=12;
+    $last_year=$four_digit_year-1;
+  }
+  else {
+    $last_month=$realmonth - 1;
+    $last_year=$four_digit_year;
+  }
+  $last_month_start=$last_month . '/1/' . $last_year;
+  $modweekday=$weekday;
+  if ($weekday == 0) {
+    $modweekday=7;
+  }
+  $seconds_to_add=86400*(7-$modweekday);
+  ($wesecond , $weminute , $wehour , $wedayofmonth , $wemonth , $weyear , $weweekday , $wedayofyear , $weisdst) = localtime($time_to_use+$seconds_to_add);
+  $werealmonth=$wemonth+1;
+  if (length($werealmonth) == 1) {
+    $werealmonth="0".$werealmonth;
+  }
+  if (length($wedayofmonth) == 1) {
+    $wedayofmonth="0".$wedayofmonth;
+  }
+  $wefour_digit_year=$weyear+1900;
+  $wetwo_digit_year=substr($wefour_digit_year,length($wefour_digit_year)-2,2);
+  $week_ending_sunday_full_four_digit_year=$werealmonth . '/' . $wedayofmonth . '/' . $wefour_digit_year;
+  $week_ending_sunday_full_two_digit_year=$werealmonth . '/' . $wedayofmonth . '/' . $wetwo_digit_year;
+  $week_ending_sunday_mo=$werealmonth;
+  $week_ending_sunday_day=$wedayofmonth;
+  $week_ending_sunday_four_digit_year=$wefour_digit_year;
+  $week_ending_sunday_two_digit_year=$wetwo_digit_year;
+  $two_digit_day=sprintf("%02d",$dayofmonth);
+  $two_digit_mo=sprintf("%02d",$realmonth);
+
+  $full_srt_date=$four_digit_year . $two_digit_mo . $two_digit_day;
+  $yyyymmdd=$full_srt_date;
+
+  $we_yyyymmdd=$wefour_digit_year . $werealmonth . $wedayofmonth;
+
+
+  $yymm=substr($four_digit_year,2,2) . $two_digit_mo;
+  $yyyymm=$four_digit_year . $two_digit_mo;
+  if ($month == 0) {
+    $prev_month=11;
+    $prev_year=$four_digit_year-1;
+  }
+  else {
+    $prev_month=$month - 1;
+    $prev_year=$four_digit_year;
+  }
+  $prev_month_name=$month_names[$prev_month];
+  if ($sent_time ne '') {
+    return $full_txt_date;
+  }
+}
+#--------------------------------------------
+sub get_links {
+  my $url=shift(@_);
+  my $method=shift(@_);
+  my $id_str=shift(@_);
+  my $post_params=shift(@_);
+
+  my $param_str='';
+  my %link_info='';
+
+  if ($url !~ /^http\:\/\//) {
+    $url='http://' . $url;
+  }
+  $ua = new LWP::UserAgent;
+  $ua->agent('Mozilla/4.0 (compatible; MSIE 5.01; Windows NT 5.0)');
+
+  if ($method eq '') {
+    $method='GET';
+  }
+  $method=uc($method);
+
+  my $req;
+  if ($method eq 'GET') {
+    $req = new HTTP::Request GET => $url;
+  }
+  else {
+    $req = new HTTP::Request POST => $url;
+    $req->content_type('application/x-www-form-urlencoded');
+    $param_str=$post_params;
+    $req->content($param_str);
+  }
+
+  my $res = $ua->request($req);
+  if ($res->is_success) {
+    $html=$res->content;
+    (@links) = ($html =~ /\<a [^>](.*?)\<\/a\>/ig);  ## probably one of the most powerful regex's ever (IMHO)
+    my $cntr=-1;
+    my $link_url='';
+    my @the_rest=();
+    my $link_title='';
+    foreach $link (@links) {
+      if ($link =~ /$id_str/) {
+        $link_url=$link;
+        $link_url =~ s/$id_str//;
+        $link_url =~ s/(\'|\")//g;
+        ($link_url,@the_rest)=split(/\>/,$link_url);
+        if ($link_url =~ /^\//) {
+          $link_url=$url . $link_url;
+        }
+        $link_title=$the_rest[0];
+        $cntr++;
+        $link_info{$cntr}=$link_title . '##' . $link_url;
+      }
+    }
+  }
+
+  return %link_info;
+
+}
+#################################
+sub escape
+{
+  local ( $_ , $pat ) = @_;
+  $pat = '^A-Za-z0-9 ' if ( $pat eq '' );
+  s/([$pat])/sprintf("%%%02lx", unpack("c",$1))/ge;
+  s/ /\+/g;
+  $_;
+}
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: xautopost
+
+=head1 SYNOPSIS
+
+Automatically pull in posts from various user-definable sources once per week, at end of
+page loading, based on the following conditions:
+
+  * contents of file auto_post.ctl (week-ending date Sunday), is less than
+    current calculated week-ending date Sunday
+
+  * The process is not currently running (as indicated by the
+    existence of file auto_post_lock.lck in $blosxom::datadir)
+  
+
+=head1 INSTALLATION
+* create XML directory under plugins directory, or if elsewhere,
+  modify $lib_loc variable to reflect location
+
+* copy Simple.pm into XML directory
+
+* Drop the xautopost plug-in into your Blosxom plugins folder.
+
+* Configure $blog_useragent (and $lib_loc if necessary)
+
+* Change paths into which posts will be dropped ("blogpath" hash variable),
+  to correspond to your appropriate paths
+
+
+=head1 FEED SOURCE TABLE EXPLAINED
+
+* blogpath         : usually something like "$blosxom::datadir/Online_Marketing"
+* url              : url to pull rss feed or webpage from (i.e. http://www.pbn.com or http://feeds.feedburner.com/AMWSO)
+* desc_split       : string which denotes end of the description you'd like to capture (if any)
+                    (allows for getting rid of funky formatting in descriptions)
+* ttags            : Technorati tags to apply to posts (if any),
+* link_to_article' : 1=include "Read entire article herre" link, null/0=don't
+* type             : null/"rss"=rss feed, "links"=a webpage is to be retrieved and parsed
+* method           : "get" or "post" (used mainly with "links" type)
+* id_str           : string which uniquely identifies lines to grab in retrieved webpages
+                    (i.e. 'lass="breaking" href='), used mainly with "links" type
+
+=head1 VERSION
+
+2006-02-17
+
+=head1 AUTHOR
+
+Jim Raposa  <blogmaster@jamesraposa.com>, http://www.jamesraposa.com/, http://www.sponsorworks.net/
+
+=head1 ACKNOWLEDGEMENTS
+
+All the other blosxom plugin authors whose frameworks I used as a guide
+
+=head1 BUGS
+
+Address bug reports and comments to <xautopost@jamesraposa.com>
+
+=head1 LICENSE
+
+xautopost Blosxom plugin
+Copyright 2006, James Raposa
+
+Blosxom
+Copyright 2003, Rael Dornfest 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

@@ -1,0 +1,139 @@
+<html><head><title>Textile</title>
+
+<link rel="stylesheet" href="doc-styles.css" type="text/css"></head>
+<body>
+<h3>Movable Type User Manual: Textile</h3>
+<p><a href="mtmanual.html">« Table of Contents</a></p>
+
+<a name="__index__"></a>
+
+<ul>
+	<li><a href="#textile">Textile</a></li>
+	<ul>
+		<li><a href="#block%20formatting">Block Formatting</a></li>
+		<li><a href="#inline%20formatting">Inline Formatting</a></li>
+		<li><a href="#character%20formatting">Character Formatting</a></li>
+		<li><a href="#credits">Credits</a></li>
+	</ul>
+
+</ul>
+
+<hr size="1" color="#CCCCCC">
+
+<h1><a name="textile"></a>Textile</h1>
+
+<p>The Textile text formatting option takes a lot of the pain out of HTML composition.
+
+<p>Textile works by looking at your text in terms of lines and paragraphs. Paragraphs
+are composed of one or more lines, separated by a single new-line character. Paragraphs
+are separated by one or more blank lines.</p>
+
+<h2><a name="block%20formatting"></a>Block Formatting</h2>
+
+<p>For each new paragraph, you may begin the paragraph with one of the following markers:</p>
+
+<ul>
+<li><strong>h<em>n</em>.</strong> A lowercase 'h', followed by the number 1-6, followed with a period (.)
+and a space begins a heading tag. The tag will be numbered after the number you specify. The
+entire block will be enclosed in the header tag.</li>
+<li><strong>bq.</strong> A lowercase 'bq.' and a space will define a blockquote block.</li>
+<li><strong>p.</strong> A lowercase 'p.' and a space will define a paragraph tag. This is the default if
+no other marker is specified.</li>
+<li><strong>#</strong> A block beginning with '#' and a space will start a numbered list. Each additional new line beginning with '#' and a space will become a new numbered item.</li>
+<li><strong>*</strong> A block beginning with '*' will start a bulleted list. Each additional new line beginning with '*' and a space will become a new bulleted item.</li>
+<li><strong>==</strong> A block beginning with '==' will cause Textile to turn off its formatting rules until it reaches the ending '==' (which may be at the end of the current paragraph or some later paragraph).</li>
+<li><strong>Wiki Tables</strong> You can use Wiki-style syntax to build simple tables.</li>
+</ul>
+
+<p>All these markers must be at the beginning of the new paragraph, without any leading spaces.
+If line breaks exist within the block, they will be translated into &lt;br /&gt; tags
+automatically. And optionally, you may add a CSS class name in parenthesis
+preceding the period of the heading, blockquote or paragraph markers. If a CSS class name
+is given in this way, it will be assigned to the block tag.</p>
+
+<p>You may also use regular block formatting HTML tags if you prefer.</p>
+
+<h2><a name="inline%20formatting"></a>Inline Formatting</h2>
+
+<p>Within each block, the following inline formatting shortcuts are provided:</p>
+
+<ul>
+<li><strong>_<em>emphasis</em>_</strong>: Text surrounded underscores will
+be formatted using the &lt;em&gt; tag.</li>
+
+<li><strong>*strong*</strong> Text surrounded by asterisks will be formatted
+using the &lt;strong&gt; tag.</li>
+
+<li><strong>??<cite>citation</cite>??</strong> Text surrounded by a pair of question
+marks, it will be formatted using the &lt;cite&gt; tag.</li>
+
+<li><strong>-<del>deleted text</del>-</strong> Text surrouned by a single dash will
+be formatted using the &lt;del&gt; tag.</li>
+
+<li><strong>+<ins>inserted text</ins>+</strong> Text surrounded by plus signs will
+be formatted using the &lt;ins&gt; tag.</li>
+
+<li><strong>^<sup>superscript</sup>^</strong> Text surrounded by caret characters
+will be formatted using the &lt;sup&gt; tag.</li>
+
+<li><strong>~<sub>subscript</sub>~</strong> Text surrounded by tilde characters
+will be formatted using the &lt;sub&gt; tag.</li>
+
+<li><strong>"linktext":url</strong> Text within quotes followed with a colon and
+a URL (fully qualified or relative) will be formatted into a hyperlink. You can
+also add a title for the &lt;a&gt; like this: <code>"linktext (title)":url</code>.</li>
+
+<li><strong>!image_url!</strong> A URL (fully qualified or relative) within exclamation
+characters will be formatted into an &lt;img&gt; tag. You can also add 'alt' text for
+the &lt;img&gt; tag like this: <code>!image_url(alt text)!</code></li>
+
+<li><strong>ABC(Acronyms Be Cool)</strong> Uppercase alpha-numeric characters followed
+by text in parenthesis will be formatted into an &lt;acronym&gt; tag (using the
+parenthetic text for the 'title' attribute).</li>
+</ul>
+
+<p>A series of two or more uppercase alpha-numeric characters will be wrapped with
+a &lt;span&gt; tag and assigned the 'caps' class.</p>
+
+<p>You can also use regular HTML tags when composing your entries. Also, special
+characters within your entry text such as &lt;, &gt;, &amp;, international and symbol
+characters will automatically be escaped into equivalent HTML entities.</p>
+
+<p>If you use a &lt;pre&gt; tag, it isn't necessary to escape special characters within
+it-- they will be automatically escaped, until the closing &lt;/pre&gt; tag is reached.</p>
+
+<h2><a name="character%20formatting"></a>Character Formatting</h2>
+
+<ul>
+<li><strong>(tm)</strong> translates to &trade;</li>
+<li><strong>(c)</strong> translates to &copy;</li>
+<li><strong>(r)</strong> translates to &reg;</li>
+<li><strong><em>n</em>x<em>n</em></strong> When letter 'x' is surrounded with digits, it is translated
+to the &times; character.</li>
+</ul>
+
+<p>Additionally, the raw symbols for &trade;, &copy; and &reg; will be escaped to
+HTML entities. Most international characters and symbols will also be escaped to
+HTML entities.</p>
+
+<p>Unescaped &amp; characters within tag attributes will be escaped automatically.</p>
+
+<p>If you have the <a href="http://www.daringfireball.net/projects/smartypants/" target="_blank">Smarty Pants</a>
+Movable Type plugin installed, it will automatically be used to 'educate' your quotes, ellipsis
+and dashes to their typographic counterparts.</p>
+
+<h2><a name="credits"></a>Credits</h2>
+
+<p>
+The Textile text formatting code for Movable Type was written
+by <a href="http://www.bradchoate.com/" target="_blank">Brad Choate</a>.
+The Textile formatting syntax was developed by
+<a href="http://www.textism.com/">Dean Allen</a>. Many thanks to Dean for his
+permission to adapt Textile for use in Movable Type.
+</p>
+
+<hr size="1" color="#CCCCCC">
+
+<span class="copyright">Copyright © 2001-2003 Ben Trott and Mena Trott. All Rights Reserved.</span>
+
+</body></html>

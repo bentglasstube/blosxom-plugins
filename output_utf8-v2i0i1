@@ -1,0 +1,83 @@
+# Blosxom Plugin: output_utf8
+# Author(s): Rainer Volz <mail@vrtprj.com>
+# Version: 2.0.1
+# Documentation: See the bottom of this file or type: perldoc output_utf8
+
+use Encode;
+package output_utf8;
+
+# --- Configurable variables -----
+
+# --------------------------------
+
+sub start {
+  1;
+}
+
+sub last {
+  $blosxom::output = Encode::encode_utf8 ($blosxom::output);
+  return $blosxom::entries;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: output_utf8
+
+=head1 SYNOPSIS
+
+Purpose: Encodes the output of Blosxom and previous plugins to UTF-8. 
+The plugin is called via 'last'. The variable $entries is left unchanged 
+and returned to Blosxom. No configurable variables available. 
+Just drop it in your plugin directory. 
+Caveat: Make sure that the input to this plugin doesn't contain UTF-8 
+sequences, otherwise strange results may occur.
+
+=head1 VERSION
+
+2.0.1
+
+Version number coincides with the version of Blosxom with which the 
+current version was first bundled.
+
+=head1 AUTHOR
+
+Rainer Volz  <mail@vrtprj.com, http://www.vrtprj.com/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Blosxom Copyright 2003, Rael Dornfest 
+
+This plugin Copyright 2003, Rainer Volz
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

@@ -1,0 +1,183 @@
+# Blosxom Plugin: refererblock  -*- perl -*-
+# Author(s): Steve Schwarz <steve at agilitynerd.com>
+# Version: 2005-FEB-20 0.2
+# Documentation: See the bottom of this file or type: perldoc refererblock
+
+package refererblock;
+
+# Return a 301 permanent redirect back to blacklisted referers.
+# Any regex or word specified in the blacklist file found in the referer
+# env causes the permanent redirect to be sent to the requestor.
+#
+# A combination of Jason Clark's deferer plugin (http://jclark.org/weblog/)
+# and Doug Alcorn's writeback blacklist plugin
+# (http://www.lathi.net/twiki-bin/view/Main/BlogSpam).
+#
+# By default use the same blacklist file as Doug Alcorn's version of writeback
+# which blocks comment spam:
+# http://www.lathi.net/twiki-bin/view/Main/BlogSpam
+# so only one file needs maintaining.
+# You must create and populate this file
+my $blacklist = "$blosxom::plugin_state_dir/blacklist.txt";
+
+# Optional debugging feature:
+# 
+# Put referers who are rejected into a file for inspection.
+# Set to full path for file as shown in the comment below:
+my $log_blacklisted = ""; # "$blosxom::plugin_state_dir/blacklisted.txt";
+#
+# To see referers who are not rejected use James Vasile's referer plugin:
+# http://brutalhugs.com/flavours/referer
+
+#use CGI::Carp 'fatalsToBrowser';
+#use Time::HiRes qw(gettimeofday);
+
+sub start {
+#    $start = gettimeofday;
+    my $refer = blosxom::referer();
+#    print STDERR "URL: $blosxom::url Referer: $refer\n";
+    if ($refer and not $refer =~ /^$blosxom::url/) {
+        # referer exists and we are not the referer
+#	print STDERR "Checking blacklist for $blosxom::url\n";
+	my @blacklist = read_blacklist();
+        die "No blacklist found\n" unless @blacklist;
+	foreach $spam (@blacklist) {
+	    chomp($spam);
+	    if ($refer =~ /$spam/im) {
+		if ($log_blacklisted) {
+		    open(FH, ">> $log_blacklisted") or die "Can't open file: $log_blacklisted $!\n";
+		    my $current_time = gmtime;
+		    print FH "$current_time\t$refer\t$url\n";
+		    close(FH);
+		}
+#		$elapsed = gettimeofday - $start;
+#		print STDERR "Blacklisted Elapsed: $start $elapsed \n";
+
+#		print STDERR "Blacklisting: $blosxom::url\n";
+		print "Status: 301 Moved Permanently\n";
+		print "Location: $refer\n\n";
+		exit(0);
+	    }
+	}
+    }
+#    $elapsed = gettimeofday - $start;
+#    print STDERR "Passed Elapsed: $start $elapsed \n";
+    1;
+}
+
+# Taken from a Doug Alcorn's modified writeback plugin:
+sub read_blacklist {
+    open BLACKLIST, "$blacklist" or die "Can't read blacklist file: '$blacklist', $!\n";
+    my @lines = grep {! /^\s*\#/ } <BLACKLIST>;
+    close BLACKLIST;
+    die "Empty blacklist file: '$blacklist'\n" unless @lines;
+    my @nocomments;
+    foreach my $line (@lines) {
+        $line =~ s/^\s*//;
+        $line =~ s/\s*[^\\]\#.*//;
+        next unless $line;
+        push @nocomments, $line;
+    }
+    die "No uncommented blacklist entries in file: '$blacklist'\n" unless @nocomments;
+    return @nocomments;
+}
+
+1;
+
+__END__
+=head1 NAME
+
+Blosxom Plug-in: refererblock
+
+=head1 SYNOPSIS
+
+Purpose: This plugin seeks to find a flexible way to keep referer spam
+out of the referer plugin and out of server logs. It combines the
+keyword based comment filtering of Doug Alcorn with Jason Clark's idea
+to stop Blosxom as early as possible and send a redirect to the
+offending referer with the new location set to the referer's website -
+on the off chance that the spider/spammer follows the redirect.
+
+This work is entirely based on Jason and Doug's ideas and code; they should get
+full credit:
+Jason Clark's deferer plugin (http://jclark.org/weblog/WebDev/Blosxom/plugins/deferer/deferer-0-1i.html)
+Doug Alcorn's writeback blacklist plugin (http://www.lathi.net/twiki-bin/view/Main/BlogSpam).
+
+=head1 CONFIGURATION
+
+Drop this plug-in file into your plug-ins directory. You must create
+and populate the blacklist file with undesirable words or regular
+expressions. If multiple words are combined into a single regex
+instead of listing them on separate lines it might be a more efficient
+comparison.
+
+See Doug Alcorn's page for links to existing word blacklists.
+
+The only configuration variable you can set is $log_blacklisted. If
+set to a full pathed file name the script logs the UTC date/time,
+referer string, and the page to which they were refering. You could
+use the frequency of words in the rejected referer strings to fine
+tune the content and ordering of your blacklist.txt file to match the
+spammers hitting your site.
+
+=head1 FUTURE
+
+If logging is turned on one could do the ageing of entries in the same
+manner as James Vasile's referer plugin
+(http://brutalhugs.com/flavours/referer). Otherwise the logfile grows
+unbounded. 
+
+Along the same lines one could read the file and present it in a
+variable for inclusion in a report page. Of course you would have to
+ensure that that page had no links into it - otherwise you end up
+linking to the spammers and that kind of makes this plugin useful.
+
+=head1 VERSION
+
+0.2
+
+=head1 VERSION HISTORY
+
+0.2	Don't check referers from our site ($blosxom:url) against the blacklist.
+	Only open blacklist.txt file if a referer string exists and it isn't
+	from our site.
+
+0.1	First released version
+
+=head1 AUTHOR
+
+Steve Schwarz (steve at agilitynerd.com)
+
+Based on original code by:
+Doug Alcorn's writeback blacklist plugin (http://www.lathi.net/twiki-bin/view/Main/BlogSpam).
+Jason Clark's deferer plugin (http://jclark.org/weblog/WebDev/Blosxom/plugins/deferer/deferer-0-1i.html)
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+refererblock plugin
+Copyright 2005, Steve Schwarz
+Doug Alcorn's writeback blacklist plugin (http://www.lathi.net/twiki-bin/view/Main/BlogSpam).
+Jason Clark's deferer plugin (http://jclark.org/weblog/WebDev/Blosxom/plugins/deferer/deferer-0-1i.html)
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

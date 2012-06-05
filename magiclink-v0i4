@@ -1,0 +1,127 @@
+# Blosxom Plugin: magiclink
+# Author: Bruce Alderson
+# Version: 2003-09-04 (v0.4)
+# License: GPL            
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/blosxom
+
+# magiclink
+#
+# An automatic link-formatter that uses a mostly natural format.
+# Markup is inline, is easy to remember, and reads well in a 
+# text file.  Both magical (guessed) and normal linking is
+# supported.  Magical linking works by using a keyword and 
+# constructing a link from configuration (currently in perl), 
+# and normal linking grabs the link directly.
+#
+# Usage Examples:
+# 
+#  "Sponge Bob"[google]    Builds a link to a google search for "Sponge Bob"
+#  "Test"[folodoc]         Builds a link to a FOLDOC search for "Test"
+#  "Site"[http://site.org] Builds a link to site.org
+#  "Local"[/dl/file]       A relative link for a local file
+#
+# TODO
+#   * Auto-add http
+#   * Put source list configuration in a simple file (tab or ini)
+#   * Doc configuration (advanced searches, including google site: ones)
+#   * empty [] to generate a guess based on term
+#   * allow single word with no ""s
+
+package magiclink;
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# Configuration Section
+
+# add new magic-links here
+my %sources = (
+    google => {
+        url => 'http://google.com/search?q=%terms%',
+        ws  => '+',
+        q   => '%22' 
+    },
+    foldoc => {
+        url => 'http://foldoc.doc.ic.ac.uk/foldoc/foldoc.cgi?query=%terms%&amp;action=Search',
+        ws  => '+',
+        q   => ''
+    },
+    dict => {
+        url => 'http://dictionary.reference.com/search?q=%terms%',
+        ws  => '%20',
+        q   => '%20'
+    },
+    perldoc => {
+        url => 'http://perldoc.com/cgi-bin/htsearch?words=%terms%&restrict=perl5.8.0',
+        ws  => '+',
+        q   => '%22'
+    },
+    slashdot => {
+        # simple link (no %term%)
+        url => 'http://slashdot.org',
+        ws  => '',
+        q   => ''
+    },
+    blosxom => {
+        url => 'http://blosxom.com',
+        ws  => '',
+        q   => ''
+    },
+    amazon => {
+        url => 'http://www.amazon.ca/exec/obidos/ASIN/%terms%',
+        img => 'http://images.amazon.com/images/P/%terms%.01.MZZZZZZZ.jpg',
+        ws  => '',
+        q   => '',
+        tmpl=> '<a href="%url%"><img src="%img%" align="left" alt="ISBN: %terms%" /></a>'
+    }
+
+);
+
+#
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+
+sub start {
+  1;
+}
+
+sub magic_url {
+    my ($terms, $service) = @_;
+    
+    return "Error: $service not configured" if (!exists($sources{$service}));
+    
+    # get config
+    my ($url, $ws, $q, $tmpl, $img) = 
+        ($sources{$service}{url}, $sources{$service}{ws}, $sources{$service}{q}, 
+         $sources{$service}{tmpl}, $sources{$service}{img});
+
+    # build url
+    $url =~ s/%terms%/$q$terms$q/g;
+    $url =~ s/\s/$ws/g;
+
+    return "<a href=\"$url\">$terms</a>"
+        if !defined($tmpl) || $tmpl eq ''; # default template
+
+
+    # populate user-defined template
+    
+    $img =~ s/%terms%/$terms/g;
+    $tmpl =~ s/%url%/$url/g;
+    $tmpl =~ s/%img%/$img/g;
+    $tmpl =~ s/%terms%/$terms/g;
+
+    return $tmpl;
+}
+
+sub story {
+ my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+    # magic urls
+    $$body_ref =~ s/"([\w\s_\-\.\+]+)"\[(\w+)\]/magic_url($1,$2)/geis;
+    $$body_ref =~ s/"([\w\s_\-\.\+]+)"\[(\w+)\]/magic_url($1,$2)/geis;
+
+    # manual urls
+    $$body_ref =~ s/"([\w\s_\-\.\+]+)"\[(.*?)\]/<a href=\"$2\">$1<\/a>/gs;
+ 1;
+}
+
+1;
+

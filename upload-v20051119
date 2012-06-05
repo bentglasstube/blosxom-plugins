@@ -1,0 +1,268 @@
+# Blosxom Plugin: upload
+# Author: KITAMURA Akatsuki
+# Version: 2005-11-19
+# Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+# This script is encoded in UTF-8.
+
+package upload;
+
+use strict;
+use CGI qw(:cgi);
+use FileHandle;
+use DirHandle;
+
+# --- Configurable Variables -----------
+
+# アップロード先の基底ディレクトリ名
+# フルパスで指定します。
+# 末尾に"/"はつけないで下さい。
+# 註: 記事ファイル用のディレクトリ($datadir)、またはそれに
+#     含まれるディレクトリは指定しないようにしましょう。
+#     $datadirに不要なファイルがあると、blosxomが記事ファイルを
+#     検索する手間が余計にかかります。
+my $base_dir = '/var/apache/htdocs/blosxom/data';
+
+# $base_dir に対応するURL
+# "http://"からはじまる絶対URL、
+# または"/"からはじまる絶対パスで指定します。
+# 末尾に"/"はつけないで下さい。
+my $base_url = 'http://www.example.com/blosxom/data';
+
+# uploadプラグインを使う時のフレーバー
+my $upload_flavour = 'wikieditish';
+
+# パスワード(必須)
+my $password = 'password';
+
+# --- 以下は必要に応じて変更 ---
+
+# フォームのコントロール名
+my $cn_upload = 'upload';
+my $cn_remove = 'remove';
+my $cn_password = 'password';
+
+# debug用
+my $debug = 0;
+
+# --- Plug-in package variables --------
+
+use vars qw($response $index);
+my ($dir, $url);
+
+# --------------------------------------
+
+sub start {
+	return 0 if ($blosxom::static_or_dynamic eq 'static');
+	return 0 if ($blosxom::path_info !~ m{\.$upload_flavour$});
+
+	# 変数の初期化
+	$response = '';
+	(my $subdir = $blosxom::path_info) =~ s/\.[^.]+$//;
+	$dir = "$base_dir/$subdir";
+	$url = "$base_url/$subdir";
+
+	# ファイルのアップロード・削除処理
+	if (request_method() eq 'POST') {
+		if (param($cn_password) ne $password) {
+			&err_msg('incorrect password.');
+			return 1;
+		}
+		param($cn_upload) and &upload_file;
+		param($cn_remove) and &remove_file;
+	}
+	1;
+}
+
+sub foot {
+	# XHTMLの空要素用
+	my $nestc = ($blosxom::output =~ m{http://www.w3.org/1999/xhtml})
+		? '/' : '';
+
+	# ファイル一覧の作成
+	$index = '';
+	if (-d $dir and my $dh = DirHandle->new($dir)) {
+		foreach my $fn (sort $dh->read) {
+			$fn =~ /^\.\.?$/ and next;
+			( -f "$dir/$fn" and -r _ ) or next;
+			$index .= qq{<dd><a href="$url/$fn">$fn</a> (<label>remove<input type="checkbox" name="$cn_remove" value="$fn" $nestc></label>)</dd>\n};
+		}
+	}
+	$index ||= "<dd>(no file)</dd>\n";
+	$index = qq{<dl>\n<dt>uploaded files</dt>\n$index</dl>\n};
+
+	# 出力メッセージ
+	if ($response) {
+		chomp $response;
+		$response =~ s{\n}{<br $nestc>}g;
+	} else {
+		$response = 'ready to upload file.';
+	}
+}
+
+# アップロード処理
+
+sub upload_file {
+	# ディレクトリが無かったら作成
+	unless (-d $dir) {
+		require File::Path;
+		unless (File::Path::mkpath($dir)) {
+			&err_msg("cannot make dir: $!.");
+			return;
+		}
+	}
+
+	my $outfh = FileHandle->new;
+	foreach my $upfh (param($cn_upload)) {
+		$upfh or next;
+
+		# ファイル名の設定
+		my $fn = "$upfh";
+		$fn =~ s{^.*[/:>\]\\]}{};   # cf. File::Basename.pm
+		if ($fn =~ m{[^\w.-]}) {
+			&err_msg('bad filename (only 0-9 A-Z a-z ._-).');
+			next;
+		}
+		my $file = "$dir/$fn";
+	
+		# フォームデータをファイルに書き込み
+		unless ($outfh->open(">$file")) {
+			&err_msg("cannot write $fn: $!.");
+			next;
+		}
+		my $buffer;
+		while ( read($upfh, $buffer, 1024) ) {
+			print $outfh $buffer;
+		}
+		$outfh->close;
+		$response .= "'$fn' has been uploaded successfully.\n";
+	}
+}
+
+# ファイル削除処理
+
+sub remove_file {
+	my @file = param($cn_remove);
+	foreach my $fn (@file) {
+		my $file = "$dir/$fn";
+		if (-f $file and unlink $file) {
+			$response .= "'$fn' has been removed successfully.\n";
+		} else {
+			&err_msg("cannot remove $fn: $!.");
+		}
+	}
+	# ディレクトリが空ならディレクトリを削除
+	my $dh = DirHandle->new($dir);
+	unless ($dh) {
+		&err_msg("cannot opendir: $!.");
+		return;
+	}
+	unless (grep { !/^\.\.?$/ } $dh->read) {
+		$dh->close;
+		rmdir $dir or &err_msg("cannot rmdir: $!.");
+	}
+}
+
+# エラーメッセージ
+
+sub err_msg {
+	my $msg = $_[0];
+	$response .= "$msg\n";
+	$debug and warn "upload: $msg\n";
+	1;
+}
+
+1;
+
+__END__
+
+=encoding utf8
+
+=head1 NAME
+
+Blosxom Plug-in: upload
+
+=head1 SYNOPSIS
+
+目的: 記事ごとにディレクトリを作成し、
+そこへファイルをアップロードする機能を加えます。
+
+=head1 INSTALLATION
+
+このプラグインファイルをプラグインディレクトリ($plugin_dir)に
+置いて下さい。
+
+=head1 CONFIGURATION
+
+$base_dir, $base_url, $upload_flavour, $password を
+環境に合わせて設定して下さい。
+
+また、以下のようなアップロードフォームを、使用するフレーバーの
+footテンプレートファイルに加えます。
+
+  <form method="post" action="$url/$path_info" enctype="multipart/form-data">
+  <fieldset>
+  <legend>upload</legend>
+  <p>message: <em>$upload::response</em></p>
+  $upload::index
+  <p><label>upload file: <input type="file" name="upload"></label></p>
+  <p><label>password: <input type="password" name="password"></label>
+  <input type="submit" value="submit"></p>
+  </fieldset>
+  </form>
+
+上記例はHTMLの場合です。
+XHTMLの場合は空要素を">"ではなく" />"で閉じます。
+
+ファイル選択用のinput要素を複数並べることにより、複数のファイルを
+同時にアップロードすることも可能です。
+
+アップロードされたファイルの一覧は定義リストの形式で表示されます。
+
+  uploaded files
+      aaaa.txt (remove[ ])
+      bbbb.txt (remove[ ])
+      cccc.txt (remove[ ])
+
+=head1 NOTICE
+
+アップロードするファイルの名前には、英数字及び . _ - のみが
+使用できます。
+
+=head1 VERSION
+
+2005-11-19
+
+=head1 AUTHOR
+
+北村曉 (KITAMURA Akatsuki)
+<kits@akatsukinishisu.net>,
+http://www.akatsukinishisu.net/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+Blosxom Plugin Docs: http://www.blosxom.com/plugins/
+
+=head1 LICENSE
+
+This Blosxom Plug-in Copyright (c) 2005, KITAMURA Akatsuki
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

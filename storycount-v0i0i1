@@ -1,0 +1,96 @@
+# Blosxom Plugin: storycount
+# Author: Moshe Yudkowsky <speech@pobox.com>
+# Version: 0.0.1
+# Documentation: See the bottom of this file or type: perldoc storycount
+
+package storycount;
+use strict;
+use English;
+
+my $debug = 0;   # log debug messages or not?
+
+our $count = 0 ;
+
+sub start {1;}
+
+sub filter
+{
+	warn "storycount: filter()\n" if $debug > 0 ;
+
+	my($pkg, $files) = @_;
+
+	$count = keys(%$files) ;
+
+	warn "storycount: count is '$count'\n" if $debug > 0;
+
+     return 1;
+}
+
+1 ;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: storycount
+
+=head1 SYNOPSIS
+
+This is a filter plugin that counts the number of stories that will appear 
+on the final page. The variable appears as $storycount::count.
+
+=head1 VERSION
+
+0.0.1
+
+=head1 AUTHOR
+
+Moshe Yudkowsky <speech@pobox.com>, http://www.Disaggregate.com, 
+http://www.PebbleAndAvalanche.com
+
+=head1 DESCRIPTION
+
+This is a filter plugin that counts the number of stories and makes that 
+count avaiable as the variable $storycount::count.
+
+This filter should be the last filter run; if any other filter runs after 
+it, that filter can change the count. To make this the last filter, you may 
+wish to rename the file to "90storycount" or whatever is suitable for your 
+plugin directory.
+
+
+=head1 LIMITATIONS
+
+This plugin runs as a "filter" subroutine. Since the story subroutine, 
+which runs next, can "skip" a story, in theory the count can become 
+inaccurate. Since I've never run across a story plugin that "skips," I have 
+no suggestions at this time how to accomodate that situation.
+
+=head1 BUGS
+
+No known bugs.
+
+Address bug reports and comments to the Blosxom mailing list
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+storycount Blosxom Plugin Copyright 2005, Moshe Yudkowsky
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

@@ -1,0 +1,42 @@
+# Blosxom Plugin: auto_markup
+# Author(s): color99
+# Version: v1.10
+# Date: 2005.12.17
+
+package auto_markup;
+
+use strict;
+
+# --- Configurable variables -----------
+my $convert_p_tag = 1;         # 1;         if you don't need p tag, set to 0
+my $convert_a_tag = 1;         # 1;         if you don't need a tag, set to 0
+my $convert_word  = '>> Link'; # '>> Link'; if you don't need to convert_word, set to ''
+# --------------------------------------
+
+sub start {
+  1;
+}
+
+sub story {
+  my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+  # replace to a tag except in tag or after sanitize  #177'/600
+  if($convert_word){
+    $$body_ref =~ s/([^=^"^;]|^)((http|https|ftp):[!-~]+\.[!-~]+)/$1<a href="$2" title="$2" target="_blank">$convert_word<\/a>/g if $convert_a_tag && $$body_ref !~ /<\/a>/i; # if there is not a tag in this entry
+  }else{
+    $$body_ref =~ s/([^=^"^;]|^)((http|https|ftp):[!-~]+\.[!-~]+)/$1<a href="$2" title="$2" target="_blank">$2<\/a>/g if $convert_a_tag && $$body_ref !~ /<\/a>/i; # if there is not a tag in this entry
+  }
+
+  # replace to br
+  if($$body_ref !~ /<br|<\/p>/i){          # if there is not br tag or p tag in this entry
+    $$body_ref =~ s!\x0D\x0A!<br />!g;     # replace cr or lf to <br />
+    $$body_ref =~ s!\x0D!<br />!g;         # cr -> br
+    $$body_ref =~ s!\x0A!<br />!g;         # lf -> br
+  }
+  # add p tag 
+  $$body_ref = '<p>'.$$body_ref.'</p>' 
+               if $convert_p_tag && $$body_ref !~ /<\/p>/i; # if there is not p tag in this entry
+  1;
+}
+
+1;

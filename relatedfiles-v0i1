@@ -1,0 +1,166 @@
+# Blosxom Plugin: relatedfiles
+# Author: Fletcher T. Penney
+#		  http://fletcher.freeshell.org/
+# Sponsor: Tacoma Family Medicine Residency Program
+#
+# Version: 0.1
+#
+# Description:
+# This plugin allows you to automatically create links for files in
+# your data directory.  This can be used to provide access for files
+# that are related to the current directory.
+# To use it, place the $relatedfiles::files_list variable in your
+# theme/flavour files, and edit the settings in the Configurable
+# variables section below, as well as in the __DATA__ section at the 
+# end of the file.
+# 
+# License:
+# 
+# Copyright 2004, Fletcher T. Penney 
+# 
+# Permission is hereby granted, free of charge, to any person obtaining a
+# copy of this software and associated documentation files (the "Software"),
+# to deal in the Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software, and to permit persons to whom the
+# Software is furnished to do so, subject to the following conditions:
+# 
+# The above copyright notice and this permission notice shall be included
+# in all copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+# OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+# ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+# OTHER DEALINGS IN THE SOFTWARE.
+# 
+
+package relatedfiles;
+
+# --- Configurable variables ---
+
+$display_icons = 1;			# Should icon images be displayed?
+
+$search_subfolders = 0;		# Search in subfolders for other files?
+
+$file_url = "/content";		# Prepend this to file url's to direct
+		# the web browser to the proper location of your data_directory.
+		#
+		# e.g. the setting "/content" would cause the file:
+		# 	data_directory/politics/graph.xls
+		# to show up with the URL:
+		# 	/content/politics/graph.xls
+
+# Ignore files with the following extensions
+$ignored_extensions = "$blosxom::file_extension|DS_Store";		
+
+# Should I ignore files if I don't have an icon for them?
+# It is recommended you leave this set to 1
+# Otherwise you might inadvertently provide access to configuration
+# files.
+$ignore_unknown_extensions = 1;
+
+
+# Define the (X)HTML used to format results
+
+$list_start = qq!<ul>\n!;
+$list_end = qq!</ul>\n!;
+
+$item_start = qq!<li>!;
+$item_end = qq!</li>!;
+
+
+# Don't forget to update the __DATA__ section at the end of this file
+# so that I can locate the images!
+
+
+# --- Output variables ---
+# For use in your templates
+# use $relatedfiles::files_list
+
+$file_list = "";
+
+
+# -- Internal variables ---
+
+# This hash stores the known extensions and the location of their images
+my %filetypes = ();
+
+# This regular expression is used to match only known files
+my $extension_regexp = "";
+
+sub start {
+	# Read in known filetypes
+	while ( <DATA> ) {
+		last if /^(__END__)?$/;
+		my($ext, $path) = /^\s*(\.\S+)\s+(.*)$/;
+		if ($ext ne "") {
+			$filetypes{$ext}=$path;
+			$extension_regexp .= "$ext|";
+		}
+	}
+	
+	$extension_regexp =~ s/\|$//;
+	
+	1;
+}
+
+sub head {
+
+	foreach $file ( sort keys %blosxom::others ) {
+		
+		# Check to see if file is within current path and not ignored
+		if (($file =~ /^$blosxom::datadir\/$blosxom::path_info/) 
+			&& ($file !~ /\.($ignored_extensions)$/)) {
+			
+			# Strip datadir path info
+			$file =~ s/^$blosxom::datadir//;
+			
+			# Check for subdirectories if allowed
+			if (( $search_subfolders ) ||
+				( $file !~ /^\/?$blosxom::path_info\/?.+\//)) {
+				
+			# See if we know this extension
+			if ((! $ignore_unknown_extensions) ||
+				( $file =~ /($extension_regexp)$/ )) {
+
+				# Clean name for display
+				$filename = $file;
+				$filename =~ s/\/?$blosxom::path_info\/?//;
+
+				# Find extension
+				$file =~ /(\.\S+)$/;
+								
+				if ($display_icons) {
+					$file_list .= qq!$item_start <a href= "$file_url$file"><img src="$filetypes{$1}" alt="File Icon"/> $filename</a>$item_end\n!;
+				} else {
+					$file_list .= qq!$item_start <a href= "$file_url$file"> $filename</a>$item_end\n!;
+				}
+				}
+			}
+		}
+	}
+	
+	
+	# if files exist, wrap the list with the start and end tags
+	if ( $file_list ne "") {
+		$file_list = $list_start . $file_list . $list_end;
+	}
+	
+	1;
+}
+
+
+1;
+
+
+# The DATA format consists of:
+# .extension	/full/url/to/image
+# there can be spaces or tabs between the two columns
+# example:
+# .pdf	/images/pdf.gif
+
+__DATA__
+__END__

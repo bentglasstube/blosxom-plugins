@@ -1,0 +1,280 @@
+# Blosxom Plugin: storyfilter
+# Author: Mike Downey
+# Version: 0.31
+
+# Changes:
+# v0.10	First version that works. (needs hack to blosxom: next if $yr == 1970; around line 450)
+# v0.11	Picks up category from the path
+# v0.12 Needs $categoryiskeyword==1 before it overrides the path.
+# v0.13 Automatically populates the keywords cache from the path (only if $autokeywords == 1)
+# v0.14 Builds up $keywordlinks for browsing the keywords
+# v0.15 Removes 'bug' where final entry was duplicated
+# v0.16 ?refresh=y will refresh the keyword cache for any currently displayed stories
+# v0.17 Attempts to completely rebuild the cache file when ?refresh=full
+# v0.20 Correctly builds the cache file
+# v0.21 Builds keyword hash at same time as cache file.
+# v0.22 Cache rebuild now respects $autokeywords and only writes to file once.
+# v0.23 Fixed bug where /email.html was thought as a keyword
+# v0.24 Fixed bug where keywords didn't have spaces between them (crlf windows/unix problem)
+# v0.25 Can now refresh the cache on reindex=y
+# v0.26 Keywords now case independent. Avoids duplicates.
+# v0.27 Includes POD
+# v0.28 Correctly removes spaces from the keyword list
+# v0.29 workaround for bug which adds a hash reference(!?) to the keyword file!
+# v0.30 Adds keywordfilter to $blosxom namespace so it can more easily be accessed elsewhere
+#       (revoked in v0.31 because it's unnecessary)
+# v0.31 Checks the start of the keyword for a match, so eg, work != network
+
+package storyfilter; # Needs to be loaded after the 'meta' plugin
+
+# usage: add keyword=xyz to the query string to display any stories
+# which contain that keyword in in the meta-keywords variable.
+# Keywords are saved to a disk cache as and when they are viewed.
+# if $categoryiskeyword == 1 then /keyword works as well (read the notes first)
+# ?refresh=y refreshes keyword cache for any currently displayed stories
+# (same as using $refresh = 1)
+
+# using /category stops $breadcrumbs and $menu from showing the proper subcategories
+# because of the way it clears the $path variable
+
+# -------- Configure variables --------
+
+my $keywordfile = "$blosxom::plugin_state_dir/keyword.cache";
+
+my $categoryiskeyword = 0;	# allows /keyword as well as ?keyword=
+my $autokeywords = 1;		# picks keywords from categories
+my $refresh = 0;		# refreshes any entries as they are displayed
+my $reindex = 1;		# does a full refresh on ?reindex=y as well
+
+# -------------------------------------
+
+use CGI qw/:standard/;
+
+my %keyword_stories;
+$keywordfilter="";
+my $filechanged = 0;
+my $localkeywords;
+
+$keywordlinks;
+$oldpath;
+
+sub start {
+	# Read in the keyword cache
+	open KWF, $keywordfile;
+	while(my $line=<KWF>){
+		my ($fn,$kw) = split ("#",$line);
+		$keyword_stories{$fn}=$kw;
+	}
+	close KWF;
+
+	# get the keyword to filter on from CGI
+	$keywordfilter = CGI::param("keyword");
+
+	# if the path is a single word (no subcategories), doesn't contain a . (ie not a story)
+	# and no keyword is selected then use that as a keyword
+	if ($categoryiskeyword && ($blosxom::path_info !~ m#/|\.#) && !$keywordfilter){
+		$keywordfilter=$blosxom::path_info;
+		$blosxom::path_info = ""; 		# Naughty! these variables should be read-only!
+	}
+	# This bit breaks the 'menu' plugin and stops it showing subcategories
+
+
+	# decides whether we refresh the cache for visible stories
+	$refresh ||= (CGI::param("refresh") eq "y");
+
+	1;
+}
+
+sub filter {
+	my ($pkg, $files_ref) = @_;
+	my $storypath,@pathelements;
+
+	# Rebuild entire cache file if required
+	if ( (CGI::param("refresh") eq "full") or
+  	     !(-e $keywordfile) or
+	     ((CGI::param("reindex") eq "y") and $reindex)){
+		%keyword_stories = {};
+		foreach $storyfn (keys %$files_ref){
+			my $keywordlist = "";
+
+			if ($autokeywords){
+				# now need to extract the path from the full pathname
+				($storypath = $storyfn) =~ s/$blosxom::datadir//;
+				@pathelements = split("/",$storypath);
+				delete $pathelements[-1];
+				# and add each part of the path to the keywords file
+				foreach $storypath (@pathelements){
+					$keywordlist .= $storypath.",";
+				}
+			}
+			# now for the tricky bit: extracting the keywords from the meta tag
+			open STF, $storyfn;
+			my $line = <STF>; # skip the first line
+			while ($line = <STF>){
+				chomp $line;
+				if (substr($line,0,5) ne "meta-")
+					{last;} # skip to next story if no meta.
+				if (substr($line,0,14) eq "meta-keywords:"){
+					$keywordlist .= (split(": ",$line))[1];
+				}
+			}
+			close STF;
+			$keywordlist =~ s/\s//g;	# strip whitespace
+			$keyword_stories{$storyfn}=$keywordlist;
+		}
+		$filechanged = 1;	# re-write file at end
+	}
+
+	if ($keywordfilter){
+		my $storyfn;
+
+		# If we want to filter on a keyword, go ahead and do it
+		# searches for ,keyword because there is always a preceding comma.
+		# This stops, eg. 'work' finding 'network' but 'review' still finds 'reviews'
+		foreach $storyfn (keys %$files_ref){
+			if (!($keyword_stories{$storyfn} =~ /,$keywordfilter/i))
+				{ delete $files_ref->{$storyfn}; }
+		}
+	}
+	1;
+}
+
+# for each story, take the keywords and add to the cache array
+sub story {
+
+	my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+	if (!$filename)			# There seems to be a bug somewhere where deleting from
+		{			# the $files_ref in filter may cause the final post to be
+		$$story_ref = '';	# duplicated but only in the top level category and with
+		return 1;		# a unix date of 0 (1-1-1970). This work-around prevents it.
+		}
+	
+	# Add the path elements to the meta::keywords
+	if ($blosxom::path && $autokeywords)
+		{ ($localkeywords = $meta::keywords.$blosxom::path) =~ s#/#,#g; }
+
+	# Add the keywords to the cache array (only if we need to)
+	if (defined $localkeywords){
+		my $storyfilename = "$blosxom::datadir$path/$filename.txt";
+		if ((!$keyword_stories{$storyfilename}) or $refresh) {#
+			$localkeywords  =~ s/\s//g;
+			$keyword_stories{$storyfilename}=$localkeywords;
+			$filechanged = 1;
+		}
+	}
+
+	# Build up the keyword links
+	my @words = split (",",$localkeywords);
+	my %wordlinks, $word;
+	foreach $word (@words){
+		$word =~ s/\s//g;	# strip cf, lf and spaces
+		if ($word) # ignore blank lines
+			{$wordlinks{lc $word} = "<a href=\"$blosxom::url?keyword=$word\">". ucfirst $word ."</a>";}
+	}
+	if ($localkeywords) 
+		{$keywordlinks = "Keywords: ".join("&nbsp;", values %wordlinks);}
+
+	$localkeywords="";
+	1;
+}
+
+# If the cache file has changed, write it to disk
+sub last {
+	my $fn,$kw;
+	if ($filechanged) {
+		open KWF,"> $keywordfile";
+		foreach $fn (keys %keyword_stories){
+			$kw = $keyword_stories{$fn};
+			if ($kw){print KWF "$fn#$kw\n"}
+			}
+		close KWF;
+	}
+
+	1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom plugin: storyfilter
+
+=head1 SYNOPSIS
+
+Filters stories according to a keyword provided on the URL.
+
+=head1 VERSION
+
+V0.31 (24 October 2005)
+
+=head1 AUTHOR
+
+Mike Downey (www.mikedowney.co.uk)
+
+=head1 BUGS
+
+Setting the $categoryiskeyword variable to 1 will break any plugins which make
+use of the $blosxom::path_info variable (which is quite a lot of them).
+
+=head1 USAGE
+
+=head2 Installation
+
+Simply copy into the plugins directory. If you want the plugin to pick the keywords
+from new stories as they are posted (rather than refresh the entire keyword cache
+each time), then the meta plugin is required as well.
+
+In each story, add the line I<meta-keywords:> followed by comma separated keyword list to
+the beginning of the story, eg.
+
+meta-keywords: food,drink,sandwiches
+
+=head2 Configuration
+
+$categoryiskeyword = 1 :
+If the category/directory to be viewed is only one level deep
+i.e. no subdirectories, then the directory name will be taken
+as the keyword, eg. blosxom.cgi/coventry will be the same as
+blosxom.cgi?keyword=coventry. This requires '$autokeywords=1'
+to preserve the normal category view.
+
+$autokeywords = 1 :
+The plugin will take the path to the story and add the categories
+to the keywords, eg. 'blosxom.cgi/days_out/beach' will cause
+'days_out' and 'beach' to be added to the keywords for the stories
+in that directory.
+
+$refresh = 1 :
+Every time a story is viewed, the keywords are written to the cache file.
+
+$refresh = 0 :
+Only writes the keywords to the file when the file is first viewed. If the
+keywords are changed in the story, the changes will not be saved.
+
+=head1 NOTES
+
+
+The filter gathers keyword information from the stories and allows the user
+to selectively view stories according to keyword. The keywords are defined
+by adding
+	meta-keywords: comma separated keyword list
+The 'storyfilter' plugin uses the 'meta' plugin to convert the list into
+a variable which it can access.
+To view stories according to keyword, append keyword=theword to the URL,
+	e.g blosxom.cgi?keyword=coventry
+will view only stories which use the keyword coventry. (note, keywords are
+case sensitive).
+
+The plugin will now build the keywords cache file in its entirety if it
+doesn't already exist. A forced rebuild may be done by using ?refresh=full
+at the end of the url.
+
+The $categoryiskeyword should be treated as experimental. It hasn't been
+fully implemented or tested and may have some strange behaviour or effect
+on other filters. One such problem is with the menu
+plugin. When viewing a category which is one level frop the top, it causes
+the top level menu to be displayed rather than the subcategories of the
+current view.

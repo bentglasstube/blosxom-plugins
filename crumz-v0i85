@@ -1,0 +1,162 @@
+
+# Blosxom Plugin: crumz
+# Author(s): Stu MacKenzie
+# Based on "breadcrumbs" plugin by: Rael Dornfest <rael@oreilly.com> 
+# Version: 2003-09-09 (v0.85)
+# Documentation: See the bottom of this file or type: perldoc readme
+
+package crumz;
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+#
+#  Configuration Section
+#
+# # # # # # # # # # # # # # # # #
+#
+#  What divider between path items in the link trail?
+#  ex: $divider = ' / ';
+  $crumz_divider = " > ";
+#
+#  Should the trail start with a link back to the blog?
+#   Specify link text for a "home" link back to $blosxom::url, 
+#   or leave blank to exclude a home link
+#  ex: $home = 'home';
+  my $home = '';
+#
+#  How many leading items should be trimmed?
+#   (excluding home link, if any)
+#   Enter 0 to trim no leading items
+#  ex: $trim = 1;
+  my $trim = 0;
+#
+#  Show file name in the link trail?
+#   Enter 1 to include filename in the trail; 
+#   enter 0 to ignore the filename.
+#  ex: $show_filename = 0;
+  my $show_filename = 1;
+#
+#  Should the last item in the trail be linked?
+#   0 = no; 1 = yes
+#  ex: $link_last_item = 0;
+  my $link_last_item = 1;
+#
+#  What flavour should be used in link urls? 
+#  (leave blank to let Blosxom pick the flavour)
+#  ex: $flavor = '';
+  my $flavor = 'html';
+#
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+# call $crumz::crumz in your story template
+$crumz;
+
+sub start {
+  1;
+}
+
+sub story {
+  my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+ # no path, no crumbs, no point
+  $path or return 0;
+  
+ # append filename as called
+  $show_filename and $path .= "/$filename";
+
+ # trim leading /
+  $path =~ s/^\///;
+
+ # get a flavour
+  $flavor or $flavor=$blosxom::flavour;
+
+ # get a divider
+  $crumz_divider !~ m/^\s*$/ or $crumz_divider=" > ";
+
+ # step through $path, building an array of links and/or text
+  my(@p, $p);
+  foreach ( split /\//, $path ) {
+    $p .= "/$_";
+    $link_last_item 
+      ? push @p, qq{<a href="$blosxom::url$p/index.$flavor">$_</a>}
+      : push @p, 
+        $p ne "/$path"
+        ? qq{<a href="$blosxom::url$p/index.$flavor">$_</a>}
+        : qq{$_};
+  }
+
+ # trim items as called
+  ($trim>0) and @p = splice(@p,$trim);
+
+ # build a string with dividers
+  $crumz = join $crumz_divider, @p;
+
+ # prepend home link as called
+  $home and $crumz =~ s/^/<a href="$blosxom::url\/index.$flavor">$home<\/a>$crumz_divider/;
+  
+  return 1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: crumz
+
+=head1 SYNOPSIS
+
+Generates a trail of links along the current story's path in $crumz::crumz
+
+ex: a/b/c/d becomes 
+<a href="/a">a</a> > <a href="/a/b">b</a> > <a href="/a/b/c">c</a> > > <a href="/a/b/c/d">d</a> >
+
+=head1 INSTALLATION AND CONFIGURATION
+
+Optionally begin each trail with a link back to the blog "home."  
+$home becomes the link text; leave it blank to turn off the link 
+to home. This link is hardcoded to "$blosxom::url/index.$flavor"
+(see below for setting $flavor)
+
+Optionally trim leading elements from the trail (excluding Home link, 
+if any) with an integer greater than 0 in $trim
+
+Optionally set a flavour for the links; leave $flavor empty to use 
+the current Blosxom flavour in $blosxom::flavour
+
+=head1 NOTES
+
+I modified Rael's 'breadcrumbs' plugin because I couldn't understand 
+it -- why does Rael open a filehandle but never use it? Why use head() 
+to build the crumbs, when story() has such a better $path var? 
+
+Anyway, I wanted complete paths -- as from story() -- and a bit more 
+flexibility, so here's crumz....
+
+=head1 VERSION
+
+2003-09-09 (v0.85) - it's alive
+2003-09-05 (v0.8)  - wip
+
+=head1 LICENSE
+
+this Blosxom Plug-in
+Copyright 2003, Stu MacKenzie
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

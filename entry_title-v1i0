@@ -1,0 +1,45 @@
+# Blosxom Plugin: entry_title
+# Author(s): Kyo Nagashima <kyo@hail2u.net>
+# Version: 1.0
+# Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+# This plugin is simplified version of "better_title" plugin.
+# "better_title" plugin maybe found at:
+# http://www.blosxom.com/plugins/display/better_title.htm
+
+package entry_title;
+
+use strict;
+use vars qw($title);
+
+# --- Configurable variables -----------
+
+# --- Plug-in package variables --------
+
+# --------------------------------------
+
+sub start {
+  return 1;
+}
+
+sub head {
+  my ($pkg, $currentdir, $head_ref) = @_;
+
+  if ($currentdir =~ m!(.*?)/?([\w-]+)\.([\w-]+)$! and $2 ne 'index') {
+    my $file = join('/', $blosxom::datadir, $1, "$2.txt");
+    my $fh = new FileHandle;
+
+    if (-f $file && $fh->open("< $file")) {
+      chomp($title = <$fh>);
+      $fh->close;
+    }
+  }
+
+  if (defined $title) {
+    $title = " - $title";
+  }
+
+  return 1;
+}
+
+1;

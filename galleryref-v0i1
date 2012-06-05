@@ -1,0 +1,48 @@
+# Blosxom Plugin: galleryref
+# Author(s): John Slee
+# Version 0.1
+
+package galleryref;
+
+$baseurl = 'http://photo.indigoid.net/albums';
+
+sub xlate_imagetags {
+	my ($text_ref) = @_;
+
+	$$text_ref =~ s{<grthumb id="([^"]+)" />}{<img src="$baseurl/$1.thumb.jpg" alt="$1" />}gm;
+	$$text_ref =~ s{<grsized id="([^"]+)" />}{<img src="$baseurl/$1.sized.jpg" alt="$1" />}gm;
+	
+	1;
+}
+
+sub start {
+	1;
+}
+
+sub head {
+	my ($pkg, $currentdir, $head_ref) = @_;
+
+	xlate_imagetags($head_ref);
+	
+	1;
+}
+
+sub story {
+	my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+	xlate_imagetags($body_ref);
+	xlate_imagetags($title_ref);
+	xlate_imagetags($story_ref);
+
+	1;
+}
+
+sub foot {
+	my($pkg, $currentdir, $foot_ref) = @_;
+
+	xlate_imagetags($foot_ref);
+
+	1;
+}
+
+1;

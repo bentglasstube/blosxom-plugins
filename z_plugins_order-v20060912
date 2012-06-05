@@ -1,0 +1,28 @@
+package z_plugins_order;
+
+use strict;
+use warnings;
+
+# “Ç‚İ‚Şƒvƒ‰ƒOƒCƒ“‚ğ—ñ‹“
+my @plugins_order = qw(
+    interpolate_fancy
+    include_file
+    tagging
+);
+
+sub start {
+    my @plugins = ();
+
+    foreach my $plugin_name ( @plugins_order ) {
+        if ( defined $blosxom::plugins{$plugin_name} ) {
+            push @plugins, $plugin_name;
+        }
+    }
+
+    @blosxom::plugins = @plugins;
+
+    return 1;
+}
+
+1;
+__END__

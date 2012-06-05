@@ -1,0 +1,277 @@
+# Blosxom Plugin: logger
+# Authors: 
+# 	Andrew Mills (mischief@toad.net) and 
+# 	Fletcher T. Penney (http://fletcher.freeshell.org)
+# Info: http://www.toad.net/~mischief/archives/logger (Version: 0+4i)
+
+# This version has been rewritten by Sam Pearson <sgp@domus.uklinux.net>
+# I'm calling it 0.5b for want of a better term, but it is not
+# an "official" version until any changes are taken up by
+# Andrew Mills, the plugin's maintainer.
+
+package logger;
+
+# --- Configurable variables ---
+
+# where are you keeping the log file?
+$log = "$blosxom::plugin_state_dir/access.log";
+
+# what data are you interested in tracking? (1 = track, 0 = do not track)
+$timedatestamp = 1;
+$remotehost = 1;
+$remoteIP = 1;
+$useragent = 1;
+$documentURI = 1;
+$referrer = 1;
+
+# what character do you want to use for separating your columns?
+$separator = "\t";
+
+# List of ip addresses to ignore.
+# Use '|' as a separator.
+# set to 'disable' to turn off restrictions.
+$ip_list = 'disable';
+
+# List of HTTP_USER_AGENTS to ignore.
+# to disable, set to undef or an emtpy string.
+$ua_ignore = "";
+
+# ------------------------------
+
+use warnings;
+use Fcntl qw(:flock);
+
+# ------------------------------
+
+sub start {
+
+    # These tests are basically taken from Rael's writeback plugin.
+    # Having each test separate means we can get error messages 
+    # that actually mean something and might be useful.
+
+    # Is $log set?  If not, fail gracefully & explain why:
+    unless ( $log ) { 
+        warn "blosxom : logger plugin > the \$log variable is not set; Please set it for the plugin to work.  Aborting.\n";
+        return 0;
+    }
+
+    # Does the file actually exist?  If not, fail gracefully & explain why:
+    unless ( -e $log ) {
+	warn "blosxom : logger plugin > your log file, $log, does not exist;  Please create this file for the plugin to work.  Aborting.\n";
+	return 0;
+    }
+
+    # Can we write to the file?  If not, fail gracefully & explain why:
+    unless ( -w $log ) {
+        warn "blosxom : logger plugin > your log file, $log, is not writable;  Please alter the permissions for the plugin to work.  Aborting.\n";
+        return 0;
+    }
+
+    # TO DO:
+    # It would probably be useful to modify the plugin to create any file
+    # specified in $log that doesn't already exists.
+
+    # if the visitor's IP address AND user-agent are not on the ignore lists:
+    if ($ENV{'REMOTE_ADDR'} !~ /($ip_list)/ 
+	and $ENV{'HTTP_USER_AGENT'} !~ /($ua_ignore)/) {
+        # get their environment information:
+	$remoteIP = ($ENV{'REMOTE_ADDR'} or "unavailable") if ($remoteIP);
+	$remotehost = ($ENV{'REMOTE_HOST'} or "unavailable") if ($remotehost);
+	$useragent = ($ENV{'HTTP_USER_AGENT'} or "unavailable") if ($useragent);
+	$documentURI = ($ENV{'REQUEST_URI'} or "unavailable") if ($documentURI);
+	$referrer = ($ENV{'HTTP_REFERER'} or "unavailable") if ($referrer);
+	# and the time and date they visited
+	if ($timedatestamp) { 
+	    ($sec, $min, $hr, $mday, $mon, $year, $wday, $yday, $isdst)=localtime(time);
+	    $year=$year+1900;
+	    $mon += 1;
+	    $timedatestamp = ("$mon/$mday/$year$separator$hr:$min:$sec" 
+			      or "unavailable$separatorunavailable");
+	}
+	# set up a local filehandle:
+	my($fh);
+	# open() and flock() the log file or exit cleanly:
+	# Each test made separately for extra clarity in error-logs.
+	unless (open ($fh, ">>$log")) {
+	    warn "blosxom : logger plugin > cannot open $log: $!. Aborting\n.";
+	    return 0;
+	}
+	unless (flock ($fh, LOCK_EX)) {
+	    warn "blosxom : logger plugin > cannot flock $log: $!. Aborting\n.";
+	    return 0;
+	}
+	# write in any appropriate data:
+	if ($timedatestamp) { print $fh "$timedatestamp$separator"; }
+	if ($remotehost) { print $fh "$remotehost$separator"; }
+	if ($remoteIP) { print $fh "$remoteIP$separator"; }
+	if ($useragent) { print $fh "$useragent$separator"; }
+	if ($documentURI) { print $fh "$documentURI$separator"; }
+	if ($referrer) { print $fh "$referrer"; }
+	# drop in a newline:
+	print $fh "\n";
+	# always close a filehandle!
+	close($fh);
+    }
+    1;
+}
+__END__
+
+=head1 NAME
+
+Blosxom Plugin: logger
+
+=head1 SYNOPSIS
+
+This plugin stores CGI environment variables in a text file, much like a mini-server log.  It is useful for those who do not have access to their logs but would like to see what sort of traffic they get to their B<blosxom> installation.
+
+By default the plugin logs the time and date of the visit, the visitor's remote host, IP address, user-agent, requested document and referrer.  It substitutes the word 'unavailable' where a given variable is not present to ensure that the expected number of fields are present on each line to make processing the file a bit easier.
+
+Much of the plugin's behaviour is controllable, see B<CONFIGURATION>, below.
+
+=head1 INSTALLATION
+
+Quick Start:
+
+=over
+
+=item 1
+
+Drop B<logger> into your plugins directory.
+
+=item 2
+
+Ensure that a file named B<access.log> exists in B<$blosxom::plugns_state_dir> and that the server can write to it.
+
+=back
+
+B<logger> should work fine if these conditions are fulfilled.  Should there be a problem it should fail gracefully by leaving a little message in the error log and by not interrupting the more general execution of B<blosxom>.
+
+You can control the name and location of the log file by setting the variable B<$log> at the top of the configurable variable section.  You B<MUST> ensure that this file, whatever it is called and wherever it resides, exists and is writable before B<logger> will start.  Item #1 on the B<TO DO> list is to enable automatic creation ;-)
+
+=head1 CONFIGURATION
+
+As well as allowing you to control the location of the log file, B<logger> allows some control over the format of the file (you can set your preferred field separator character), over what variables you want to keep track of, and offers two methods to exclude visitors from being noted in the log.  This behaviour is all controlledby setting variables at the top of the plugin as per usual.
+
+Below are listed all the configurable variables with a brief description and a note of the defaults.
+
+=over
+
+=item B<$log>
+
+This variable must be an absolute file path to the location of the file in which to append log data.  This MUST be set for the plugin to operate, and the file to which it points MUST be writable by the server!  If either of these conditions is not met, B<logger> will fail and leave a note in the error-log indicating why.  Your B<blosxom> installation should carry on regardless.  The default is B<$blosxom::plugin_state_dir/access.log>.
+
+=item B<$separator>
+
+Set this to the character you would like to indicate a field boundary in the log file.  Default is the TAB character, \t.  You may encounter problems if you wish to use a comma, as there are seveal HTTP_USER_AGENTs that use the comma in their identification strings, and this may confuse any program you use to parse the log file.
+ 
+=item B<$timedatestamp>
+
+Set this to record time and date of visit (boolean, default=1).
+
+=item B<$remotehost>
+
+Set this to record the visitor's host.  Not all servers will provide this information (boolean, default=1).
+
+=item B<$remoteIP> 
+
+Set this to record a visitor's IP Address (boolean, default=1).
+
+=item B<$useragent>
+
+Set this to record a visitor's User Agent (boolean, default=1).
+
+=item B<$documentURI>
+
+Set this to record what document the visitor requests (boolean, default=1).
+
+=item B<$referrer>
+
+Set this to record visitor's referrer (boolean, default=1).
+
+=item B<$ip_list>
+
+This is a list of IP Addresses that you would like B<logger> to ignore.  The list will be parsed as part of a regular expression, but don't worry if this doesn't mean a lot - just ensure you carefully list the IP Addresses, add a backslash ('\') before each dot ('.'), and separate each complete address with the vertical bar character ('|').  Set the variable to "disable" if you don't wish to block any IP Addresses (this is the default).  An example: $ip_list = "127\.0\.0\.1|255\.0\.0\.0";
+
+=item B<$ua_ignore>
+
+Similar to B<$ip_list>, this variable is a list of HTTP_USER_AGENTs to ignore.  You might use this to prevent B<logger> recording visits from spiders coming from IP Addresses you wish record other traffic from.  As the list is parsed as part of a regular expression, you should be careful to use a unique keyword for a user-agent (try the suggested string for use in any robots.txt file, for example), and separate each one with the vertical bar character ('|').  To disable this variable, set it to nothing: $ua_ignore = ""; (this is the default).
+
+=back
+
+=head1 VERSION
+
+Version 0+5(beta)
+
+Added file locking and various tests to ensure that B<$log> exists, is readable and so on.  This has fixed the bug whereby B<logger> caused B<blosxom> to fail if the file didn't exist or wasn't writeable.  B<blosxom> will now carry on regardless, and B<logger> will leave some helpful advice in the server's error log.
+
+Added the ability to ignore visitors according to their HTTP_USER_AGENTs.
+
+B<logger> will write 'unavailable' to the log file where an environment variable is not present.  This is to prevent missing out empty fields that might distort any parsing of the log file as tabular data with tools like cut(1).
+
+Added some comments and extended the general POD documentation.
+
+B<TO DO>
+
+Add some code to allow the plugin to create the log file if necessary.
+
+=head2 VERSION HISTORY: 0+4i
+
+Version 0+5 is essesntially a tidied-up version of this with more documentation.
+
+=head2 VERSION HISTORY: 0+3i
+
+had bug report from Fletcher that logger plug in crashed web servers if file permissions were not set to allow writing.
+added "or die" to each line that write to the log file
+do not have means to test this fix and see if it works.  Use at your own risk!
+
+=head2 VERSION HISTORY: 0+2i
+
+added date and time stamp code to logger plug in.  
+appended documentation to end of plugin in PerlDoc format.
+Fletcher contributed code to filter out IPs you do not want to include in your logs and refined the log file location variable. THANK YOU, FLETCHER!
+
+=head2 VERSION HISTORY: 0+1i
+
+initial test version
+
+=head1 AUTHORS
+
+=over
+
+=item
+Andrew Mills, mischief@toad.net
+
+=item
+Fletcher T. Penney, http://fletcher.freeshell.org
+
+=item
+Sam Pearson, http://www.domus.uklinux.net/
+
+=back
+
+=head1 BUGS
+
+I am sure there are plenty because I am a novice Perl programmer. Please report them to me at mischief@toad.net.
+
+=head1 LICENSE
+
+Blosxom Logger Plug-in
+Copyright 2003, by Andrew Mills
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

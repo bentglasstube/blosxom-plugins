@@ -1,0 +1,60 @@
+#!/usr/bin/perl
+# Blosxom plugin: emmfour
+# Author: Rob Park
+# License: GPL
+
+package emmfour;
+
+# Emmfour allows you to make use of the powerful m4 macro language in
+# your blog entries. Essentially, if there's some bit of HTML code
+# that you have to type over and over (img tags, for example), you can
+# construct a macro that will output that bit of HTML code for
+# you. The added benefit of this is that if you ever feel like
+# changing that bit of HTML code, you can just edit the macro, and the
+# change happens to your entire blog, without having to edit a single
+# blog entry.
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# Configuration Section
+
+# This is the path to your m4 macro definition file
+$macros = "/var/www/macros.m4";
+
+#
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+# $Log: 40emmfour,v $
+# Revision 1.2  2004/09/23 02:48:21  rbpark
+# Fixed some bugs.
+#
+# Revision 1.1  2004/09/23 02:31:59  rbpark
+# Initial revision
+#
+
+use FileHandle;
+use IPC::Open2;
+
+sub start {
+  1;
+}
+
+sub story {
+    my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+    # Write the blog entry out to m4
+    $pid = open2( \*Reader, \*Writer, "m4", "-P", $macros, "-");
+    Writer->autoflush();
+    print Writer $$body_ref;
+    close Writer;
+
+    # Read the blog entry back from m4.
+    $$body_ref = "";
+    while (<Reader>) {
+	$$body_ref .= $_;
+    }
+    close Reader;
+     
+    1;
+}
+
+1;

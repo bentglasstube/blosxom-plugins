@@ -1,0 +1,263 @@
+# Blosxom Plugin: storystate
+# Author(s): Jason Clark
+# Version: 0+1i
+# Blosxom Home/Docs/Licensing: http://www.blosxom.com
+# Storystate plugin Home/Docs/Licensing: 
+#     http://jclark.org/weblog/WebDev/Blosxom/plugins/storystate
+
+package storystate;
+
+# --- Configurable variables -----
+
+#should writebacks be on or off by default? 
+$writeback_default = on;
+
+#message shown if no writebacks found
+$writeback_message0 = 'Add the first comment';
+
+#message shown if no writebacks found and writebacks are closed
+$writeback_message0_closed = 'No comments';
+
+#message shown if 1 comment
+$writeback_message1 = '1 comment';
+
+#message shown for multiple comments 
+#NOTE use of single quotes... defer interpolation until later
+#ALSO use of interpolate_fancy style variables
+$writeback_messageN = '<$writeback::count /> comments';
+
+# --------------------------------
+
+use vars qw/$writeback_message $permalink $blogroot
+            $archive $datepermalink $anypermalink
+            $category $writeback_closed $permalink_wbopen 
+	    $permalink_wbclosed /;
+
+@mnth = ('', "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec");
+
+sub start {
+  return 1;
+}
+
+sub filter {
+  # not really filtering here; this is just a convenient
+  # place to move storystate to the end of @blosxom::plugins.
+  # This is done so writeback::story() will run before 
+  # storystate::story().  Can't do it in start() because
+  # @blosxom::plugins is still being built; and
+  # someday doing it in head() may be too late.
+
+  my $pos;
+  for(my $i=0;$i<@blosxom::plugins;$i++) { 
+    if($blosxom::plugins[$i] eq 'storystate') {
+      $pos=$i;
+      last;
+    }
+  }
+  return 0 unless $pos;
+
+  splice @blosxom::plugins, $pos, 1;
+  push @blosxom::plugins, 'storystate';
+
+  return 1;
+}
+
+sub head{
+  my($pkg, $currentdir, $head_ref) = @_;
+    $permalink = $blosxom::path_info =~ m#^.*/(.+)\.(.+)$# ? 1 : undef;
+    $archive   = defined($blosxom::path_info_yr) ? 1 : undef;
+    $archive_date = join(' ', $blosxom::path_info_da, $mnth[$blosxom::path_info_mo_num], $blosxom::path_info_yr);
+    $blogroot  = !$archive && ($blosxom::path_info eq "" || $blosxom::path_info eq '/') ? 1 : undef;
+    $datepermalink = $undef;
+    $anypermalink  = $permalink || $datepermalink ? 1 : undef;
+    $category  = !$anypermalink && !$blogroot && !$archive ? 1 : undef;
+
+  return 1;
+}
+
+sub story{
+  my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+#      $writeback_closed = (!($writeback_default || 
+#			     (defined($meta::writeback) and $meta::writeback)
+#			  )) ? 1 : undef;
+
+    $writeback_closed = defined($meta::writeback) ? $meta::writeback : $writeback_default;
+    $writeback_closed = ($writeback_closed =~ /off/i) ? 1 : undef;
+
+    $permalink_wbopen    = $permalink && !defined($writeback_closed) ? 1: undef;
+    $permalink_wbclosed = $permalink && defined($writeback_closed) ? 1: undef;
+
+    ($writeback::count > 1) and $writeback_message = $writeback_messageN;
+    ($writeback::count == 1) and $writeback_message = $writeback_message1;
+    ($writeback::count == 0) and $writeback_message = ($writeback_closed ? $writeback_message0_closed : $writeback_message0);
+    $writeback_message = &$blosxom::interpolate($writeback_message);
+
+  return 1;
+
+}
+
+
+__END__
+
+=head1 Name
+
+Blosxom Plug-In: storystate
+
+=head1 Synopsis
+
+Provides a number of convenience variables for use with the 
+interpolate_fancy plugin by Blosxom author Rael Dornfest.
+Especially useful with writeback.  Allows presence of a 
+meta-writeback tag to control if writebacks are open or closed.
+Basically useless without interpolate_fancy.
+
+NOTE:  best if used with interpolate_fancy version 2003-09-07 or later.
+
+=head2 Quick Start
+
+Just drop it in your $plugin_dir.  Optionally, you can adjust the values
+of the configuration variables at the top of the file.  There are covered later.
+
+Most of the variables are simple boolean indicators, using undef for false.  
+This allows them to be used with interpolate_fancy's <?$var></?> and 
+<?!$var></?> constructs.  Some variables are story specific, (updated for 
+each story), while others are based on the request url and are valid in the
+head and foot as well.
+
+The request flag variables are:
+
+$permalink	true if request url is a subdir permalink, e.g. /this/that/story.html
+$datepermalink	true if request url is a date permalink, e.g. /2003/09/07/story.html
+$anypermalink   true if request url is either of above
+$blogroot	true if request is for blog's root e.g. / or /index.html
+$archive	true if request if date style, e.g. /2003/09
+$category	true if request is subdir style, e.g. /this/that
+
+The story-specific flag variables are:
+
+$writeback_closed	true if writebacks are closed for story (see below)
+$permalink_wbopen	true if !$writeback_closed and $permalink
+$permalink_wbclosed	true if $writeback_closed and $permalink
+
+The idea of closing writebacks is that you are no longer accepting comments for a 
+given story.  Just add meta-writeback: on or meta-writeback: off to the header of 
+the story.  If no meta-writeback header is found, the value of the config variable 
+$writeback_default is used instead.  Values are on (writebacks open) and off 
+(writebacks closed).  This is of course dependant upon you implementing checks 
+against these variables in our story template, see the example below.
+
+There is also a story-specific text variable:
+
+$writeback_message	description of writeback state for story
+
+This is useful for links to your writeback page.  It returns (by default):
+
+'Add the first comment'	If writebacks are open for story and no comments exist
+'No Comments'		if writebacks are close and no comments exist
+'1 comment'		if only one comment
+'n comments'		if >1 comment, n=$writeback::count
+
+These messages are configurable, see the config variables at the top of the file,
+they are documented inline.	    
+
+=head1 Example
+
+To put 'smart' writebacks into your story template (only show when
+viewing a permalink; obey open/closed writeback state) you could do this:
+
+<!-- only show Writebacks if viewing a single story (permalink) -->
+<?$storystate::Permalink>
+<H3>Writebacks...</H3>
+
+<!-- response if comment just posted -->
+<P Id="Response"><$writeback::Writeback_Response /></P>
+
+<!-- insert Writebacks For This Story -->
+
+<$writeback::Writebacks />
+</?>
+
+<!-- show comment entry form & trackback url only if viewing a 
+     permalink AND writebacks are open -->
+<?$storystate::Permalink_Wbopen>
+
+<H3>Comment On This Entry</H3>
+
+<!-- The Right Url For A Trackback Ping; Notice The Flavour Is Trackback -->
+
+<Div Class="Input">
+<H4>Trackbacks</H4>
+<P>Trackback Ping Me At:</P>
+<P><$url /><$writeback::Trackback_Path_And_Filename />.Trackback</P>
+</Div>
+<Div Class="Input">
+  <H4>Comments</H4>
+
+<!-- A Simple Comments Form -->
+
+<Form Method="Post" Action="<$url />/<$path_Info />">
+  <P>Name:<Input Name="Name"  Value="<$writeback::Pref_Name />" Class="Text" /></P>
+  <P>Url/Email:<Input Name="Url"  Value="<$writeback::Pref_Url />" Class="Text" /><Br />
+  <Span Class="Hint">[Http://... Or Mailto:You@Wherever] (Optional)</Span></P>
+  <P>Title:<Input Name="Title" Class="Text"  /><Br />
+  <Span Class="Hint">(Optional)</Span></P>
+  <P>Comments:<Textarea Name="Comment" Rows="5"></Textarea></P>
+  <P><Input Class="Checkbox" Type="Checkbox" Name="Save_Preferences" Value="1" Checked /> Save My Name And Url/Email For Next Time</P>
+  <Input Type="Hidden" Name="Plugin" Value="Writeback" />
+  <Input Type="Submit" Value="Post" />
+</Form>
+</?>
+
+<!-- If comments are closed (and this is a permalink) inform the user -->
+<?$storystate::Permalink_Wbclosed><H4>Comments Have Been Closed For This Entry.  Thank You For Your Interest.</H4></?>
+
+
+A note or two:  This example comes from my primary story template.  
+It may differ from the story.writeback flavour bit that comes with 
+writebacks in a few ways; extra divs & classes, and no table for 
+the form.  My site is uses alot of CSS for formatting, you can use the
+table based layout if you prefer.
+
+=head1 Version
+
+0+1i
+
+=head1 Author
+
+Jason Clark  (jason@jclark.org; http://jclark.org/weblog)
+
+=head1 See Also
+
+Blosxom Home/Docs/Licensing: http://www.blosxom.com
+
+Blosxom Plugin Docs: http://www.blosxom.com/documentation/users/plugins.html
+
+
+=head1 Bugs
+
+Undoubtedly
+
+=head1 License
+
+
+This Blosxom Plug-in Copyright 2003, Jason Clark
+
+(This license is the same as Blosxom's)
+
+Permission Is Hereby Granted, Free Of Charge, To Any Person Obtaining A
+Copy Of This Software And Associated Documentation Files (The "Software"),
+To Deal In The Software Without Restriction, Including Without Limitation
+The Rights To Use, Copy, Modify, Merge, Publish, Distribute, Sublicense,
+And/Or Sell Copies Of The Software, And To Permit Persons To Whom The
+Software Is Furnished To Do So, Subject To The Following Conditions:
+
+The Above Copyright Notice And This Permission Notice Shall Be Included
+In All Copies Or Substantial Portions Of The Software.
+
+The Software Is Provided "As Is", Without Warranty Of Any Kind, Express Or
+Implied, Including But Not Limited To The Warranties Of Merchantability,
+Fitness For A Particular Purpose And Noninfringement. In No Event Shall
+The Authors Or Copyright Holders Be Liable For Any Claim, Damages Or
+Other Liability, Whether In An Action Of Contract, Tort Or Otherwise,
+Arising From, Out Of Or In Connection With The Software Or The Use Or
+Other Dealings In The Software.

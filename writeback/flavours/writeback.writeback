@@ -1,0 +1,6 @@
+<p>
+<b><a href="$writeback::url">$writeback::name$writeback::blog_name</a> wrote</b>
+<blockquote>
+<b>$writeback::title</b><br /> $writeback::comment$writeback::excerpt
+</blockquote>
+</p>

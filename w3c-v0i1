@@ -1,0 +1,29 @@
+# Blosxom Plugin: w3c
+# Author(s): xcezx <poap.xcezx@gmail.com>
+# Version: 
+# Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+package w3c;
+
+use strict;
+use vars qw($dtf);
+
+# --- Configurable variables -----------
+
+# --- Plug-in package variables --------
+
+my $sep = 'T';
+my $tzd = '+09:00';
+
+# --------------------------------------
+
+sub start {
+	return 1;
+}
+sub story {
+	my($pkg, $path, $fn, $story_ref, $title_ref, $body_ref) = @_;
+	$dtf = "$blosxom::yr-$blosxom::mo_num-$blosxom::da" . $sep . "$blosxom::hr:$blosxom::min$tzd";
+	return 1;
+}
+
+1;

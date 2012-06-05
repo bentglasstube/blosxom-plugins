@@ -1,0 +1,103 @@
+# Blosxom Plugin: include                                          -*- perl -*-
+# Author: Todd Larason (jtl@molehill.org)
+# Version: 0+0i
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/blosxom
+# Include plugin Home/Docs/Licensing:
+#  http://molelog.molehill.org/blox/Computers/Internet/Web/Blosxom/Include/
+
+package include;
+
+# --- Configuration Variables ---
+# trust levels:
+#  10	complete trust
+#   7   allow running commands
+#   5   allow including files from outside dirs
+#   4   allow including files from from $datadir
+#   3   allow including files from same dir
+#   0   don't trust
+
+$trust_flavours ||= 4;
+$trust_stories  ||= 0;
+
+$debug_level ||= 1;
+# -------------------------------
+
+use FileHandle;
+
+my $package = 'include';
+sub debug {
+    my ($level, @msg) = @_;
+
+    if ($debug_level >= $level) {
+	print STDERR "$package debug $level: @msg\n";
+    }
+}
+
+sub run_command {
+    my ($text) = @_;
+
+    $text =~ s/((\$[\w:]+)|(\$\{[\w:]+\}))/$1 . "||''"/gee;
+
+    return `$text`;
+}
+
+sub read_file {
+    my ($filename, $basedir, $trust) = @_;
+    my $fh = new FileHandle;
+
+    $fh->open($filename =~ m:^/: ? "$filename" : "$basedir/$filename") ||
+	($trust >= 4 && $fh->open("$blosxom::datadir/$filename")) ?
+	join('',<$fh>) : '';
+}
+
+sub include {
+    my ($text, $basedir, $trust) = @_;
+    my $okaychars = '-\w.';
+
+    return if $trust < 3;
+    $okaychars .= '/' if ($trust >= 5);
+
+    $$text =~ s! \$include::file\(  ([$okaychars]+) \) 
+               ! read_file($1, $basedir)
+               !xeg;
+
+    if ($trust >= 7) {
+	$$text =~ s! \$include::command\( ([^\)]+) \)
+	           ! run_command($1) 
+		   !xeg;
+    }
+
+}
+
+sub start {
+    debug(1, "start() called, enabled");
+    return 1;
+}
+
+sub head {
+    my ($pkg, $currentdir, $head_ref) = @_;
+    include($head_ref, "$blosxom::datadir/$currentdir", $trust_flavours);
+    return 1;
+}
+
+sub date {
+    my ($pkg, $currentdir, $date_ref, $mtime, @date) = @_;
+    include($date_ref, "$blosxom::datadir/$currentdir", $trust_flavours);
+    return 1;
+}
+
+sub story {
+    my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+    include($story_ref, "$blosxom::datadir/$path", $trust_flavours);
+    include($title_ref, "$blosxom::datadir/$path", $trust_stories);
+    include($body_ref,  "$blosxom::datadir/$path", $trust_stories);
+    return 1;
+}
+
+sub foot {
+    my ($pkg, $currentdir, $foot_ref) = @_;
+    include($foot_ref, "$blosxom::datadir/$currentdir", $trust_flavours);
+    return 1;
+}
+1;

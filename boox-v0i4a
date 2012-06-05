@@ -1,0 +1,215 @@
+# Blosxom Plugin: boox
+# Author: S2
+# Based on: http://groups.yahoo.com/group/blosxom/message/10621
+# Version: v0.4a 2005-06-03
+
+# The boox plugin creates a little sideblog created
+# from normal entries in a specified directory. These
+# entries will be filtered, sorted, "story-ed" and
+# interpolated by your regular blosxom plugins, and
+# then be inserted into your regular head or foot in
+# the variable $boox::output
+# If other blosxom plugins interfere with your boox
+# entries processing, they can be "turned off" in a
+# config var.
+
+# The name arises from the initial musings for the plugin's
+# functionality -- processing entry files about books into
+# a special section of the blosxom page. I'm sure the name
+# will change, but even I need a little time to get used to
+# a name like "sydeblog" ;-) Suggestions please....
+
+# Here's how boox works --
+# 1)  Generate some entry files for your sideblog; treat 'em
+#     just like they were regular entries: load 'em up with
+#     meta-variables, add a seemore tag, etc.;
+# 2)  Move/save the files into the datadir you'll specify below;
+# 3)  Make a template file for your sideblog; call the template
+#     into your normal head flavour with: $boox::output
+#     NOTES: template name(s) should be: "boox.story.flavour"
+#     (no quotes), where "flavour" is the name of a blosxom
+#     flavour (e.g. html). Your boox flavour files (templates)
+#     have access to all of blosxom's date variables, $url,
+#     and $flavour. You have to use boox' versions of these:
+#       $boox::path
+#       $boox::fn
+#       $boox::title
+#       $boox::body
+#       $boox::raw
+#       $boox::story
+#       $boox::datadir
+#     for now. See the DATA section for an example template;
+# 4)  If making a template is too much work, that's OK; boox
+#     will use its built-in template from the DATA section ;-)
+# 5)  Also below, configure any plugins that you do NOT want to
+#     have running during your sideblog generation; for instance,
+#     if your sideblog entries are normally hidden from the rest
+#     of your blog, you will want to disable the exclude plugin
+#     (or hide, or excludez, or whichever one you use).
+#
+# **  Recap: configure a datadir for sideblog entries, and a
+#     list of any "unwanted" plugins; stick some entry files
+#     in that datadir; make a "boox.story.flavour" template,
+#     or not; call the sideblog output in your head or foot
+#     template with "$boox::output" (no quotes).
+#
+
+
+package boox;
+
+# = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
+#
+#  Configuration Section
+#
+# = = = = = = = = = = = = = = = =
+#
+#  All the files to be processed by boox must all
+#  reside in the same directory; here's where you
+#  tell boox what that directory is:
+#      ex: $datadir = "$blosxom::datadir/books"
+ $datadir = "$blosxom::datadir/books" 
+           unless defined $datadir;
+#
+#  What plugins should be disabled while the sideblog
+#  is being processed? List plugin names between the
+#  braces, separated by spaces.
+#      ex: @unwanted_plugins = qw { excludez exclude hide }
+ @unwanted_plugins = qw { excludez exclude hide }
+           unless defined @unwanted_plugins;
+#
+# = = = = = = = = = = = = = = = =
+
+use strict;
+use FileHandle;
+use File::Find;
+use File::stat;
+use Time::localtime;
+
+use vars qw { $output $datadir $path $fn $title $body $raw $sort %files @unwanted_plugins };
+
+my ($mark, %unwanted_plugins);
+
+sub start {
+  while (@unwanted_plugins) {
+    $unwanted_plugins{shift @unwanted_plugins} = 1;
+  }
+  1;
+}
+
+# a phony little entries() sub that looks for files
+# in our sideblog directory that: a) end in the
+# blosxom entry-file-extension; b) are not named
+# "index"; c) don't start with a dot/stop/period;
+# and d) are readable.
+sub boox_entries {
+  my (%files);
+  find(
+    sub {
+      if ( 
+        $File::Find::name =~ m!^$datadir/(?:(.*)/)?(.+)\.$blosxom::file_extension$!
+            and $2 ne 'index' and $2 !~ /^\./ and (-r $File::Find::name)
+      ) {
+        $files{$File::Find::name} = stat($File::Find::name)->mtime
+      }
+    }, $datadir
+  );
+  return (\%files);
+}
+
+# all we do here is set a placeholder for the
+# output that will be generated in last()
+sub head {
+  my ($pkg, $dir, $head_ref) = @_;
+
+  $mark = rand(7);                # add a (99.999) unique mark to $head
+  while ($$head_ref =~ m/$mark/) {$mark += rand(7);}
+  $mark = "<!-- $mark -->";
+  $output = $mark;
+}
+
+# Here's a very lazy mini-blosxom --
+# we gather up entry file paths & mtimes, and
+# let blosxom plugins Filter 'em; then we let
+# blosxom plugins Sort 'em; then we load our
+# default template and start looping through
+# the entry files, where we: load a boox.story
+# flavour file (if any); generate date bits from
+# the file's mtime; read the file for title and
+# body (and raw); graciously allow blosxom plugins
+# to massage each Story; and finally let blosxom
+# Interpolate the entry into our output, which is
+# lastly swapped into the mark we left in head().
+# At the Filter, Sort, and Story steps, we avoid
+# using any plugins that are listed in the config
+# var @unwanted_plugins
+sub last {
+  $output = "";                   # start fresh
+  my $fh = new FileHandle;
+  
+  %files = %{&boox_entries()};    # gather up the sideblog files
+
+  # FILTER plugins:
+  foreach my $plugin ( @blosxom::plugins ) {
+    ! $unwanted_plugins{$plugin} and 
+      $blosxom::plugins{$plugin} > 0 
+        and $plugin->can('filter') 
+          and $blosxom::entries = $plugin->filter(\%files)
+  }
+
+  # SORT plugins
+  my $tmp;
+  foreach my $plugin ( @blosxom::plugins ) {
+    ! $unwanted_plugins{$plugin} and 
+      $blosxom::plugins{$plugin} > 0 and $plugin->can('sort') and 
+        defined($tmp = $plugin->sort()) and $sort = $tmp and last;
+  }
+
+    while (<DATA>) {              # manually load default template bits
+      last if /^(__END__)?$/;
+      my ($flavor, $comp, $txt) = split ' ', $_, 3;
+      $txt =~ s:\\n:\n:g;
+      $blosxom::template{$flavor}{"$comp"} = $txt;
+    }
+
+  foreach my $path_file ( &$sort(\%files) ) {
+    if (-f "$path_file" && $fh->open("< $path_file")) {
+      ($path,$fn) = $path_file =~ m!^$blosxom::datadir/(?:(.*)/)?(.*)\.$blosxom::file_extension!;
+      $path &&= "/$path";
+
+      # generate DATE vars
+      ($blosxom::dw,$blosxom::mo,$blosxom::mo_num,$blosxom::da,$blosxom::ti,$blosxom::yr) = &blosxom::nice_date($files{"$path_file"});
+      ($blosxom::hr,$blosxom::min) = split /:/, $blosxom::ti;
+      ($blosxom::hr12, $blosxom::ampm) = $blosxom::hr >= 12 ? ($blosxom::hr - 12,'pm') : ($blosxom::hr, 'am'); 
+      $blosxom::hr12 =~ s/^0//; $blosxom::hr12 == 0 and $blosxom::hr12 = 12;
+
+      # read an ENTRY file
+      chomp($title = <$fh>);
+      chomp($body = join '', <$fh>);
+      $fh->close;
+      $raw = "$title\n$body";
+    }
+                                  # load template file, if any
+    my $story = (&$blosxom::template($path,'boox.story',$blosxom::flavour));
+
+  # STORY plugins
+    foreach my $plugin ( @blosxom::plugins ) {
+      ! $unwanted_plugins{$plugin} and 
+        $blosxom::plugins{$plugin} > 0 and $plugin->can('story') and 
+          $blosxom::entries = $plugin->story($path, $fn, \$story, \$title, \$body)
+    }
+      
+    $story = &$blosxom::interpolate($story);
+
+    $output .= $story;
+    
+    $fh->close;
+  }
+
+  $blosxom::output =~ s/$mark/$output/;
+}
+
+1;
+
+__DATA__
+error boox.story <div class="boox">\n<h4><a name="$boox::fn" href="$url$boox::path/$boox::fn.$flavour">$boox::title</a></h4>\n$meta::boox_isbn<br>\nReviewed: $mo $da, $yr</br>\n$boox::body\n</div>\n
+__END__

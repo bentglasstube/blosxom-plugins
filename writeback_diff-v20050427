@@ -1,0 +1,35 @@
+162a163,169
+> # Added by DJM - 4/27/2005 - taken from pollxn
+> $addtext = "writeback";	# singluar 
+> $addtexts = "writebacks";	# plural
+> $countodd;
+> 
+> $writebacksuffix; # see the story function
+> 
+181a189,199
+> # Added back from Rael's original by DJM - 4/27/05
+> 
+> $blosxom::template{'trackback'} = {
+>   'content_type' => 'text/xml',
+>   'head'         => '$writeback::trackback_response',
+>   'date'         => ' ',
+>   'story'        => ' ',
+>   'foot'         => ' '
+> };
+> 
+> # --------------------------------
+396a415,423
+> 				# Added by DJM - 4/27/05
+> 				# Obviously, you'll need to wrap your writeback comments in a div
+> 				# of class "comment", and comment will be renamed "comment1" or "comment2"
+> 				# depending on whether it is an odd or even comment.
+> 				# Equally obvious should be the requirement to have styles "comment1" and
+> 				# "comment2" defined in your stylesheet, one with background shading, one without.
+> 				$countodd = (($count % 2) == 0) ? 2 : 1; # even or odd count, assigns 2 or 1, respectively
+> 				$writeback =~ s/(<div class="comment)/$1$countodd/i;
+> 
+413a441,444
+>     # Added by DJM - 4/27/05 - taken from pollxn
+>     if (!$count && $count<1) { $count=0; }
+>     if ($addtext ne '') {$writebacksuffix = ($count==1) ? $addtext : $addtexts;}
+>     

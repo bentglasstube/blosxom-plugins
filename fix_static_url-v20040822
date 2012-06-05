@@ -1,0 +1,75 @@
+# Blosxom plugin: fix-static-url
+# Author(s): Barijaona Ramaholimihaso
+# Version: 2004-08-22blosxom2
+# Documentation: see bottom of file or perldoc title
+
+package fix_static_url;
+# ------------------ Configuration variables ---------------
+
+use vars qw($static_url);
+
+# Define here the url of your blog i.e. http://homepage.mac.com/barijaona
+# alternatively, use the prefs plugin to define $fix_static_url::static_url
+$static_url = "" ;
+
+# ---------------------------------------------------------
+
+
+sub start {
+	if ( $blosxom::static_or_dynamic eq 'static') {
+		$saveurl = $blosxom::url;
+		$blosxom::url = '*DEFANG_STATIC_URL*';
+		return 1;
+	 }
+	 else {return 0 };
+}
+
+sub head {
+	$blosxom::url= $static_url;
+}
+
+sub last {
+	# for plugins who use $url before the head sub
+	$blosxom::output =~ s>\*DEFANG_STATIC_URL\*>$static_url>g; 
+	1;
+}
+
+1;
+__END__
+=head1 NAME
+
+Blosxom Plug-in: fix_static_url
+
+=head1 SYNOPSIS
+
+This plugin corrects the $blosxom::url variable for static rendering.
+
+When you use blosxom for rendering static pages, the $url variable refers to your local machine, which is rarely acurate, especially if you intend to upload the static files to a different server... You have to explicitly assign the $url variable in the source of blosxom, or you can use this plugin as an alternative.
+
+You can assign the $static_url variable in the config section, or use the prefs plugin (the alternative to the config plugin for static rendering) to define
+$fix_static_url::static_url.
+
+=head1 VERSION
+
+2004-08-22blosxom2
+
+=head2 CHANGES
+
+2004-08-22blosxom2 : First published version
+
+=head1 AUTHOR
+
+Barijaona Ramaholimihaso <http://homepage.mac.com/barijaona>
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 COPYRIGHT
+
+This program is free software; you can redistribute
+it and/or modify it under the same terms as Perl itself.
+
+=cut

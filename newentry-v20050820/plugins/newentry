@@ -1,0 +1,352 @@
+# newentry: Blosxom 用に新しいエントリを生成する
+# Author(s): Fukazawa tsuyoshi (fukaz55@fo.main.jp)
+# Version: 2005-08-20
+
+package newentry;
+
+use CGI qw/:standard/;
+use FileHandle;
+
+# --- Configurable variables -----------
+# このプラグインの名前
+$newentry_plugin_name = "newentry";
+
+# エントリを追加するデフォルトのディレクトリ名
+$newentry_category = "bbs";
+
+# 作成するファイルの拡張子
+$file_extension = $blosxom::file_extension;
+
+# 許可するコメントのバイト数（最大）
+$max_length_comment = 8096;
+
+# 許可するコメントのバイト数（最小）
+$min_length_comment = 40;
+
+# 許可する改行の数
+$denyret = 30;
+
+# 同一IPから許可する書き込み間隔（秒）
+$deny_timesrc = 60;
+
+# エントリ１行目のフォーマット
+# $title: 入力タイトル / $name: 名前(URLかe-mailへのリンク込み)
+# title がない場合、$name が使用されます
+$format_first_line = '$title ($name)';
+
+# Writebackがあったエントリを上位に持ってくる機能（いわゆるage）を使用？
+$use_age = 1;
+
+# デフォルトのフォーム
+my $def_form_template =<<'FORM_';
+<form method="post" class="bbs">
+<input type="hidden" name="plugin" value="newentry" />
+<label for="name">Name:</label><br />
+<input id="name" name="name" value="$newentry::name" /><br />
+<label for="url">URL/E-Mail:</label><br />
+<input id="url" name="url" value="$newentry::url" /><br /><br />
+<label for="url">Title:</label><br />
+<input id="title" name="title" /><br /><br />
+<label for="comment">Comments:</label><br />
+<textarea id="comment" name="comment" rows="7" cols="80"></textarea><br />
+<input type="checkbox" id="save_preferences" name="save_preferences" value="1" checked="checked" /><label for="save_preferences">Remember info?</label><br /><br />
+<input style="font-weight:bold;" type="submit" name="post" value="&nbsp;Post&nbsp;" />
+<em>$newentry::response</em>
+</form>
+FORM_
+
+# Writeback 関連設定
+# blosxom Starter Kit を使っていない場合、ここに直接値を埋め込んで下さい
+# クッキー
+my $cookie_expires = $blosxom::writeback_cookie_expires;
+my $cookie_domain = $blosxom::writeback_cookie_domain;
+my $cookie_path = $blosxom::writeback_cookie_path;
+
+# writebackのデータを保存するディレクトリ名
+$writeback_dir = $blosxom::writeback_dir;
+
+# writebackのデータファイルの拡張子
+$writeback_file_extension = $blosxom::writeback_file_extension;
+
+# --- Plug-in package variables --------
+# 余所から参照できるグローバル変数
+$response;		# Newentry からのメッセージ
+$form;			# 入力フォーム
+$date;			# このエントリの更新時刻文字列 (Writeback 風味)
+
+# このモジュール内部だけで使用する変数
+my $create_entry_fn = '';	# このセッションで新規作成したファイル名
+my $cookie;
+
+my $fh = new FileHandle;
+
+# --------------------------------------
+sub start {
+	# 書き込み以外で呼ばれた場合はここで終了
+	if (request_method() ne 'POST' or param('plugin') ne $newentry_plugin_name) {
+		$response = "書き込みできます";
+		return 1;
+	}
+
+	# Formから値を取得
+	my $pref_name = param('name') || '';
+	my $pref_url  = param('url')  || '';
+	my $title     = param('title') || '';
+	my $comment   = param('comment') || '';
+	my $category  = param('category') || '';
+	my $firstline;
+
+	my $target_dir = $newentry_category;
+	$target_dir = $category if ($category);
+	my $newentry_dir = "$blosxom::datadir/$target_dir";
+	if (!-d $newentry_dir or !-w $newentry_dir) {
+		$response = "ディレクトリ \$newentry_dir が存在していないか、書き込み不能です\n";
+		return 0;
+	}
+
+	# タグをクリアしたり改行をbrタグに変えたり
+	$pref_name = &distagcode($pref_name);
+	$pref_url = &distagcode($pref_url);
+	$comment = &modcomment($comment);
+
+	# 入力チェック
+	$response = "";
+	$response = "名前を入力して下さい"     if ($pref_name eq '');
+	$response = "コメントを入力して下さい" if ($comment eq '');
+	$response = "コメントが長すぎます"     if ((length($comment) > $max_length_comment) && $max_length_comment > 0);
+	$response = "コメントが短すぎます"     if (length($comment) < $min_length_comment);
+	my @retcheck = split(/<br \/>/, $comment);
+	$response = "改行が多すぎます" if ((@retcheck > $denyret) && $denyret > 0);
+
+	# 連続書き込み抑制
+	my $ip = $ENV{'REMOTE_ADDR'};
+	my $timevalue = time;
+	if ($fh->open("$newentry_dir/ip.cgi")) {
+		$ipdata = <$fh>;
+		@iplog_ary = split(/<>/, $ipdata);
+		$response = "もう少し時間が経ってから、もう一度書き込んで下さい" if (($iplog_ary[0] eq $ip) && ($iplog_ary[1] > $timevalue - $deny_timesrc));
+	}
+	$fh->close();
+
+	# コメントスパム対応
+	if (isSPAM($comment)) {
+		$response = "コメントは拒否されました.";
+	}
+
+	# チェックにひっかかったらこの段階で終了
+	return 1 if ($response ne "");
+
+	# IPアドレス記録
+	if ($fh->open("> $newentry_dir/ip.cgi")) {
+		print $fh "$ip<>$timevalue";
+	}
+	$fh->close();
+
+	# 記事のファイル名を生成
+	my $fn = &create_entry_name($timevalue);
+	$create_entry_fn = "$newentry_dir/$fn.$file_extension";
+
+	# 書き込み
+	if ($fh->open("> $create_entry_fn")) {
+	# タイトルにURL/メアドを付加
+		my $pref_name_a = $pref_name;
+		if ($pref_url =~ /[!-~]+\@[!-~]+\.[!-~]+/) {
+			$pref_name_a = qq!<a href="mailto:${pref_url}">$pref_name</a>!;
+		} elsif ($pref_url ne '') {
+			$pref_name_a = qq!<a href="${pref_url}">$pref_name</a>!;
+        }
+	# タイトルがない場合は名前をタイトルに
+		if ($title eq '') {
+			$firstline = $pref_name_a;
+		} else {
+			$firstline = $format_first_line;
+			$firstline =~ s/\$title/$title/ge;
+			$firstline =~ s/\$name/$pref_name_a/ge;
+		}
+	# 読みやすいようにコメントに改行をつける
+		$comment =~ s!<br />!<br />\n!g;
+
+	# 書き込み
+		print $fh "$firstline\n$comment\n";
+	}
+	$fh->close();
+
+	# クッキーに保存
+	$cookie = cookie (
+			-name    => 'writeback',
+			-value   => {
+				name => $pref_name,
+				url  => $pref_url,
+			},
+			-expires => $cookie_expires,
+			-domain  => $cookie_domain,
+			-path    => $cookie_path,
+	) if param('save_preferences');
+
+	# おわり
+	$response = "書き込みありがとうございます！";
+	1;
+}
+
+sub filter {
+	my ($pkg, $files_ref) = @_;
+
+	# さっき作成したファイルがリストになかったらここで追加
+	# ($blosxom::show_future_entries = 0 の場合は追加してくれない可能性があるため)
+	if ((-f $create_entry_fn) && (!grep(/^$create_entry_fn$/, keys %$files_ref))) {
+		$files_ref->{$create_entry_fn} = (stat($create_entry_fn))[9];
+	}
+
+	1;
+}
+
+sub head {
+	my($pkg, $currentdir, $head_ref) = @_;
+	my %param = ();
+	my $pref_name;
+	my $pref_url;
+
+	# Writebackクッキーから名前とURLを取得
+	if (%cookies = cookie(-name => 'writeback')) {
+		$pref_name = $cookies{'name'};
+		$pref_url  = $cookies{'url'};
+	}
+	$param{'name'} = $pref_name;
+	$param{'url'} = $pref_url;
+	$param{'response'} = $response;
+
+	# フォームを展開
+	$form = &$blosxom::template($path,'newentry','html') || $def_form_template;
+	$form =~ s/\$newentry::(\w+)/$param{$1}/ge;
+
+	1;
+}
+
+sub sort {
+	return undef if (!$use_age);
+
+	return sub {
+		my($files_ref) = @_;
+		my %blogts;
+		my $wb_filename;
+
+		foreach (keys %$files_ref) {
+			# ファイル時刻を取得
+			$blogts{$_} = $files_ref->{$_};
+
+			# このファイルに対するWritebackファイル名を作成
+				$wb_filename = $_;
+				$wb_filename =~ s/$blosxom::datadir/$writeback_dir/;
+				$wb_filename =~ s/\.$blosxom::file_extension/\.$writeback_file_extension/;
+
+			# もしWritebackがあったら、エントリの更新時刻をWritebackのものに置き換える
+				$blogts{$_} = (stat($wb_filename))[9] if (-f $wb_filename);
+		}
+
+		return sort { $blogts{$b} <=> $blogts{$a} } keys %blogts;
+	};
+}
+
+sub story {
+	# エントリの日付文字列をWritebackっぽく生成
+	my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+	my $entry_filename = "$blosxom::datadir$path/$filename.$blosxom::file_extension";
+	if (-e $entry_filename) {
+		my $ft = (stat($entry_filename))[9];
+		$date = &get_posttime_str($ft);
+	}
+	1;
+}
+
+sub foot {
+# クッキー書き込み
+	$blosxom::header->{'-cookie'} = $cookie if $cookie;
+	1;
+}
+
+# タグを削除
+sub distagcode {
+	$_ = shift;
+	s/<.*?>//gm; s/\r|\n//gm;
+	s/&amp;/&/gm; s/&/&amp;/gm; s/"/&quot;/gm; s/'/&#39;/gm;
+	return $_;
+}
+
+# コメント加工
+sub modcomment {
+	$_ = shift;
+
+# タグ除去
+	s/<.*?>//gm;
+	s/&amp;/&/gm; s/&/&amp;/gm; s/"/&quot;/gm; s/'/&#39;/gm;
+
+# 末尾の改行は削除
+	s/\r\n$//; s/\r$//; s/\n$//;
+
+# 改行はタグに変換
+	s!\r\n!<br />!g; s!\r!<br />!g; s!\n!<br />!g;
+
+# URL変換
+	s!http://([\x21-\x3b\x3d\x3f-\x7e]+)!<a href="http://$1" target="_blank">http://$1</a>!g;
+
+	return $_;
+}
+
+# ファイル名生成
+sub create_entry_name {
+	my $time = shift;
+	my($ss, $nn, $hh, $dd, $mm, $yy, $ww) = format_time($time);
+	return "$yy$mm$dd" . "_" . "$hh$nn$ss";
+}
+
+# 表示する日時を生成
+sub get_posttime_str {
+	my $time = shift;
+	my($ss, $nn, $hh, $dd, $mm, $yy, $ww) = format_time($time);
+	return "$yy/$mm/$dd ($ww) $hh:$nn:$ss";
+}
+
+sub format_time {
+	my $time = shift;
+
+	my($ss, $nn, $hh, $dd, $mm, $yy, $ww) = localtime($time);
+	$yy = $yy + 1900;
+	$mm = sprintf "%02d", ++$mm;
+	$dd = sprintf "%02d", $dd;
+	$hh = sprintf "%02d", $hh;
+	$nn = sprintf "%02d", $nn;
+	$ss = sprintf "%02d", $ss;
+	my @wdays = qw(Sun Mon Tue Wed Thu Fri Sat);
+	$time = "$yy/$mm/$dd ($wdays[$ww]) $hh:$nn:$ss";
+
+	return ($ss, $nn, $hh, $dd, $mm, $yy, $wdays[$ww]);
+}
+
+# コメントスパム対応
+# 全部アルファベットだったらスパム
+sub isSPAM {
+	my $t = shift;
+
+	$t =~ s/[\n\t 0-9\-+!@#$\%^&*(){}_=a-zA-Z\[\]\\;`':",.\/<>?|\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f]//ge;
+	if ($t eq "") {
+		return 1;
+	} else {
+		return 0;
+	}
+}
+
+sub debug_log {
+	$fh->open(">> $newentry_plugin_name.log");
+	foreach (@_) {
+		print $fh $_, ":";
+	}
+	print $fh "\n";
+	$fh->close();
+}
+
+1;
+
+__END__
+
+# Mod: 2005-05-28: 
+#  機能そぎ落とし版作成

@@ -1,0 +1,111 @@
+# Blosxom Plugin: flavourdir
+# Author(s): Rael Dornfest <rael@oreilly.com> 
+# Version: 2003-03-13
+# Documentation: See the bottom of this file or type: perldoc flavourdir
+
+package flavourdir;
+
+# --- Configurable variables -----
+
+# Where might I find your flavours?
+my $flavour_dir = "$blosxom::datadir/flavours";
+
+# Should I fall back to looking in your Blosxom datadir before using the 
+# default built-in templates?
+# 0 = no; 1 = yes
+my $fallback_to_datadir = 0;
+
+# --------------------------------
+
+use FileHandle;
+my $fh = new FileHandle;
+
+sub start {
+  1;
+}
+
+sub template {
+  return sub {
+    my ($path, $chunk, $flavour) = @_;
+    
+    $path =~ s!^/*!!; $path = "/$path";
+
+    my $p = $path;
+    do {
+      return join '', <$fh> if $fh->open("< $flavour_dir/$p/$chunk.$flavour");
+    } while ($p =~ s/(\/*[^\/]*)$// and $1);
+
+    $p = $path;
+    $fallback_to_datadir and do {
+      return join '', <$fh> if $fh->open("< $blosxom::datadir/$p/$chunk.$flavour");
+    } while ($p =~ s/(\/*[^\/]*)$// and $1);
+
+    return join '', ($blosxom::template{$flavour}{$chunk} || $blosxom::template{error}{$chunk} || '');
+  };
+}
+  
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: flavourdir
+
+=head1 SYNOPSIS
+
+Keep your flavours in a separate flavour directory rather than alongside all of your weblog entries.  Optionally falls back to the default of looking in your Blosxom datadir.
+
+Overrides Blosxom's default template() subroutine.
+
+Respects the Blosxom concept of finding flavours along specific paths, expecting to find these paths echoed in your flavour directory.
+
+=head1 INSTALLATION AND CONFIGURATION
+
+Drop the flavourdir plug-in into your Blosxom plugins folder.
+
+The plug-in is preconfigured to assume a flavour directory beneath your Blosxom data directory.  Alter the $flavour_dir configurable variable to move it elsewhere.
+
+If you'd like the plug-in to fall back to looking in your Blosxom data directory if it doesn't find the appropriate flavour in your flavour directory, set the $fallback_to_datadir configurable variable to 1.  Note: This results in additional processing and isn't a particularly efficient use of a plug-in's time.
+
+=head1 VERSION
+
+2003-03-13
+
+=head1 AUTHOR
+
+Rael Dornfest  <rael@oreilly.com>, http://www.raelity.org/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Blosxom and this Blosxom Plug-in
+Copyright 2003, Rael Dornfest 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

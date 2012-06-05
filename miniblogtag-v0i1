@@ -1,0 +1,61 @@
+# Blosxom Plugin: galleryref
+# Author(s): John Slee
+# Version 0.1
+
+package miniblogtag;
+
+use File::Find;
+
+sub miniblogize {
+        my $dir = shift;
+        my $output = "";
+        my $fulldir = "$blosxom::datadir/$dir";
+
+
+        if (-d $fulldir && $dir !~ /\.\./) {
+                find ( {
+                        wanted => sub { undef $/; open FH, $_; $output .= <FH>; close FH; },
+                        preprocess => sub { sort grep({ -f && -s && -r; } @_); }
+                }, $fulldir);
+        }
+        return $output;
+}
+
+sub xlate_miniblogtags {
+	my ($text_ref) = @_;
+	$$text_ref =~ s{<miniblog dir="(\w+)" />}{miniblogize($1)}meg;
+	
+	1;
+}
+
+sub start {
+	1;
+}
+
+sub head {
+	my ($pkg, $currentdir, $head_ref) = @_;
+
+	xlate_miniblogtags($head_ref);
+	
+	1;
+}
+
+sub story {
+	my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+	xlate_miniblogtags($body_ref);
+	xlate_miniblogtags($title_ref);
+	xlate_miniblogtags($story_ref);
+
+	1;
+}
+
+sub foot {
+	my($pkg, $currentdir, $foot_ref) = @_;
+
+ 	xlate_miniblogtags($foot_ref);
+
+	1;
+}
+
+1;

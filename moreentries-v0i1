@@ -1,0 +1,284 @@
+# Blosxom Plugin: moreentries
+# Author(s): Jason Clark
+# Version: 0+1i
+# Blosxom Home/Docs/Licensing: http://www.blosxom.com
+# moreentries plugin Home/Docs/Licensing: 
+#     http://jclark.org/weblog/WebDev/Blosxom/plugins/moreentries
+
+package moreentries;
+
+# --- Configurable variables -----
+
+# If set to 1, the html created by $moreentries::links will have simple style attribs
+$selfstyle =1;
+
+# --------------------------------
+
+use vars qw/ $active $totalposts $start $end $prevlink $nextlink $nextcount $links $selfstyle /;
+
+sub start {
+  return 1;
+}
+
+sub filter {
+  # moreentries has some special requirements we're going to
+  # address here:
+  #  * must be last filter to run - we'll check our pos in 
+  #    @blosxom::plugins.  If we're not last, move us and
+  #    exit, otherwise procede
+  #  * need to operate on sorted entries - since sort()
+  #    hasn't run yet, and isn't even defined yet, we'll
+  #    have to mimic blosxom's behavior, i.e, find and run
+  #    the apropriate plugin's sort()
+    my ($self, $files, $others) = @_;
+    $active = undef;
+    $start = $end = $prevlink = $nextlink = undef;
+    # $num_entries is ignored for date-based urls, or if num_entries not in use
+    return 1 if $blosxom::path_info_yr =~ /\d/ or !defined($blosxom::num_entries) or $blosxom::num_entries < 1;
+    my $pos;
+    for(my $i=0;$i<@blosxom::plugins;$i++) { 
+        if($blosxom::plugins[$i] eq 'moreentries') {
+            $pos=$i;
+            last;
+        }
+    }
+    return 0 unless $pos;
+    unless ($pos==$#blosxom::plugins) {
+        #we're not last plugin, so move us
+        splice @blosxom::plugins, $pos, 1;
+        push @blosxom::plugins, 'moreentries';
+        return 1;
+    }
+    #made it this far, time to do our stuff.  First, do we need to?
+    #filter out posts outside of requested path
+    my $currentdir = $blosxom::path_info;
+    if ( $currentdir =~ /(.*?)([^\/]+)\.(.+)$/ and $2 ne 'index' ) {
+      $currentdir = "$1$2.$blosxom::file_extension";
+    } 
+    else { 
+      $currentdir =~ s!/index\..+$!!;
+    }
+
+    foreach my $path_file (keys %{$files}) {
+        my ($path,$fn) = $path_file =~ m!^$blosxom::datadir/(?:(.*)/)?(.*)\.$blosxom::file_extension!;
+        # Only stories in the right hierarchy
+        ($path =~ /^$currentdir/ or $path_file eq "$blosxom::datadir/$currentdir") and next;
+#print STDERR "path='$path', curdir='$currentdir', pathfile='$path_file', ddir='$datadir'\n";
+        delete $files->{$path_file};
+    }
+
+    $totalposts = scalar(keys %{$files});
+print STDERR "TOTALPOSTS='$totalposts'\n";    
+
+    return 1 if $totalposts <= $blosxom::num_entries;
+
+    #guess we do.
+    $active = 1;
+    
+    # Define a default sort subroutine
+    my $sort = sub {
+      my($files_ref) = @_;
+      return sort { $files_ref->{$b} <=> $files_ref->{$a} } keys %$files_ref;
+    };
+    
+    # Allow for the first encountered plugin::sort subroutine to override the
+    # default built-in sort subroutine
+    my $tmp; foreach my $plugin ( @plugins ) { $plugins{$plugin} > 0 and $plugin->can('sort') and defined($tmp = $plugin->sort()) and $sort = $tmp and last; }
+  
+    my @sorted = &$sort($files, $others);
+    $start = (blosxom::param("_start") or 1);
+    $end = $start + $blosxom::num_entries -1;
+    $end = $totalposts if $end > $totalposts;
+    
+    #trim %files
+    for (my $i=0;$i<$start-1;$i++) {
+        delete $files->{$sorted[$i]};
+    }
+    for (my $i=$end; $i<$totalposts; $i++) {
+        delete $files->{$sorted[$i]};
+    }
+    
+    #setup prevlink, nextlink
+    my $url = blosxom::self_url();
+    $url =~ s/[&\?;]_start=\d+//g;
+    $url =~ s/[&?;]-\w+=\d+//g;
+    $url =~ s/\?\s*$//;
+
+    my $appendchar = $url =~ /\?/ ? "&" : "?";
+    my $prev = $start - $blosxom::num_entries;
+    $prev = 1 if $prev < 0;
+    my $next = $end + 1;
+    $prevlink = "$url${appendchar}_start=$prev" if $start > 1;
+    $nextlink = "$url${appendchar}_start=$next" if $end < $totalposts;
+    $nextcount = $totalposts - $end;
+    $nextcount = $blosxom::num_entries if $nextcount > $blosxom::num_entries;
+    my $style = $selfstyle? "style='padding:0 15px'" : '';
+    $links = "<div class='moreentries'><span class='prevlink' $style>";
+    if (defined($prevlink)) { $links .= "<a href='$prevlink'>Previous $blosxom::num_entries entries</a>"; }
+    $links .= "</span><span class='nextlink' $style>";
+    if (defined($nextlink)) { $links .= "<a href='$nextlink'>Next $nextcount entries</a>"; }
+    $links .= "</span></div>";
+    return 1;  
+
+
+}
+
+sub sort() {
+    return undef;
+}
+
+1;
+
+__END__
+
+=head1 Name
+
+Blosxom Plug-In: moreentries
+
+=head1 Synopsis
+
+When the Blosxom variable $num_entries is set to a non-zero number,
+Any non-date style request(category or root url) will only display
+$num_entries entries on the page.  No method is provided to see
+subsequent entries (aside from using date-urls to browse back in time,
+and this can't be combined with categories).
+
+moreentries enables these addional entries to be viewed.  moreentries adds
+the ability for blosxom urls to accept an _start parameter, for example:
+
+  http://jclark.org/weblog/index.html?_start=11
+
+Will show you all the weblog entries *after* the first 10.  moreentries also 
+offers several variable to allow you to add Next and Previous links to your
+templates, and to show the current range of posts, and total posts.
+
+PLEASE NOTE: Probably doens't work with static rendering.  Untested.
+
+=head2 Quick Start
+
+Just drop it in your $plugin_dir.  There is only one config variable, which 
+we will ignore for the quick start; see next section for more info.  You'll
+need to modify your head or foot template to see the links.  For a quick
+start, add $moreentries::links to your head or foot template.  And of course,
+your blosxom.cgi must have a (nonzero) value set for $num_entries.
+
+That's it; you should now have next & previous functionality.
+
+=head1 More Info
+
+moreentries exposes the following variables for use in your templates.  None of 
+these are per-story, and are generally suited for use in your head or foot template.
+
+$moreentries::active - true if the plugin is 'in use'.  This will be false if
+the url is a date url (blosxom ignores $num_entries), or if there are not at 
+least $num_entries entries matching the request, or if $num_entries is not set.
+$moreentries::totalposts - total number of entries that match the request
+$moreentries::start - the number of the first entry being displayed
+$moreentries::end  - the number of the last entry being displayed
+$moreentries::links - inserts (x)HTML containing links to the previous and
+next batch of entries.  If one (or both) of these links does not apply ( for example,
+when viewing the first batch of entries, there are no previous entries) there
+is no link.
+
+The output of $moreentries::links will look like this:
+ <div class='moreentries'>
+   <span class='prevlink' style='padding:0 15px'><a href='http://127.0.0.1/weblog/index.html?_start=1'>Previous 10 entries</a></span>
+   <span class='nextlink' style='padding:0 15px'><a href='http://127.0.0.1/weblog/index.html?_start=21'>Next 10 entries</a></span>
+ </div>
+ 
+The embedded style prevents the links from being right next to each other.  This output
+is sufficient for a quick drop-in.  If you'd like to control CSS styles yourself, 
+there is a confi variable ( $selfstyle ) that controls this, just set it to 0.
+
+If you want even more control over your output, there are some additional variables
+you can use:
+
+
+$moreentries::prevlink - if $moreentries::start is not 1, this will contain an
+URL to move to the previous batch of entries.  Will be undef if no Previous batch
+(i.e., $moreentries::start =1)
+
+$moreentries::nextlink - if $moreentries::end < $morrentries::totalposts, this will
+contain an URL to the next batch of entries.  Will be undef if no Next batch
+(i.e., $moreentries::end = $moreentries::totalposts)
+
+$moreentries::nextcount - If there is a next batch, this contains the number of posts
+in it.  This is normally $num_entries, except when there arent enough entries left.  For
+example, if there are 12 posts in the Rants category, and your $num_entries is 10, then
+$morrentries::nextcount will be 2.
+
+There is one config variable, explained above in the discussion of $moreentries::links:
+
+$moreentries::selfstyle - when set, $moreentries::links will contain simple style attribs.
+
+=head1 Internals
+
+This is a big ugly hack.  The only entrypoint that worked for this is the filter() hook;
+the problem is that when filter() is called, the sort() routine hasn't run (isn't even
+decided on yet!), and %files contains all posts, not just the ones matching the request.
+Even running as filter, it has to be the last plugin to run, so that any other filtering 
+happens before we decide the 'numbering' of the posts.
+
+The way it works:  when filter() is called, we check @plugins to see if moreentries is
+the last plugin.  If not, we munge @plugins, making us the last plugin, and return.  If
+we are the last plugin (as we eventually will be), then we proceed.  
+
+The next step is rather inefficient:  we have to sort %files to number them, so we
+check all plugins for a sort() routine, providing a default if none is found.  This
+code is stolen wholesale from blosxom.cgi.  Once they are sorted, we get rid of all
+files that don't match the request url (anything in the wrong category, essentially).
+This code is also stolen from blosxom.cgi, with a couple of adjustments.
+
+Finally, we delete all the posts before our start (as provided by the param _start), and
+all posts after our ending post.  Thus, when filter is done, %files only contains the posts
+that will be displayed.  This makes redundant much of the code that runs in blosxom after this.
+
+
+=head1 Version
+
+0+1i
+
+=head1 Author
+
+Jason Clark  (jason@jclark.org; http://jclark.org/weblog)
+
+=Head1 Acknowledgements
+
+Thanks to Fletcher T. Penny (http://fletcher.freeshell.org/) for helping test the plugin.
+
+=head1 See Also
+
+Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+Blosxom Plugin Docs: http://www.blosxom.com/documentation/users/plugins.html
+
+=head1 Bugs
+
+This whole thing is a big hack, see the Internals section above for some info.
+This should probably be implemented as part of the core Blosxom application.
+
+Not tested at all with static rendering, probably won't work.
+
+=head1 License
+
+This Blosxom Plug-in Copyright 2003, Jason Clark
+
+(This license is the same as Blosxom's)
+Permission is hereby granted, free of charge, to any person obtaining a copy 
+of this software and associated documentation files (the "Software"), to deal 
+in the Software without restriction, including without limitation the rights 
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell 
+copies of the Software, and to permit persons to whom the Software is furnished 
+to do so, subject to the following conditions:
+
+
+The above copyright notice and this permission notice shall be included in all 
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS 
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR 
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER 
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION 
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+

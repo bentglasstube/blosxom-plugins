@@ -1,0 +1,58 @@
+# Blosxom Plugin: closingwords
+# Author: BR
+# Version: 20031209
+# http://6109.us/blog/
+# Notice: Confidential and proprietary. 
+# DO NOT READ FURTHER IF YOU REFUSE TO ACCEPT THE CONFIDENTIALITY REQUIREMENT.
+# Terms of License at end of this file.
+
+# The closingwords plugin:
+# Append to body a byline or source indication as entered below
+# Caution:
+# This plugin does not yet work with the mailless plugin 
+# but it co-exists nicely with the capper, referrer, timestamp, 
+# visitors plugins. USE AT YOUR OWN RISK!
+# BACK UP ALL DATA AND YOUR OPERATING SYSTEM AND YOUR SOFTWARE 
+# BEFORE USING THIS PLUGIN. DO NOT USE ON MISSION-CRITICAL, 
+# SHARED, STANDALONE, NETWORKED OR OTHER SYSTEMS UNTIL REVIEWED 
+# AND REPAIRED BY AN EXPERT. NO WARRANTIES, EXPRESS OR IMPLIED (DETAILS BELOW).
+# NO MONEY BACK, NO TAX REFUND. Not for use by Gingrich-style republicans.
+
+
+
+# Modify this line, with source indication, admonition or sentiment:
+my $closingword = "Source: $blosxom::url"; # Example:  "Vote early and often";
+
+
+my $blog = "$blosxom::url"; # This is a link to the blog, not the story.
+
+package closingwords;
+sub start {
+1;
+}
+sub story {
+my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+$$body_ref .=" &nbsp; <a href=\"$blog\" style=\"font-size:10px; font-variant:small-caps\">$closingword<\/a>";
+# You could modify the font code in the above line.
+
+return 1;
+}
+1;
+
+__END__
+
+=HEAD1 NAME 
+Blosxom plugin closingwords
+
+=HEAD2  LIMITED WARRANTY
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A 
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT 
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION 
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE 
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+=HEAD3 LICENSE
+Not for resale without written permission. Otherwise, use freely. 
+Also mangle, abuse, reform, distort, caress on your own behalf 
+and in your own name and not mine.

@@ -1,0 +1,58 @@
+# Blosxom Plugin: test
+# Author(s): James Vasile (james@brutalhugs.com)
+# Version: 0.1
+# See the perldoc info at the bottom for more details
+
+package test;
+
+###########################################################
+sub start {1;}
+sub head {
+  ${$_[2]}.='<h1>TESTING...plugin found, loaded and run.</h1><p>TESTING...plugin found, loaded and run.</p>';
+  1;
+}
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: test
+
+=head1 SYNOPSIS
+
+This is just a test plugin to help make sure your plugin setup works.  Just drop it in your plugin directory and load your blog.  You should see "TESTING...plugin found, loaded and run." above your posts.  It might even appear twice.  This will let you know that your plugins are being found, loaded, and run by blosxom.  If you don't see those words, your setup is not working right.
+=head1 AUTHOR
+
+James Vasile <james@brutalhugs.com>
+
+=head1 SEE ALSO
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Copyright 2003, James Vasile
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

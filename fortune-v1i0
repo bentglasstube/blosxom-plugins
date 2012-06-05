@@ -1,0 +1,78 @@
+# Blosxom Plugin: fortune
+# Author(s): Jason Thaxter <sseye@ahab.com>
+# Version: 1.0
+# Documentation: See the bottom of this file or type: perldoc fortune
+
+package fortune;
+
+# --- Configurable variables -----
+
+# fill this in with the location of fortune if it's not in the usual one found
+# below
+my $fortune_binary = '';
+
+# --------------------------------
+
+$fortune; # use as $fortune::fortune in flavour templates
+
+# the customary location
+$fortune_binary ||= '/usr/games/fortune';
+
+sub start {
+ $fortune = `$fortune_binary`;
+}
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: fortune
+
+=head1 SYNOPSIS
+
+Populates $fortune::fortune with the output of the C<fortune> program, found on
+many Un*x machines.  If it's not in C</usr/games/fortune>, then you will need
+to know where it is.
+
+=head1 VERSION
+
+Version 1.0
+
+
+=head1 AUTHOR
+
+Jason Thaxter <sseye@ahab.com>, http://ahab.com/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list
+[http://www.yahoogroups.com/group/blosxom] or to the author.
+
+=head1 LICENSE
+
+Blosxom and this Blosxom Plug-in
+Copyright 2003, Jason Thaxter
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

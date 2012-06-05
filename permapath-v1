@@ -1,0 +1,28 @@
+# Blosxom Plugin: permapath                                    -*- perl -*-
+# Author: Doug Alcorn <doug@lathi.net>
+# Version: 1
+# http://www.lathi.net/BlosxomAndTWiki
+#
+
+package permapath;
+
+use CGI::Carp qw( fatalsToBrowser );
+
+$sep = '_';
+$append_sep = 1;
+$path = '';
+
+sub start {
+    1;
+}
+
+sub story {
+	my ($pkg, $thispath, $filename, $story_ref, $title_ref, $body_ref) = @_;
+	$thispath =~ s/^\///;
+	$thispath =~ s/\//$sep/g;
+	$permapath::path = $thispath;
+	if ($append_sep) { $permapath::path .= $sep; }
+	1;
+}
+
+1;

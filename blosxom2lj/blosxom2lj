@@ -1,0 +1,67 @@
+# Blosxom Plugin: blosxom2lj
+# Author(s): satyap.csoft.net
+# Version: 0.1
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+#puts changed files into livejournal. check the paths in user config below
+
+package blosxom2lj;
+
+### begin user config ###
+
+
+BEGIN{
+require '/home/satyap/blosxom/config.pl';
+use vars qw[$user $pass $datadir $ext $datfile $md5sum $find $mydir];
+push @INC,$mydir;
+}
+
+### end user config ###
+
+use LJPost;
+
+sub start() {
+1;
+}
+
+
+sub story() {
+
+my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref)=@_;
+
+my %sums;
+my ($sum,$file);
+my $key=$path .'/'. $filename;
+
+open(SATYABLEGH,"$datfile") || die "$datfile: arfarf $!";
+while(my $foo=<SATYABLEGH>) {
+    chomp($foo);
+    next if $foo=~/^$/ || $foo=~/^#/;   # skip blank lines and 
+    ($file,$sum)=split(/\s+/,$foo);
+    $sums{$file}=$sum;
+    }
+close(SATYABLEGH);
+
+$file="$datadir$key.$ext";
+$key='.' . $key . '.txt';
+
+$sum=(split(/\s+/,`$md5sum $file`))[0];
+unless( $sums{$key} && $sum eq $sums{$key}) {
+    $sums{$key}=$sum;
+    &send2lj($file,$user,$pass);
+    }
+
+#my %s2;
+#foreach $file (@files) {
+#    $s2{$file}=$sums{$file};
+#    }
+#%sums=%s2;
+
+&writedat($datfile,\%sums);
+
+1;
+}
+
+
+1;
+__END__

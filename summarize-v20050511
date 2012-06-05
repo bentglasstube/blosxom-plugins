@@ -1,0 +1,71 @@
+# Blosxom2 Plugin: summarize 
+# By Rob Flickenger <rob@nocat.net>.  Based on Bernie Simon's Summarize.pm.
+
+package summarize;
+
+# Length of displayed summary
+#
+$summary_length=300;
+
+# Flavours that should summarize $body
+#
+@flavours = qw{ rss rss10 rss20 };
+
+#####
+
+sub start { 
+  return(grep(/^$blosxom::flavour$/,@flavours) ? 1 : 0);
+}
+
+sub story {
+    my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+    $$body_ref =~ s/<!--.*?-->/ /gs;
+    $$body_ref =~ s/<[^>]*>/ /gs;
+    $$body_ref =~ s/&nbsp;/ /g;
+    $$body_ref =~ tr/\t\r\n / /s;
+
+    $$body_ref = substr ($$body_ref, 0, $summary_length);
+
+#    $$body_ref =~ s/^\S*\s+//g;
+    $$body_ref =~ s/\s+\S*$//g;
+    $$body_ref =~ s/([^\?\!\.])$/$1 .../;
+
+    return 1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom v2 Plug-in: summarize
+
+=head1 SYNOPSIS
+
+Creates a summary of a post by excerpting the first N characters and
+stripping html.  Useful for RSS feeds.
+
+=head1 CONFIGURABLE VARIABLES
+
+Set $summary_length to control the length of the excerpt.  Fill 
+@flavours with the flavours that should truncate $body (hint: rss, 
+rss10, rss20, etc.)
+
+=head1 INSTALLATION
+
+Place this file in the plugins directory.
+
+=head1 AUTHOR
+
+Rob Flickenger (http://nocat.net/~rob/) 
+
+Based on Summarize.pm (a Blosxom 3 plugin) by:
+
+Bernie Simon (http://carelesshand.net)
+
+=head1 LICENSE
+
+Copyright Bernard Simon, 2005. You may use this file as you wish as
+long as this copyright notice is maintained.

@@ -1,0 +1,66 @@
+# Blosxom Plugin: wordcount
+# Author: Stephen R. Laniel <steve@laniels.org>
+# Version: 20031010
+# http://laniels.org/blosxom
+# License: GPL
+
+# The wordcount plugin counts the words in a post, with
+# HTML removed. This count is then available within
+# $wordcount::wordcount
+
+package wordcount;
+$wordcount = '';
+
+sub start {
+	1;
+}
+
+sub story {
+	my @words = ($plain_text::body =~ m/\b(\w+)\b/gs);
+	$wordcount = scalar @words;
+	1;
+}
+
+1;
+
+=head1 NAME
+
+Blosxom plugin: wordcount
+
+=head1 SYNOPSIS
+
+Counts the number of words in a story, excluding HTML. This
+count is then available as $wordcount::wordcount.
+
+=head1 INSTALLATION
+
+Drop wordcount and plain_text into your plugins directory, and
+make sure plain_text loads first. To do this, just rename the plugin
+files and start them with numbers, and make the number lower for
+plain_text than it is for wordcount. For instance, on my machine
+I've renamed plain_text to 03plain_text and wordcount to
+04wordcount.
+
+=head1 CONFIGURATION
+
+None: once you've dropped it into your plugin directory,
+$wordcount::wordcount is available to use in your story templates.
+
+=head1 VERSION
+
+2003-10-10
+
+=head1 AUTHOR
+
+Stephen R. Laniel <steve@laniels.org>, http://laniels.org/blosxom
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+The wordcount plugin is licensed under the GNU General Public
+License (http://www.gnu.org/licenses/licenses.html).
+

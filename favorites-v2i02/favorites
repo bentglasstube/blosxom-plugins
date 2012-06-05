@@ -1,0 +1,278 @@
+# Blosxom Plugin: favorites
+# Author(s): Peter Florijn <tooh@tooh.myweb.nl> 
+# Version: 2.0rc2
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+# Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+
+package favorites;
+
+use Cwd;
+# --- Configurable variables -----
+$debug_level ||= 1;
+
+$FOLDER    = "C:\\Documents and Settings\\flr\\Favorites\\Oracle";
+
+@excluded_folders = qw(
+Channels
+Links
+Koppelingen
+Kanalen
+) ;
+	
+# Prepending the path to the root favorites folder to each excluded folder.
+grep $_ = $FOLDER . '\\' . $_ , @excluded_folders ;
+    
+local $LEVEL ; # level of recursion into folders.
+
+my $bookmarks ="";
+my $package = "favorites";
+
+
+sub debug {
+    my ($level, @msg) = @_;
+
+    if ($debug_level >= $level) {
+	print STDERR "$package debug $level: @msg\n";
+    }
+}
+
+sub show_bookmarks_in_folder_recursively
+{
+my $folder = shift ;
+local *FOLDER ;
+
+my $cwd = cwd() ;
+
+chdir $folder or print <<EOM;
+ERROR : Could not change directory to folder $folder. Reason: $!
+<br>
+EOM
+
+
+++$LEVEL ; # We are now one level deeper into the folders.
+
+opendir FOLDER, $folder or print <<EOM;
+ERROR: Could not open folder $folder. Reason: $!
+<br>
+EOM
+
+my @entries = grep $_ ne '.' && $_ ne '..', readdir FOLDER ;
+
+closedir FOLDER ;
+
+debug(2, "Advancing from $cwd to $folder");
+
+my $entry ;
+
+# Added sort in following line PF
+foreach  $entry (sort(@entries))
+{
+	if (-f "$folder/$entry" and $entry =~ /\.url$/i )
+	{
+		
+debug(2, "$entry");
+	# print '&nbsp;&nbsp;&nbsp;' x $LEVEL ;
+
+	&show_url ("$folder/$entry") ;
+
+
+	}
+	elsif (-d "$folder/$entry")
+	{
+
+debug(2, "Folder $entry");
+
+
+    next if grep "$folder\\$entry" eq $_ , @excluded_folders ;
+	
+	# print '&nbsp;&nbsp;&nbsp;' x $LEVEL ;
+    &show_folder ("$folder/$entry") ;
+
+	
+	&show_bookmarks_in_folder_recursively ("$folder/$entry") ;
+	}
+	
+} # end foreach
+
+
+debug(2, "Backin up from $FOLDER to $cwd");
+
+chdir $cwd ;
+
+# We have now gone up one level in the folders.
+debug(2, "Level up $LEVEL");
+
+} # end sub show_bookmarks_in_folder_recursively
+
+sub show_folder
+{
+my $folder = shift ;
+my ($folder_name) = $folder =~ m{^.*[\\\/](.*)$}o ;
+
+$folder_urlencoded = encode_as_url ($folder) ;
+$bookmarks .= qq!<BR><IMG ALT="$folder_name" SRC=".\\images\\folder.gif"><div CLASS=\"favoritetitle\">$folder_name</div><br>\n!;
+} # end of sub show_folder
+
+sub show_url
+{
+my $url_file = shift ;
+my $url ;
+
+my ($url_name) = $url_file =~ m{^.*[\\\/](.*)\.url$}io ;
+
+local *FILE ;
+
+open FILE, $url_file ;
+
+while (<FILE>)
+{
+	last if ($url) = /^url=(.*)$/i ; # PF added i (case insensitive search )
+}
+close FILE ;
+$url_escaped = &encode_as_url ($url) ;
+$url_name_esc = &encode_url_name($url_name);
+
+$bookmarks .= qq!<div align=\"center\"><a href=\"$url\" onMouseOver="window.status='$url_name_esc'; return true;" CLASS="menuitem">$url_name</a>&nbsp;<BR>\n</div>!;
+debug(2, "Bookmarks $bookmarks");
+
+} # end of sub show_url
+
+sub encode_as_url
+{
+($_) = @_ ; s/([^\w ])/&char_2_hex_digits($1)/eg ; s/ /+/g ; return $_ ;
+}
+
+sub encode_url_name
+{
+($_) = @_ ; s/'/&rsquo;/g ; return $_ ;
+}
+
+
+# this returns the two digit hex code for the given character.
+# it is used by the encode_as_url subroutine
+
+sub char_2_hex_digits
+{
+my ($c, @hex_digit) = (ord($_[0]), ('0'..'9', 'a'..'f') ) ;
+return '%' . $hex_digit[$c >> 4] . $hex_digit[$c & 15] ;
+}
+
+sub start {
+
+debug(1, "Folder $FOLDER opened");
+  
+&show_bookmarks_in_folder_recursively ($FOLDER) ;
+
+$favorites = $bookmarks;
+debug(2,"Favorites is : $favorites");
+debug(1, "Favorites end");  
+}
+
+1;
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: favorites
+
+=head1 SYNOPSIS
+
+Purpose: Produces links to your favorites from your Internet Explorer favorites folder.
+
+Uses CSS classes
+
+CLASS="menuitem"
+
+A.menuitem		{text-decoration:none; color:#000; line-height: 85%;}
+A.menuitem:hover	{text-decoration:none; color:#000; line-height: 85%;font-weight:bold;}
+A.menuitem:visited	{text-decoration:none; color:#000; line-height: 85%;}
+A.menuitem:active	{text-decoration:none; color:#000; line-height: 85%;}
+
+CLASS="favoritetitle
+
+.favoritetitle {
+	padding-left: 2px;
+	border-bottom: 1px solid #ddd; 
+	margin-bottom: 5px;
+	font: bold italic 12px georgia, trebuchet ms, times new roman, monospace;
+	color: #666;
+	text-align: left;
+	}
+
+
+Description
+
+This plugin generates favorites links from your IE favorites. 
+
+Configuration
+
+
+$FOLDER    = "C:\\Documents and Settings\\flr\\Favorites\\Oracle";
+
+Put the folder.gif image in your images directory.
+
+Change this to your appropriate IE favorites path.
+
+$debug_level ||= 1;
+
+Set debuglevel to 0 when the plugin works OK.
+
+Additional Bits Required 
+
+Category
+/text ?
+
+Date
+30-4-2003
+
+Todo list
+
+<BR>
+
+=head1 VERSION
+
+2.0rc2
+
+Version number coincides with the version of Blosxom with which the 
+current version was first bundled.
+
+=head1 AUTHOR
+
+Peter Florijn  <tooh@tooh.myweb.nl>, http://tooh.myweb.nl/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+This Blosxom Plug-in
+Copyright 2003, Peter Florijn 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+

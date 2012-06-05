@@ -1,0 +1,599 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"
+    "http://www.w3.org/TR/html4/loose.dtd">
+<HTML LANG="en-US">
+
+<head>
+<META HTTP-EQUIV="content-type" CONTENT="text/html;charset=iso-8859-1">
+<title>enilnomi.net : : blox dox : :</title>
+
+<!-- v1r6 enilnomi.net 2004-08-12                                 -->
+
+<style type="text/css" media="all">
+  @import "main.css";
+  blockquote.demo {line-height:155%; margin-top:1.5em; margin-bottom:1.5em; margin-right:15%; padding:5px 0 5px 10px; border-width:1px 0 1px 0; border-color:#de9; border-style:solid; font-family:arial,geneva,verdana,helvetica,sans-serif; font-size:94%;}
+
+</style>
+
+</head>
+
+<body>
+<!--a class="pagetop" name="top">&nbsp;</a-->
+<a class="anchor" name="top"></a>
+<div id="content_area">
+<div id="content">
+
+<h1>blox 0.98 &amp; 0.99</h1>
+
+<blockquote class="demo">
+<p class="uptight">
+This page is more or less the same as the online documentation; the only substantive difference is that most of the links on this page don't work ;-)
+</p>
+
+<p class="downtight">
+This one doc covers both versions of <tt>blox</tt> -- v0.99 (with markup) and v0.98 (no markup). v0.98 users should note the following differences in their version:<br>
+&bull;&nbsp;&nbsp;no markup option (<code>$markup_active</code>)<br>
+&bull;&nbsp;&nbsp;no automatic xhtml adjustment (<code>$use_xhtml_tags</code>) for &lt;br&gt; tags; for xhtml-compliance, set the <code>$break</code> variable to "<code>&lt;br /&gt;</code>"
+</p>
+</blockquote>
+
+<p>
+The <tt>blox</tt> plugin generates "paragraph" markup tags around blocks of plain text as your entry files are processed by <a href="http://www.blosxom.com">Blosxom</a>. Just type plain text into your entry files, separating paragraphs by at least one blank line (really blank; no spaces, tabs, etc.). When Blosxom builds your stories, <tt>blox</tt> will add the open- and close-tags of your choice to each paragraph. Existing markup tags will be left alone. 
+</p>
+
+<p>
+<tt>blox</tt> also has options to insert linebreaks (e.g. &lt;BR&gt;) on single lines, and to use a simple, natural-idiom markup notation to add heads, rules, text styles, lists, blockquotes, images, anchors, and links to your entries with no tedious html coding.
+</p>
+
+<p>
+<tt>blox</tt> also lets you use virtually any text processor and upload method for your entry files, by recognizing "lines" from either Unix-, Mac-, or Windows-based text processors (ascii 10; ascii 13; or ascii 13/10 line-ends).
+</p>
+
+<!--p style="border:6px dashed #abab44;padding:4px;margin-left:-4px;">
+<b>Apologies to those who have recently downloaded</b> <tt>blox</tt> v0.92 (or, to those who <i>thought</i> they were getting v0.92 ;-) - - my auto-updating software had a bug, and you got an older version. The correct file is now linked. Sorry!
+</p-->
+
+<p class="downtight">
+&#149;&nbsp;For example, consider this entry file text:
+<pre>     Welcome to my entry.
+
+     Short, isn't it?</pre>
+Without block-level html tags, this entry file will render on the page as:<code>    Welcome to my entry.Short, isn't it?</code> (Eh, not very pretty.)
+</p>
+
+<p class="downtight">&#149;&nbsp;With <tt>blox</tt>, the entry renders like this:
+<pre><code>    Welcome to my entry.
+
+    Short, isn't it?</code></pre>
+</p>
+
+<p>
+That's much better.
+</p>
+
+<p class="downtight">
+&#149;&nbsp;<tt>blox</tt>'s tagged output for that entry looks like this:
+<pre>    &lt;p>
+    Welcome to my entry.
+    &lt;/p>
+    
+    &lt;p>
+    Short, isn't it?
+    &lt;/p></pre>
+</p>
+
+<p><hr class="seemore"></p>
+
+<h3>Getting blox</h3>
+<p class="downtight">
+There are two versions of <tt>blox</tt> available, each in two different forms:
+<ul>
+<li><u><tt>blox</tt> 0.99</u>
+<p class="uptight">
+This is the full-featured, latest and greatest version of <tt>blox</tt>, including markup notation.
+</p>
+<p>
+&bull; <u>To download to your web browser</u>, use this link: <a href="/downloads/blox" target="_blank">blox</a><br>
+&bull; <u>To download to a disk</u>, use this link: <a href="/downloads/blox.zip">blox.zip</a><br>
+(The zipped file includes both versions of <tt>blox</tt> and all documentation.)
+</p>
+<li><u><tt>blox</tt> 0.98</u>
+<p class="uptight">
+This is the final version of the "original" <tt>blox</tt>: it wraps text in paragraph tags, handles non-unix line ends, optionally adds <code>&lt;br&gt;</code> tags to single lines, and allows files and/or directories to be ignored. This version has no markup notation; it is intended for users who are happy with the basic <tt>blox</tt> features. If you use this version, make sure to rename the plugin file from <code>blox98</code> to <code>blox</code>.
+</p>
+<p>
+&bull; <u>To download to your web browser</u>, use this link: <a href="/downloads/blox98" target="_blank">blox98</a><br>
+&bull; <u>To download to a disk</u>, use this link: <a href="/downloads/blox.zip">blox.zip</a><br>
+(The zipped file includes both versions of <tt>blox</tt> and all documentation.)
+</p>
+</ul>
+</p>
+
+<h3>Installing blox</h3>
+<p>
+<b>To install </b><tt>blox</tt>, first open the file and look down at the "Configuration Section"; enter values as instructed; save. Then, drop the file into your Blosxom plugins folder. Blog on.
+</p>
+
+
+<h3>Options</h3>
+<!--p class="downtight">
+<code>[img /path/to/image.gif <i>ww,hh</i> <i>attributes</i>]</code>
+<blockquote>
+brackets enclose "img" and a relative-to-root image path. Image dimensions and attributes are optional. Ex: <code>[img /images/top.gif 22,13]</code>; <code>[img /images/top.gif alt="Top"]</code>
+</blockquote>
+</p-->
+
+<p>
+<b><u>Open and Close tags</u> : </b>the text you enter in between the <i>single quote marks</i> for <code>$open_p_tag</code> and <code>$close_p_tag</code> becomes the exact open- and close-tags inserted before and after each block of text in your entry file.
+</p>
+
+<p class="downtight">&#149;&nbsp;You can use, for example:
+<pre>$open_p_tag = '&lt;p>';
+$close_p_tag = '&lt;/p>';</pre>
+
+&#149;&nbsp;or:
+
+<pre>$open_p_tag = '&lt;blockquote>';
+$close_p_tag = '&lt;/blockquote>';</pre>
+
+&#149;&nbsp;or even:
+
+<pre>$open_p_tag = '&lt;hr class="snazzy">&lt;dfn class="1">';
+$close_p_tag = '&lt;/dfn>&lt;hr class="snazzy">';</pre> 
+</p>
+
+<p>
+<b><u>Initial and Final tags</u> : </b>the <code>$add_initial_open_tag</code> and <code>$add_final_close_tag</code> variables tell <tt>blox</tt> whether or not to try putting an open-tag at the very top of your entry, and a close-tag at the very bottom of your entry. For instance, maybe your story template puts a sexy drop cap paragraph style tag right before <code>$story</code> -- the effect would be ruined if <tt>blox</tt> put &lt;p> atop your entry text. Likewise, you can prevent a close-tag from being added at the end of your entry file.
+</p>
+
+<p>
+Use "<code>0</code>" to turn the tag off; use "<code>1</code>" to turn the tag on.
+</p>
+
+<p class="downtight">
+<b><u>Breaking single lines</u> : </b>The <code>$break_singles</code> variable tells <tt>blox</tt> to add a tag at the end of single lines; the <code>$break</code> variable supplies the tag (normally <code>&lt;BR&gt;</code>). When this is turned off (set to zero), the following entry file text<pre>    line one
+    line two
+    line three</pre>will be rendered on your blog page as "line oneline twoline three".
+<p>
+Use "<code>0</code>" to turn the break off; use "<code>1</code>" to turn the break on. The normal <code>$break</code> tag is <code>&lt;br&gt;</code>; you can change this to <code>&lt;br clear="all"&gt;</code>, etc. Depending on other settings, <tt>blox</tt> may change your <code>$break</code> behind the scene; read the <b><u>More info on linebreaks</u></b> note at the end of this section for complete details.
+</p>
+
+<p>
+<b><u>Simple markup</u> : </b>The <code>$markup_active</code> variable tells <tt>blox</tt> to use its simple markup system to automatically add tags for heads, rules, text styles, lists, blockquotes, images, anchors, and links. Notation rules are:
+<table class="content_table" width="100%" border="0" cellspacing="2" cellpadding="8">
+<tr>
+<td width="35%"><code>*</code>bold words<code>*</code></td><td>stars enclose words on single lines</td>
+</tr><tr>
+<td><code>/</code>italic words<code>/</code></td><td>slashes enclose words on single lines</td>
+</tr><tr>
+<td><code>_</code>underline words<code>_</code></td><td>underscores enclose words on single lines</td>
+</tr><tr>
+<td><code>[=</code>monospace letters<code>]</code></td><td>"[=" can be anywhere; "]" can span lines</td>
+</tr><tr>
+<td><code>* </code>Unordered List Item<br><code>0 </code>Ordered List Item</td>
+<td>Consecutive lines beginning with '<code>* </code>' and '<code>0 </code>' become lists; nest lists with '<code>** </code>' and '<code>00 </code>', etc. Ordered items can begin with one or more digits, optionally followed by a <code>:</code>, <code>)</code>, <code>&gt;</code>, <code>+</code>, or <code>-</code>; unordered items can begin with one or more <code>*</code>, <code>+</code>, or <code>-</code>. List items can span lines, provided no line starts with a space.</td>
+</tr><tr>
+<td><code>{=</code> Blockquote <code>=}</code></td>
+<td>Text contained by '<code>{=</code>' and '<code>=}</code>' becomes blockquote. <code>{=</code> must start a line, <code>=}</code> must end a line; <code>=}</code> can span paragraphs.</td>
+</tr><tr>
+<td><code>[</code>img /path/to/image.gif<code>]</code></td><td>brackets enclose "img" and a relative-to-root image path. Image dimensions and attributes are optional.</td>
+</tr><tr>
+<td><code>[</code>http://path<code>]</code></td><td>brackets enclose single-line url, beginning with "htttp:", "ftp:", or "irc:". Attributes are optional.</td>
+</tr><tr>
+<td><code>[</code>link name http://path<code>]</code></td><td>brackets enclose single-line words and url; url begins with "http:", "ftp:", or "irc:". Attributes are optional.</td>
+</tr><tr>
+<td><code>[</code>link name //rel/to/site<code>]</code><br><code>[</code>link name :/rel/to/blog<code>]</code></td><td>url can also be relative-to-root (<code>//</code>) or relative-to-blog (<code>:/</code>). Attributes are optional.</td>
+</tr><tr>
+<td nowrap><code>[</code>#anchor_name<code>]</code><br><code>[</code>link name ##anchor_name<code>]</code></td><td>brackets enclose '#' and single-word anchor name; brackets enclose single-line link name and '##' and single-word anchor name; attributes are optional.</td>
+</tr><tr>
+<td><code>= </code>Headline 1-6</td><td>equals sign(s) and one space preceed text at start of single line; the number of "=" sets the "number" of the head; e.g. "= " yields H1 while "==== " yields H4. Equals signs can balance on the far side of the text; e.g. "=== Topic" is the same as "=== Topic ===".</td>
+</tr><tr>
+<td><code>----</code></td><td>four dashes at start of line followed by newline becomes a horizontal rule</td>
+</tr><tr>
+<td><code>!</code></td><td>exclamation point escapes ("negates") any of these effects by preceding the leading mark.</td>
+</tr></table>
+</p>
+
+<p>
+The file <a href="/downloads/blox_markup_guide.txt" target="_blank">blox markup guide.txt</a> is a complete guide to <tt>blox</tt> markup notation. Set <code>$markup_active</code> and <code>$break_singles</code> to <code>1</code> in <tt>blox</tt>, and drop the file into your datadir; when you refresh your blog you'll see many samples of working and non-working markup. View the rendered markup <a href="/cgi-bin/blosxom.cgi/dltext/blox_markup_guide.demo" target="_blank">here</a>.
+</p>
+
+<p>
+<b><u><a name="noblox" class="anchor">Using a noblox file</a></u> : </b>There may be times when you want <tt>blox</tt> to skip an entry file, or a whole folder of entry files. One method is to put <code>&lt;--noblox--&gt;</code> as the first line of body text in an entry file...but for existing files, this means changing the mod time, thus changing the post's position in your blog (p'bly). To avoid this, you can also skip a file by entering its path (from your Blosxom datadir) as a line in a text file named "noblox" (no quotes).
+</p>
+
+<p>
+The <code>$use_noblox_file</code> variable tells <tt>blox</tt> whether or not to spend time looking at a <code>noblox</code> file; the <code>$noblox_path</code> variable tells <tt>blox</tt> where to look for the <code>noblox</code> file.
+</p>
+
+<p class="downtight">
+To use a <code>noblox</code> file, first create a text file named "<b>noblox</b>" (without the quotes) in the "<b>state</b>" dir of your Blosxom plugins directory; on individual lines in this file, list directories or files that <tt>blox</tt> should skip over. The paths you enter should start where <code>$blosxom::datadir</code> leaves off. Here are two samples -- note the format for directories:<pre>&nbsp;&nbsp;&nbsp;dirname/
+&nbsp;&nbsp;&nbsp;dirname/filename.ext</pre>
+</p>
+
+<p>
+Here's an example. Let's say the path to your Bloxsom datadir is:<br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;/var/www/html/my_domain.net/blosxom</code><br>
+and you want <tt>blox</tt> to skip the file at:<br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;/my_domain.net/blosxom/docs/tech/projects/time_machine.txt</code><br>
+you would enter this on a line in the <code>noblox</code> file:<br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;docs/tech/projects/time_machine.txt</code><br>
+To skip the entire "projects" directory, you would enter this on a line in the <code>noblox</code> file:<br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;docs/tech/projects/</code>
+</p>
+
+<p>
+If certain files or directories within a noblox directory need to use <tt>blox</tt>, you can "un-ignore" them by prepending a "!" (no quotes) to their path. For example, let's say that everything in the<br> <code>&nbsp;&nbsp;&nbsp;&nbsp;/docs/tech directory</code><br>
+could be ignored, except for the files in<br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;/docs/tech/projects directory</code><br>
+Your noblox entries would look like this:<br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;docs/tech/</code><br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;!docs/tech/projects/</code><br>
+Now, every entry file in <code>/docs/tech/programming</code> and <code>/docs/tech/news</code> will 
+be ignored, but the files in the <code>/docs/tech/projects</code> directory will be 
+handled by <tt>blox</tt>.
+<br><br>
+NOTE: a noblox comment within an entry file always "trumps" an unignore path in the noblox file.
+</p>
+
+<p>
+<b><u>Playing nice with other plugins</u> : </b>The <code>$play_nice</code> variable lets you turn off the expected <tt>blox</tt> behavior of ignoring stories that contain a <code>$meta::markup</code> value. Most users should leave this value set to 1: <br>
+<code>&nbsp;&nbsp;&nbsp;&nbsp;my $play_nice = 1;</code><br>
+</p>
+
+<p>
+<b><u>Advanced markup config</u> : </b>Several settings let you control the tags generated by <tt>blox</tt> markup. Tag elements can be set for the four "character styles" italic (<code>$i_tag</code>; normally "i"), bold (<code>$b_tag</code>; normally "b"), underline(<code>$u_tag</code>; normally "u"), and monospaced (<code>$mono_tag</code>; normally "code"). For instance, you might want to use <code>em</code> as the italics tag; or <code>strong</code> as the bold tag, or <code>tt</code> or <code>kbd</code> as the monospaced tag.
+</p>
+
+<p>
+Setting the <code>$use_xhtml_tags</code> variable to <code>1</code> tells blox to close the so-called "empty" tags <code>&lt;hr&gt;</code>, <code>&lt;br&gt;</code>, and <code>&lt;img&gt;</code> with "<code> /&gt;</code>" (XHTML) instead of the "normal" "<code>&gt;</code>" (HTML).
+</p>
+
+<p>
+Normally, <tt>blox</tt> is "loose" and doesn't add close tags to list items; setting the <code>$close_list_item</code> variable to <code>1</code> will add <code>&lt;/li&gt;</code> tags to list items.
+</p>
+
+<p>
+Normally, <tt>blox</tt> is "loose" and doesn't add link text to anchors (e.g. <code>&lt;a href="#top&gt;&lt;/a&gt;</code>); setting the <code>$anchor_text</code> variable to <code>1</code> will add a non-breaking space (<code>&amp;nbsp;</code>) as link text, yielding <code>&lt;a href="#top&gt;&amp;nbsp;&lt;/a&gt;</code>.
+</p>
+
+<p>
+<b>More info on linebreaks</b><br>
+<tt>blox</tt> always adds <code>&lt;br&gt;</code> tags to multi-line list items, regardless of the <code>$break_singles</code> setting. Only <code>&lt;br&gt;</code> is used; your <code>$break</code> setting is ignored (but see below).
+</p>
+
+<p>
+When <code>$use_xhtml_tags</code> is set to <code>1</code>, <tt>blox</tt> changes the list item break tag to <code>&lt; /br&gt;</code> automatically. Likewise, <tt>blox</tt> will automatically change your <code>$break</code> tag when <code>$use_xhtml_tags</code> is set; even if you've changed <code>$break</code> to <code>&lt;br clear="all"&gt;</code>, <tt>blox</tt> will change it to <code>&lt;br clear="all" /&gt;</code>. (Specifically, if your <code>$break</code> tag starts with "<code>&lt;br</code>", <tt>blox</tt> will close it with "<code> /&gt;</code>" when <code>$use_xhtml_tags</code> is set.)
+</p>
+
+<div class="toplink" align="right"><a href="#top"><img src="top.gif" border="0"></a></div>
+<p><hr></p>
+
+
+<h3>Usage</h3>
+<p>
+<b>When typing entry files,</b> just ignore making paragraph tags and leave a blank line between paragraphs. To use a tag at the start or end of a paragraph and still have <tt>blox</tt> insert a paragraph tag, add a single space character before or after that tag. Use the markup notation to avoid even more html coding; note that leading or trailing spaces are <i>not </i>required when paragraphs begin or end with markup.
+</p>
+
+<p>
+To have <tt>blox</tt> ignore (skip over) files, add a <code>&lt;!--noblox--&gt;</code> comment to the file, or include its path in a <code>noblox</code> file in your plugins state directory.
+
+<p class="downtight">
+&#149;&nbsp;<b>Here's an example.</b> Let's say that your paragraph tags are &lt;p> and &lt;/p>, and here's your entry file text:
+<pre> &lt;span class="initial_caps">Each entry starts&lt;/span> with a 
+few words in bold all-caps. Subsequent topic-introducing 
+paragraphs are called out by opening with a few bold words. 
+Put a space before the opening SPAN tag, and blox will still 
+add an open-P tag.
+
+See how this paragraph begins with normal styling...only the first 
+paragraph gets the razzle-dazzle.
+
+ &lt;b>Here's a new idea&lt;/b>, so the first few words are wrapped 
+in a &lt;b> tag. A space is added before the tag, so that blox 
+will add an open-P tag to this block.
+
+&lt;blockquote>
+Here's a blockquote; we'd just as soon not have blox wrap a 
+'paragraph' tag around it, so we make sure there are no spaces
+before or after its tags.
+&lt;/blockquote>
+
+That's the end of this entry. (To make sure blox puts a close-P 
+tag on this block, put a space character after this &lt;/em> tag)
+&lt;em>Bye!&lt;/em> </pre>
+
+(Note that there is a space char at the very end of the entry)
+</p>
+
+<p class="downtight">
+&#149;&nbsp;Here's the html <tt>blox</tt> generates for that entry:<br>
+(Note that leading and trailing spaces have been removed)
+<pre>&lt;p>
+&lt;span class="initial_caps">Each entry starts&lt;/span> with a 
+few words in bold all-caps. Subsequent topic-introducing 
+paragraphs are called out by opening with a few bold words. 
+Put a space before the opening SPAN tag, and blox will still 
+add an open-P tag.
+&lt;/p>
+
+&lt;p>
+See how this paragraph begins with normal styling...only the first 
+paragraph gets the razzle-dazzle.
+&lt;/p>
+
+&lt;p>
+&lt;b>Here's a new idea&lt;/b>, so the first few words are wrapped 
+in a &lt;b> tag. A space is added before the tag, so that blox 
+will add an open-P tag to this block.
+&lt;/p>
+
+&lt;blockquote>
+Here's a blockquote; we'd just as soon not have blox wrap a 
+'paragraph' tag around it, so we make sure there are no spaces
+before or after its tags.
+&lt;/blockquote>
+
+&lt;p>
+That's the end of this entry. (To make sure blox puts a close-P 
+tag on this block, put a space character after this &lt;/em> tag)
+&lt;em>Bye!&lt;/em> 
+&lt;/p></pre>
+</p>
+
+<!--3e9-->
+<p class="downtight">
+&#149;&nbsp;And here's how the entry renders in a browser:<br>
+<div style="border:1px solid #99ccff; padding:4px 6px;"><span style="font-weight:bold;text-transform:uppercase;color:#efef00;font-size:120%;">Each entry starts</span> with a 
+few words in bold all-caps. Subsequent topic-introducing 
+paragraphs are called out by opening with a few bold words. 
+Put a space before the opening SPAN tag, and blox will still 
+add an open-P tag.
+</p>
+
+<p>
+See how this paragraph begins with normal styling...only the first 
+paragraph gets the razzle-dazzle.
+</p>
+
+<p>
+<b>Here's a new idea</b>, so the first few words are wrapped 
+in a &lt;b> tag. A space is added before the tag, so that blox 
+will add an open-P tag to this block.
+</p>
+
+<blockquote>
+Here's a blockquote; we'd just as soon not have blox wrap a 
+'paragraph' tag around it, so we make sure there are no spaces
+before or after its tags.
+</blockquote>
+
+<p>
+That's the end of this entry. (To make sure <tt>blox</tt> puts a close-P 
+tag on this block, put a space character after this &lt;/em> tag)
+<em>Bye!</em>
+</p></div>
+
+<p class="downtight">
+<br>
+&#149;&nbsp;<b>Things get even easier </b>when you use the <tt>blox</tt> markup; note the changes in the entry:<br>
+<pre> &lt;span class="initial_caps">Each entry starts&lt;/span> with a 
+few words in bold all-caps. Subsequent topic-introducing 
+paragraphs are called out by opening with a few bold words. 
+Put a space before the opening SPAN tag, and blox will still 
+add an open-P tag.
+
+See how this paragraph begins with normal styling...only the first 
+paragraph gets the razzle-dazzle.
+
+*Here's a new idea*, so the first few words are wrapped 
+in a &lt;b> tag by the "*" markup. No space is needed before 
+the tag, because there is no actual &lt; at the start of the block.
+
+{=
+Here's markup for a blockquote; since it's separated from surrounding 
+text by blank lines, blox will not wrap it in 'paragraph' tags.
+=}
+
+That's the end of this entry. (blox needs no help in closing this 
+paragraph, since it ends with markup instead of &gt;.) /*Bye!*/</pre>
+</p>
+
+
+<p class="downtight">
+&#149;&nbsp;Here's how the entry renders in a browser:<br>
+<div style="border:1px solid #99ccff; padding:4px 6px;"><span style="font-weight:bold;text-transform:uppercase;color:#efef00;font-size:120%;">Each entry starts</span> with a 
+few words in bold all-caps. Subsequent topic-introducing 
+paragraphs are called out by opening with a few bold words. 
+Put a space before the opening SPAN tag, and blox will still 
+add an open-P tag.
+</p>
+
+<p>
+See how this paragraph begins with normal styling...only the first 
+paragraph gets the razzle-dazzle.
+</p>
+
+<p>
+<b>Here's a new idea</b>, so the first few words are wrapped 
+in a &lt;b> tag by the "*" markup. No space is needed before 
+the tag, because there is no actual &lt; at the start of the block.
+</p>
+
+<blockquote>
+Here's markup for a blockquote; since it's separated from surrounding 
+text by blank lines, blox will not wrap it in 'paragraph' tags.
+</blockquote>
+
+<p>
+That's the end of this entry. (blox needs no help in closing this 
+paragraph, since it ends with markup instead of <code>&gt;</code>.) <i><b>Bye!</b></i>
+</p></div>
+
+<div class="toplink" align="right"><a href="#top"><img src="top.gif" border="0"></a></div>
+<p><hr></p>
+
+
+<h3>Discussion</h3>
+<p>
+<tt>blox</tt> makes typing entry files easier by adding three levels of automated html markup. <tt>blox</tt> always wraps "paragraph" tags around blocks of entry file text. Optionally, <tt>blox</tt> will add &lt;br&gt; tags after single line breaks. As a final option, <tt>blox</tt> can render headline, blockquote, list, rule, image, link, italic, bold, underline, and monospace tags from a simple markup notation. <tt>blox</tt> will not interfere with existing tags.
+</p>
+
+<!--p class="downtight">
+<tt>blox</tt> is intended to make life simpler for folks who normally add html code to their entry files by hand, by eliminating the need to wrap each "paragraph" of text in a surrounding block tag such as <code>&lt;p></code> or <code>&lt;blockquote></code>.-->
+
+<p class="downtight">
+<tt>blox</tt> "paragraph" markup operates according to the following rules:
+<ul><li>2 or more consecutive blank lines constitute a "paragraph boundary"
+<li>if the character preceeding a boundary (end of paragraph) is anything but <code>></code>, <tt>blox</tt> will place your designated "close tag" on a new line at the end of the paragraph; or
+<li>if the character following the boundary (start of paragraph) is anything but <code>&lt;</code>, <tt>blox</tt> will place your designated "open tag" on a new line at the start of the paragraph; or
+<li>if <tt>blox</tt> encounters <code>></code> or <code>&lt;</code> at a boundary, as described above, it will skip that spot
+</ul>
+These rules allow <tt>blox</tt> to run fast and lean, while not interfering with existing tags. To "force" <tt>blox</tt> to add an open- or close-paragraph tag to blocks that start or end with a tag, just add a space before or after the tag.
+</p>
+
+<p class="downtight">
+<tt>blox</tt> "linebreak" markup operates according to the following rules:
+<ul><li>consecutive lines constitute a "linebreak boundary"
+<li>if the character preceeding a boundary (end of line) is anything but <code>></code>, and if the character following the boundary (start of next line) is anything but <code>&lt;</code>, <tt>blox</tt> will place your designated "break tag" at the end of the line; or
+<li>if <tt>blox</tt> encounters <code>></code> or <code>&lt;</code> at a boundary, as described above, it will skip that spot
+</ul>
+Again, these rules allow <tt>blox</tt> to run very fast, while not interfering with existing tags. To "force" <tt>blox</tt> to add a "break" tag to line ends that end with a tag or are followed by a tag, just add a space after or before the tag.
+</p>
+
+<p class="downtight">
+<tt>blox</tt> markup notation operates according to the following rules:
+<ul><li>block-like markup must begin and end one or more lines; this includes heads, rules, blockquotes, lists, anchors, and reference links
+<li>inline-like markup must surround single-line words; this includes links, images, italics, bold, and underline
+<li>monospace markup can begin anywhere, span multiple lines, and end anywhere
+<li>block-like markup abutting other text will be wrapped in a paragraph; block-like markup surrounded by blank lines will "stand alone."
+<li>since markup notation does not use <code>&lt;</code> or <code>&gt;</code>, there is no need to add spaces where markup begins or ends a block.
+</ul>
+</p>
+
+<!--p>
+Compared to other markup plugins, <tt>blox</tt> is a 98-pound weakling with a black belt in Blosxom Fu ;-) By not analyzing html tags, <tt>blox</tt> occupies a minimal memory footprint. By using no external modules, <tt>blox</tt> casts virtually no shadows in memory. By leaving existing tags alone and concentrating on simple substitutions, <tt>blox</tt> runs fast.
+</p-->
+
+<p>
+Compared to other formatters, <tt>blox</tt> runs very fast, in a very small footprint. This is because <tt>blox</tt> doesn't bother trying to figure out existing html tags; it avoids them like the plague. This lets <tt>blox</tt> rattle off a mess of substitutions without spending time and space analyzing and storing html. (White lie: <tt>blox</tt> treats <code>&lt;PRE&gt;</code> blocks special; they are pulled out of the entry before processing and restored after processing, to ensure that they are not changed.)
+</p>
+
+<p>
+So that's why <tt>blox</tt> has the silly requirement of adding a space to leading or trailing tags in order to get paragraph open- or close-tags -- you're paying the (small) price of the memory and time benefits granted by total "tag-avoidance" ;-)
+</p>
+
+<!--p class="downtight">
+Thus, <tt>blox</tt> works best in the following conditions:
+<ul><li>your entry files are typed in ordinary ascii, not unicode; Unix line-endings are used
+<li>entry file text is shoved up against the left margin -- you don't indent your entry file text with spaces or tabs
+<li>html tags within your entry file text are "well formed" -- they immediately border the text they enclose, and there are no extraneous tags
+</ul>
+</p-->
+
+<div class="toplink" align="right"><a href="#top"><img src="top.gif" border="0"></a></div>
+<p><hr></p>
+
+
+<h3>blox Limitations &amp; Compatibility</h3>
+<p>
+<tt>blox</tt> expects plain ASCII text; it has no added knowldege of UTF-8, Unicode, etc. It has been developed and tested exclusively in an "en-US", "charset=iso-8859-1" environment. It has never seen <code>locale</code>.
+</p>
+
+
+
+<!--p class="downtight">
+To best use <tt>blox</tt>, consider the two kinds of entry files it encounters:
+<ul><li><b>new files </b>that can take maximum advantage of <tt>blox</tt> formatting, and 
+<li><b>existing files </b>that are already loaded with html markup</ul>
+</p-->
+
+<p>
+<b>With new entry files,</b> you can simply ignore setting tags for "paragraphs," "breaks" and other common elements, and focus on tags such as <code>&lt;span></code>, <code>&lt;table></code>, <code>&lt;div></code>, etc.) and -- of course -- writing your entry.
+</p>
+
+<p class="downtight">
+<b>With existing entry files,</b> <tt>blox</tt> may be "tricked" into producing "phantom" paragraph tags by certain machine-generated or messy markup. In these cases, it's better to have <tt>blox</tt> skip the file. This can be accomplished in two ways:<ol>
+ <li>set a line in the story to <code>"&lt;!--noblox-->"</code> (without the quotes); and of course, add formatting, since <tt>blox</tt> will now skip this file ;-)
+ <li>to avoid modifying entry files, create a text file named "<b>noblox</b>" (again, without the quotes) in the "<b>state</b>" dir of your Blosxom plugins directory; on individual lines in this file, list directories or files that <tt>blox</tt> should skip over. Here are two examples -- note the format for directories:<pre>&nbsp;&nbsp;&nbsp;dirname/
+&nbsp;&nbsp;&nbsp;dirname/filename.ext</pre>
+</ol>
+(See the <a href="#noblox" class="std">Using a noblox file</a> part of the <b>Options</b> section, above, for complete information on ignoring and un-ignoring files.)
+</p>
+
+<p class="downtight">
+<b>Likewise,</b> there may be times when you want <tt>blox</tt> to ignore markup but still add paragraph (and/or break) tags. This can be accomplished in three ways:<ol>
+ <li>set a line in the story to <code>"&lt;!--nobloxmarkup-->"</code> (without the quotes)
+ <li>if you use the <tt>meta</tt> plugin, add a <code>meta-markup</code> variable to the entry; set the value to anything other than "blox" (e.g. <code>meta-markup:noblox</code>)
+ <li>if you use the <code>config</code> plugin, create a config file that sets <code>$blox::markup_active</code> to <code>0</code>
+</ol>
+NOTE: there is not yet a "nobloxmarkup file" feature.
+</p>
+
+<!--b>NOTE: </b>Previous versions of <tt>blox</tt> added phantom paragraph tags to certain blocks enclosed by <code>&lt;PRE&gt;</code> tags; no more! <tt>blox</tt> now handles <code>&lt;PRE&gt;</code> tags with aplomb, eliminating most of the need for ignoring entry files. Check it out.
+</p>
+
+<p>
+<b>When using a "<b>noblox</b>" file, </b>list paths from where <code>$blosxom::datadir</code> leaves off. The file extension should be the same as <code>$blosxom::file_extension</code> value (p'bly "<b>txt</b>").
+</p>
+
+<dl>
+<dt class="plain">&#149;&nbsp;For example (a typical host, perhaps), if your <code>$blosxom::datadir</code> was:<br>
+<code>/var/www/html/somewhere.net/blosxom/docs</code><br>
+and you wanted blox to skip over the file:<br>
+<code>/somewhere.net/blosxom/docs/tech/projects/time_machine.txt</code><br>
+then your "noblox" entry for the file would look like this:</dt>
+  <dd class="mono">tech/projects/time_machine.txt</dd>
+</dl>
+
+<dl>
+<dt>To have blox skip the whole <code>/projects</code> directory:</dt>
+  <dd class="mono">tech/projects/</dd>
+</dl>
+
+<dl>
+<dt>To have blox skip the whole <code>somewhere.net/blosxom/docs/tech</code> directory:</dt>
+  <dd class="mono">tech/</dd>
+</dl>
+
+<dl>
+<dt>If your <code>$blosxom::datadir</code> was:<br>
+<code>/var/www/html/somewhere.net/blosxom</code><br>
+then your "noblox" lines for the above example would look like this:</dt>
+  <dd class="mono">docs/tech/projects/time_machine.txt</dd>
+  <dd class="mono">docs/tech/projects/</dd>
+  <dd class="mono">docs/tech/</dd>
+</dl-->
+
+<p><hr class="seemore"></p>
+
+<p>
+<b>The best way to assess <tt>blox</tt>' </b>compatibility with your existing entry files is to try it out; if entries don't look good, then adios, <tt>blox</tt>! (Remember: <tt>blox</tt> does nothing to your actual <b>files</b> -- any mistakes it makes with your entries only appear in Blosxom's output.
+</p>
+
+<p>
+NOTE: if you are using the "blok" plugin, you should remove it; its functionality is built into <tt>blox</tt>. You can either delete blok, or change its name to "<code>blok-</code>".
+</p>
+
+<h3>Bugs</h3>
+<p>
+Address bug reports and comments to the Blosxom mailing list:<br>
+http://www.yahoogroups.com/group/blosxom
+</p>
+
+<h3>License &amp; Copyright</h3>
+<p>
+this Blosxom Plug-in<br>
+Copyright 2003-2004, Stu MacKenzie (S2_Mac, HyperSTUff)
+</p>
+
+<p>
+Version: v0.99 2004-10-30 (2004-10-24 0.97-11e)<br>
+License: MIT/Public Domain<br>
+See plugin file for complete details and restrictions
+</p>
+
+</div>
+</div>
+
+</body>
+</html>

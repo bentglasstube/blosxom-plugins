@@ -1,0 +1,141 @@
+# Blosxom Plugin: prefs
+# Author(s): Barijaona Ramaholimihaso <prefs@barijaona.com>
+# based on config plugin authored by Rael Dornfest <rael@oreilly.com> 
+# Version: 2005-11-20
+# Documentation: See the bottom of this file or type: perldoc prefs
+
+# WARNING: DO NOT PUT PREFERENCE FILES IN WORLD-READABLE PLACES SUCH AS WITHIN
+# YOUR DOCUMENT ROOT.  IF YOUR $DATADIR IS LOCATED WITHIN YOUR DOCUMENT ROOT,
+# I HEARTILY ADVISE THAT YOU MOVE IT.  WHILE MOST OF THE CONFIGURATION 
+# DIRECTIVES ARE INNOCUOUS ENOUGH, IT'S A SLIPPERY SLOPE AND YOU MIGHT WELL
+# FIND YOU'VE EXPOSED YOUR STATIC PASSWORD OR INTERNAL DIRECTORY STRUCTURE
+# TO ANYONE WITH A WEB BROWSER!
+
+package prefs;
+
+# --- Configurable variables -----
+# where are located the preference files
+
+# I prefer to have mines in my flavour directory
+# $basepath = "/Users/barijaon/blosxom/flavours";
+
+$basepath = $blosxom::datadir unless defined $basepath ;
+# --------------------------------
+
+sub start {
+  1;
+}
+
+sub head {
+
+$path='/';
+$path_find = $blosxom::path_info ;
+do {
+      $file = "$basepath$path"."pageprefs";
+      if (-r $file) { unless ($return = do $file) {
+            warn "Couldn't parse $file: $@" if $@;
+        }}
+
+
+      $file .= ".$blosxom::flavour";
+      if (-r $file) { unless ($return = do $file) {
+            warn "Couldn't parse $file: $@" if $@;
+        }}
+	}
+		while ($path_find =~ s#/?([^/]*)##) and $1 and ($path .= $1."/" );
+1;
+}
+
+sub story {
+
+my ($pkg, $path_find, $filename, $story_ref, $title_ref, $body_ref)= @_;
+$path='/';
+do {
+      $file = "$basepath$path"."storyprefs";
+      if (-r $file) { unless ($return = do $file) {
+            warn "Couldn't parse $file: $@" if $@;
+        }}
+
+
+      $file .= ".$blosxom::flavour";
+      if (-r $file) { unless ($return = do $file) {
+            warn "Couldn't parse $file: $@" if $@;
+        }}
+	}
+		while ($path_find =~ s#/?([^/]*)##) and $1 and ($path .= $1."/" );
+1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: prefs
+
+=head1 SYNOPSIS
+
+Override Blosxom's inline configuration settings on a per-directory, per-flavour, and per-directory-per-flavour basis.
+
+For each generated page, looks for B<pageprefs> and B<pageprefs.flavour> files which should contain valid Perl instructions.
+
+For each story, looks for B<storyprefs> and B<storyprefs.flavour> files which should contain valid Perl instructions.
+
+Prefs has a purpose very similar to Rael Dornfest's B<config> plugin, but was written because in static rendering, B<config> uses the same config file for all pages.
+
+When Blosxom process a page or a story, all prefs files (pageprefs, pageprefs.flavour, storyprefs, storyprefs.flavour) in the directory tree for this page or story are executed. Prefs files for a specific flavour override prefs files applying to all flavours, and prefs files in subdirectories override prefs files in their parents.
+
+pageprefs are executed once per page (when the head of the page is generated), and storyprefs are executed once per story (allowing a per story tuning inside a page).
+
+It is recommanded that you prefix the name of the plugin with a number (for instance, naming it 10prefs) so that it loads before other Blosxom plugins (but after the B<meta> plugin if you use it).
+
+=head1 VERSION
+
+2005-11-20
+
+Version number is the date on which this version of the plug-in was created.
+
+=head1 AUTHOR
+
+Barijaona Ramaholimihaso <prefs@barijaona.com>
+
+Prefs is based on the config plugin written by Rael Dornfest  <rael@oreilly.com>, http://www.raelity.org/
+
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to <prefs@barijaona.com> or to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Prefs plugin
+Copyright 2003-2005, Barijaona Ramaholimihaso
+
+Blosxom and config Plug-in
+Copyright 2003, Rael Dornfest 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

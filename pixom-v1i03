@@ -1,0 +1,1125 @@
+# Blosxom Plugin: Pixom
+# Author: Buzz Andersen (pixom@scifihifi.com)
+# Version: 1.0+3i (June 22, 2004)
+# Documentation: See the bottom of this file or type: perldoc pixom
+
+package pixom;
+
+# --- User Configurable Variables ---
+
+my($useImageMagick) = 1;
+
+#This is where pixom caches processed images
+my($cachedImageDirectory) = "/home/user/web/pixom-cache";
+
+#This is the publicly accessible URL of the cache directory
+my($cachedImageURL) = "/pixom-cache";
+
+# This uses strftime() tokens (see http://www.opengroup.org/onlinepubs/007908799/xsh/strftime.html)
+my($displayExifDateFormat) = "%A, %D, %I:%M %p";
+
+# The number of images per row
+my($imagesPerRow) = 2;
+
+# Default image processing preferences (only valid if using ImageMagick)
+my(%defaultImageWidth) = (
+	thumb => 150,
+	large => 300,
+	full => 640
+);
+
+my(%defaultQualityPercent) = (
+	thumb => 100,
+	large => 90,
+	full => 90
+);
+
+my(%defaultSharpenLevel) = (
+	thumb => 1,
+	large => 1,
+	full => 1
+);
+
+my(%defaultShouldNormalize) = (
+	thumb => 0,
+	large => 0,
+	full => 0
+);
+
+my(%defaultShouldEqualize) = (
+	thumb => 0,
+	large => 0,
+	full => 0
+);
+
+# --- Default, on-board templates ---
+
+my($galleryHeadTemplate) = <<'GALLERY_HEAD_TEMPLATE';
+<p align="center">
+<table border="0" cellpadding="2" cellspacing="0">
+	<tr>
+GALLERY_HEAD_TEMPLATE
+
+my($galleryImageTemplate) = <<'GALLERY_IMAGE_TEMPLATE';
+		<td><a href="$pixom::galleryPageURL?image=$pixom::originalImageName"><img src="$pixom::galleryCacheURL/$pixom::thumbImageName" width="$pixom::thumbImageWidth" height="$pixom::thumbImageHeight" alt="$pixom::originalImageName" style="border: 1px solid #000000; padding: 0px; margin: 0px;"></a></td>
+GALLERY_IMAGE_TEMPLATE
+
+my($galleryRowEndTemplate) = <<'GALLERY_ROW_END_TEMPLATE';
+	</tr>
+	<tr>
+GALLERY_ROW_END_TEMPLATE
+
+my($galleryFootTemplate) = <<'GALLERY_FOOT_TEMPLATE';
+	</tr>
+</table>
+</p>
+GALLERY_FOOT_TEMPLATE
+
+my($singleImageTemplate) = <<'SINGLE_IMAGE_TEMPLATE';
+<p align="center">$pixom::previousImageLink<a href="$pixom::galleryPageURL">&nbsp;&nbsp; gallery &nbsp;&nbsp;</a>$pixom::nextImageLink</p>
+
+<p align="center">
+<a href="$pixom::galleryCacheURL/$pixom::fullImageName"><img src="$pixom::galleryCacheURL/$pixom::largeImageName" width="$pixom::largeImageWidth" height="$pixom::largeImageHeight" alt="$pixom::originalImageName" style="border: 1px solid #000000; padding: 0px; margin: 0px;"></a><br>
+
+<div>
+<strong>Camera:</strong> $pixom::exifInfo{'Model'}<br> 
+<strong>Exposure Date:</strong> $pixom::exifInfo{'Exposure Date & Time'}<br>
+<strong>Aperture:</strong> f$pixom::exifInfo{'Aperture'}<br>
+<strong>Exposure:</strong> $pixom::exifInfo{'Exposure Time'} sec<br>
+<strong>Focal Length:</strong> $pixom::exifInfo{'Focal Length'} mm<br>
+<strong>Metering Mode:</strong> $pixom::exifInfo{'Metering Mode'}<br>
+<strong>Flash:</strong> $pixom::exifInfo{'Flash'}
+</div>
+</p>
+SINGLE_IMAGE_TEMPLATE
+
+my(%nextImageLinkTemplate) = (
+	enabled => <<'NEXT_IMAGE_ENABLED_TEMPLATE',
+<a href="$pixom::galleryPageURL?image=$pixom::nextImageName"> next &gt;&gt;</a>
+NEXT_IMAGE_ENABLED_TEMPLATE
+	disabled => <<'NEXT_IMAGE_DISABLED_TEMPLATE'
+ next &gt;&gt;
+NEXT_IMAGE_DISABLED_TEMPLATE
+);
+
+my(%previousImageLinkTemplate) = (
+	enabled => <<'PREVIOUS_IMAGE_ENABLED_TEMPLATE',
+<a href="$pixom::galleryPageURL?image=$pixom::previousImageName">&lt;&lt; prev </a>
+PREVIOUS_IMAGE_ENABLED_TEMPLATE
+	disabled => <<'PREVIOUS_IMAGE_DISABLED_TEMPLATE'
+&lt;&lt; prev 
+PREVIOUS_IMAGE_DISABLED_TEMPLATE
+);
+
+# --- EXIF Constants ---
+
+my(%exifTag) = (
+	0x010e => "Description",
+	0x010f => "Make",
+	0x0110 => "Model",
+	0x0112 => "Orientation",
+	0x011a => "X Resolution",
+	0x011b => "Y Resolution",
+	0x0128 => "Resolution Unit",
+	0x0132 => "Modification Date & Time",
+	0x0213 => "YCbCr Positioning",
+	0x8769 => "Offset to EXIF Sub IFD",
+	0x829a => "Exposure Time",
+	0x829d => "F-Stop",
+	0x882a => "Time Zone Offset",
+	0x9003 => "Exposure Date & Time",
+	0x9000 => "EXIF Version",
+	0x9004 => "Digitized Date & Time",
+	0x9101 => "Components Configuration",
+	0x9102 => "Compressed Bits Per Pixel",
+	0x9201 => "Shutter Speed",
+	0x9202 => "Aperture",
+	0x9204 => "Exposure Bias",
+	0x9205 => "Maximum Aperture",
+	0x9207 => "Metering Mode",
+	0x9209 => "Flash",
+	0x920a => "Focal Length",
+	0xa001 => "Color Space",
+	0xa002 => "Image Width",
+	0xa003 => "Image Height",
+	0x0131 => "Software",
+	0x8822 => "Exposure Program",
+	0x8827 => "ISO",
+	0x9208 => "Light Source",
+	0x0103 => "Thumbnail Compression Type",
+	0x0201 => "JPEG Thumbnail Offset",
+	0x0202 => "JPEG Thumbnail Length",
+	0x9286 => "User Comment"
+);
+
+my(%lightSource) = (
+	1 => "Daylight",
+	2 => "Flourescent",
+	3 => "Tungsten",
+	10 => "Flash",
+	17 => "Standard Light A",
+	18 => "Standard Light B",
+	19 => "Standard Light C",
+	20 => "D55",
+	21 => "D65",
+	22 => "D75",
+	255 => "Other"
+);
+
+my(%meteringMode) = (
+	0 => "Unknown",
+	1 => "Average",
+	2 => "Center-Weighted Average",
+	3 => "Spot",
+	4 => "Multi-Spot",
+	5 => "Multi-Segment",
+	6 => "Partial",
+	255 => "Other"
+);
+
+my(%exposureProgram) = (
+	1 => "Manual",
+	2 => "Program Normal",
+	3 => "Aperture Priority",
+	4 => "Shutter Priority",
+	5 => "Program Creative",
+	6 => "Program Action",
+	7 => "Portrait",
+	8 => "Landscape"
+);
+
+my(%flashStatus) = (
+	0 => "Off",
+	1 => "Fired",
+	5 => "Fired, strobe return light not detected",
+	7 => "Fired, strobe return light detected",
+	9 => "Fill fired",
+	13 => "Fill fired, strobe return light not detected",
+	15 => "Fill fired, strobe return light detected",
+	16 => "Off",
+	24 => "Auto Off",
+	25 => "Auto fired",
+	29 => "Auto fired, strobe return light not detected",
+	31 => "Auto fired, strobe return light detected",
+	32 => "Not Available"
+);
+
+my(%yCbCrPosition) = (
+	1 => "Centered",
+	2 => "Cosited"
+);
+
+my(%resolutionUnit) = (
+	2 => "Inches",
+	3 => "Centimeters"
+);
+
+my(%compressionType) = (
+	"Uncompressed" => 1,
+	"JPEG" => 6 
+);
+
+my(%dataTypeLength) = (
+	1 => 1,
+	2 => 1,
+	3 => 2,
+	4 => 4,
+	5 => 8,
+	6 => 1,
+	7 => 1,
+	8 => 2,
+	9 => 4,
+	10 => 8,
+	11 => 4,
+	12 => 8
+);
+
+my(%dataTypeTemplate) = (
+	1 => "C",
+	2 => "A",
+	3 => "S",
+	4 => "L",
+	6 => "c",
+	8 => "s",
+	9 => "l",
+	11 => "f",
+	12 => "d"
+);
+
+my(%errorCode) = (
+	0 => "Image file not found or is not readable",
+	-1 => "Invalid start of image (file does not seem to be a valid JPEG)",
+	-2 => "Start of application data not found (file does not seem to contain EXIF data)",
+	-3 => "EXIF identifier not found (file does not seem to contain EXIF data)",
+	-4 => "Unable to determine EXIF data byte order",
+	-5 => "EXIF data doesn't begin with a valid TIFF header"
+);
+
+my($unsignedRationalType) = 5;
+my($signedRationalType) = 10;
+my($undefinedType) = 7;
+my($exifThumbnailDomain) = "Thumbnail";
+
+# --- Other Constants ---
+
+my(@contentTypes) = ("jpg", "jpeg");
+
+my(%viewTypeLabels) = (
+	thumb => "thumb",
+	large => "large",
+	full => "full"
+);
+
+my($imageTypes) = join('|', @contentTypes);
+my($viewTypes) = join('|', keys(%viewTypeLabels));
+
+my($pixomGalleryExtension) = "pixom";
+
+# --- Library Management ---
+
+use strict;
+use CGI;
+use POSIX qw(strftime);
+use Time::Local;
+use File::Copy;
+use File::Path;
+use File::Basename;
+
+use vars qw/$galleryPageURL $galleryCacheURL $originalImageName $fullImageName $fullImageWidth $fullImageHeight $largeImageName $largeImageWidth $largeImageHeight $thumbImageName $thumbImageWidth $thumbImageHeight %exifInfo $previousImageName $nextImageName $previousImageLink $nextImageLink $gallery/;
+
+sub loadOptionalModules {
+	if ($useImageMagick && eval "require Image::Magick") {
+		Image::Magick->import();
+	}
+	else {
+		$useImageMagick = 0;
+	}
+}
+
+# --- Blosxom Hooks ---
+
+sub start {
+	loadOptionalModules();
+	return $blosxom::static_or_dynamic eq 'dynamic' ? 1 : 0;
+}
+
+sub story {
+ 	my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+	undef($pixom::gallery);
+
+	my($absoluteGalleryPath) = $blosxom::datadir.$path."/".$filename.".".$pixomGalleryExtension;
+
+	if (!-e $absoluteGalleryPath) {
+		return 0;
+	}
+  
+	if (CGI::param('image')) {
+		$pixom::gallery = buildGalleryView(selectedImage=>CGI::param('image'), privateGalleryAbsolutePath=>$absoluteGalleryPath, publicGalleryURLRoot=>$blosxom::url, publicGalleryURLPath=>$path, publicGalleryURLFilename=>$filename.".".$blosxom::flavour);
+	}
+	else {
+		$pixom::gallery = buildGalleryView(privateGalleryAbsolutePath=>$absoluteGalleryPath, publicGalleryURLRoot=>$blosxom::url, publicGalleryURLPath=>$path, publicGalleryURLFilename=>$filename.".".$blosxom::flavour);
+	}
+
+	return 1;
+}
+
+# --- Gallery Processing Functions ---
+
+sub buildGalleryView {
+	my(%parameters) = @_;
+	
+	my($selectedImage) = $parameters{selectedImage};
+	my($galleryPath) = $parameters{privateGalleryAbsolutePath};
+	my($URLRoot) = $parameters{publicGalleryURLRoot};
+	my($URLPath) = $parameters{publicGalleryURLPath};
+	my($URLFilename) = $parameters{publicGalleryURLFilename};
+	
+	$galleryPageURL = "$URLRoot$URLPath/$URLFilename";
+
+	my($galleryCode);
+
+	if (!-w $cachedImageDirectory) {
+		warn "Can't cache images to cached image directory $cachedImageDirectory";
+		return;
+	}
+
+	my(@images) = getImagesAtPath($galleryPath);
+
+	if (defined($selectedImage)) {
+		$originalImageName = $selectedImage;
+		
+		$previousImageName = getPreviousImage($originalImageName, @images);
+		$nextImageName = getNextImage($originalImageName, @images);
+		
+
+		$previousImageLink = interpolateTemplate($previousImageLinkTemplate{defined($previousImageName) ? "enabled" : "disabled"});
+		$nextImageLink = interpolateTemplate($nextImageLinkTemplate{defined($nextImageName) ? "enabled" : "disabled"});
+
+		processGalleryImage($galleryPath, $selectedImage, $viewTypeLabels{large});
+		$galleryCode = interpolateTemplate($singleImageTemplate);
+	}
+	else {
+		$galleryCode = $galleryHeadTemplate;
+
+		# Prevent divide by zero
+		if ($imagesPerRow < 1) {
+			$imagesPerRow = 1;
+		}
+
+ 		my($i);
+		
+		for ($i = 0; $i <= $#images; $i++) {
+			$originalImageName = $images[$i];
+
+			$previousImageName = getPreviousImage($originalImageName, @images);
+			$nextImageName = getNextImage($originalImageName, @images);
+
+			processGalleryImage($galleryPath, $originalImageName, $viewTypeLabels{thumb});
+
+			$galleryCode .= interpolateTemplate($galleryImageTemplate);
+
+			if (($i < $#images) && ($i + 1) % $imagesPerRow == 0) {
+				$galleryCode .= $galleryRowEndTemplate;
+			}
+		}
+		
+		$galleryCode .= $galleryFootTemplate;
+	}
+
+	return $galleryCode;
+}
+
+sub processGalleryImage {
+	my($galleryPath, $image, $viewType) = @_;
+
+	my($sourcePath) = "$galleryPath/$image";
+	my($name, $path, $extension) = fileparse($sourcePath, '\..*');
+	my($galleryName) = (fileparse($galleryPath))[0];
+	my($outputDirectory) = "$cachedImageDirectory/$galleryName";
+
+	$largeImageName = "$name.".$viewTypeLabels{large}.$extension;
+	$thumbImageName = "$name.".$viewTypeLabels{thumb}.$extension;
+	$fullImageName = "$name.".$viewTypeLabels{full}.$extension;
+	$galleryCacheURL = "$cachedImageURL/$galleryName";
+
+	my($largeOutputPath) = "$outputDirectory/$largeImageName";
+	my($fullOutputPath) = "$outputDirectory/$fullImageName";
+	my($thumbOutputPath) = "$outputDirectory/$thumbImageName";
+
+	if (!cacheImage($sourcePath, $thumbOutputPath, $viewTypeLabels{thumb}, \$thumbImageWidth, \$thumbImageHeight)) {
+		warn("Unable to cache thumbnail representation to $thumbOutputPath");
+		return 0;
+	}
+
+	if (!cacheImage($sourcePath, $largeOutputPath, $viewTypeLabels{large}, \$largeImageWidth, \$largeImageHeight)) {
+		warn("Unable to cache large representation to $largeOutputPath--using thumbnail");
+		$largeImageName = $thumbImageName;
+	}
+
+	if (!cacheImage($sourcePath, $fullOutputPath, $viewTypeLabels{full}, \$fullImageWidth, \$fullImageHeight)) {
+		warn("Unable to cache full representation to $fullOutputPath--using large");
+	}
+
+	%exifInfo = getExifHashFromFile("$galleryPath/$originalImageName", 1);
+	
+	return 1;
+}
+
+sub cacheImage {
+	my($sourcePath, $destinationPath, $viewType, $widthRef, $heightRef) = @_;
+	
+	my($destinationDirectory) = dirname($destinationPath);
+	my($sourceDirectory) = dirname($sourcePath);
+	my($outputName) = (fileparse($destinationPath))[0];
+	my($manualVersionPath) = "$sourceDirectory/$outputName";
+	my($status);
+	
+	if (!-e $destinationPath) {
+		if (!-e $destinationDirectory) {
+			$status = mkpath($destinationDirectory);
+			
+			if ($status == 0) {
+				warn("Unable to create cache directory $destinationDirectory");
+				return 0;
+			}
+		}
+	
+		# If the user has provided a manually created version of this image, use that.
+		if (-e $manualVersionPath) {
+			if (!copy($manualVersionPath, $destinationPath)) {
+				warn("Couldn't copy existing image from $sourcePath to $destinationDirectory");
+				return 0;
+			}	
+		}
+		# If we don't have manually created images, and we are allowed to use ImageMagick, automatically generate them.
+		elsif ($useImageMagick) {
+			my($imageFile) = new Image::Magick();
+			
+			if (!$imageFile) {
+				warn("Couldn't instantiate new ImageMagick image");
+				return 0;
+			}
+			
+			$status = $imageFile->Read($sourcePath);
+			
+			if (!$status == 0) {
+				warn("Couldn't read image from path: $sourcePath");
+				return 0;
+			}
+			
+			resizeImageRef($imageFile, $defaultImageWidth{$viewType});
+			processImageRef($imageFile, $defaultQualityPercent{$viewType}, $defaultSharpenLevel{$viewType}, $defaultShouldNormalize{$viewType}, $defaultShouldEqualize{$viewType});
+			
+			$status = $imageFile->Write($destinationPath);
+			
+			${$widthRef} = $imageFile->Get('width');
+			${$heightRef} = $imageFile->Get('height');
+			
+			if ($status == 0) {
+				warn("Couldn't write image to path: $destinationPath");
+				return 0;
+			}
+
+			undef($imageFile);
+		}
+		# If we don't have a manual image or the ability to use ImageMagick, copy the original image to use as the full representationtry getting the EXIF thumbnail for the thumb or large view.
+		elsif ($viewType eq $viewTypeLabels{full}) {
+			if (!copy($sourcePath, $destinationPath)) {
+				warn("Couldn't copy existing image from $sourcePath to $destinationDirectory");
+				return 0;
+			}			
+		}
+		# If we don't have a manual image or the ability to use ImageMagick, try getting the EXIF thumbnail to use as the large and thumbnail representations.
+		else {
+			my($thumbnailData) = getExifThumbnailFromFile($sourcePath);
+		
+			if ($thumbnailData) {
+				open(THUMB, "> $destinationPath");
+				binmode(THUMB);
+				print THUMB $thumbnailData;
+				close(THUMB);
+			}
+			else {
+				warn "Exif error: ".$errorCode{$status}."\n";
+				return 0;
+			}
+		}
+	}
+
+	if (!${$widthRef} || !${$heightRef}) {
+		if ($useImageMagick) {
+			getImageSizeAtPath($destinationPath, $widthRef, $heightRef);
+		}
+	}
+
+	return 1;
+}
+
+sub getPreviousImage {
+	my($image, @images) = @_;
+
+	my($prevImage);
+	my($currentImage);
+
+	foreach $currentImage (@images) {
+		last if ($image eq $currentImage);
+		$prevImage = $currentImage;
+	}
+
+	return $prevImage;
+}
+
+sub getNextImage {
+	my($image, @images) = @_;
+	return getPreviousImage($image, reverse(@images));
+}
+
+# --- Path Utilities ---
+
+sub getImagesAtPath {
+	my($path) = @_;
+  
+	if (!opendir(DIR, $path)) {
+		warn "Can't open gallery at path: $path";
+		return;
+	}
+
+	my(@images);
+	my($file);
+
+	foreach $file (readdir(DIR)) {
+		if ($file !~ /\.($viewTypes)\./i && $file =~ /.($imageTypes)$/i && -r "$path/$file") {
+			push(@images, "$file");
+		}
+	}
+
+	closedir(DIR);
+
+	return @images;  
+}
+
+# --- Template Utilities ---
+
+sub interpolateTemplate {
+	my($template) = shift;
+
+	# Special code to interpolate EXIF hashes only
+	$template =~ s/(\$pixom::exifInfo{.*})/"defined $1 ? $1 : ''"/gee;
+
+	# Also run the template through the interpolate implementation Blosxom is using
+	return &$blosxom::interpolate($template);
+}
+
+# --- Image Processing ---
+
+sub resizeImageRef {
+	my($image, $resizeWidth) = @_;
+
+	my($originalWidth) = $image->Get('width');
+	my($originalHeight) = $image->Get('height');
+
+	if ($originalWidth > $resizeWidth) {
+		my($resizeHeight) = (($resizeWidth * $originalHeight) / $originalWidth);
+		$image->Scale(width => $resizeWidth, height => $resizeHeight);
+	}
+	
+	return $image;
+}
+
+sub processImageRef {
+	my($image, $qualityLevel, $sharpenLevel, $normalize, $equalize) = @_;
+
+	$image->Set(quality=>$qualityLevel);
+	
+	if ($sharpenLevel > 0) {
+		$image->Sharpen($sharpenLevel);
+	}
+
+	if ($normalize) {
+		$image->Normalize();
+	}
+	
+	if ($equalize) {
+		$image->Equalize();
+	}
+}
+
+sub getImageSizeAtPath {
+	my($sourcePath) = $_[0];
+	my($widthRef) = $_[1];
+	my($heightRef) = $_[2];
+	my($status);
+
+	my($imageFile) = new Image::Magick();
+	
+	if (!$imageFile) {
+		warn("Couldn't instantiate new ImageMagick image");
+		return;
+	}
+	
+	$status = $imageFile->Read($sourcePath);
+	
+	if (!$status == 0) {
+		warn("Couldn't read image from path: $sourcePath");
+	}
+	else {	
+		${$widthRef} = $imageFile->Get('width');	
+		${$heightRef} = $imageFile->Get('height');
+	}
+
+	undef($imageFile);
+}
+
+# --- EXIF Parsing Functions ---
+
+sub getExifHashFromFile {
+	my(%exifHash);
+	my($format) = $_[1];
+	my($thumbnailData);
+	my($status) = extractExifDataFromFile($_[0], \%exifHash, \$thumbnailData);
+	
+	if ($status > 0) {
+		if (defined($format) && $format) {
+			formatExifHash(\%exifHash);
+		}
+	}
+	else {
+		warn("EXIF error: ".$errorCode{$status}."\n");
+	}
+	
+	return %exifHash;
+}
+
+sub getExifThumbnailFromFile {
+	my(%exifHash);
+	my($thumbnailData);
+	my($status) = extractExifDataFromFile($_[0], \%exifHash, \$thumbnailData);
+
+	if ($status < 0) {
+		warn("EXIF error: ".$errorCode{$status}."\n");
+	}	
+
+	return $thumbnailData;
+}
+
+sub extractExifDataFromFile {
+	my($file) = $_[0];
+	my($exifHashRef) = $_[1];
+	my($thumbnailDataRef) = $_[2];
+	my $filehandle = do { local(*EXIFDATA) };
+	
+	my($buffer);
+	
+	if (!(-e $file && -r $file)) {
+		return 0;
+	}
+	
+	open($filehandle, $file);
+	binmode($filehandle);
+
+	# Check for JPEG start of image marker
+	read($filehandle, $buffer, 2);
+	my($soiMarker) = get16BitsFromBuffer($buffer, 1);
+	
+	if (unpack("S", $soiMarker) != 0xFFD8) {
+		return -1;
+	}	
+	
+	my($foundExif) = 0;
+
+	# Find application data marker 1 (0xFFE1)
+	while (read($filehandle, $buffer, 1)) {
+		last if (!(unpack("C", $buffer) == 0xFF));
+
+		read($filehandle, $buffer, 1);
+		my($marker) = unpack("C", $buffer);
+		
+		read($filehandle, $buffer, 2);
+		my($appDataSize) = unpack("S", get16BitsFromBuffer($buffer, 1));
+	
+		if ($marker == 0xE1) {
+			read($filehandle, $buffer, 6);
+			
+			if (unpack("A*", $buffer) eq "Exif") {
+				$foundExif = 1;
+				last;
+			}	
+		}
+		else {
+			seek($filehandle, $appDataSize - 2, 1);
+		}
+	}
+		
+	if (!$foundExif) {
+		return -3;
+	}
+		
+	# Check for byte order marker
+	read($filehandle, $buffer, 2);
+	
+	my($bigEndian);
+		
+	if ($buffer eq "MM") {
+		$bigEndian = 1;
+	}
+	elsif ($buffer eq "II") {
+		$bigEndian = 0;
+	}
+	else {
+		return -4;
+	}
+	
+	my($start) = tell($filehandle) - 2;
+
+	# Check for TIFF header marker	
+	read($filehandle, $buffer, 2);
+	my($tiffMarker) = get16BitsFromBuffer($buffer, $bigEndian);
+	
+	# Magic number is 42 (0x2a00) (possible "hitchhiker's guide" reference?)
+	if (unpack("S", $tiffMarker) != 0x2a) {
+		return -5;
+	}
+	
+	# Get offset of first image file directory	
+	read($filehandle, $buffer, 4);
+	my($firstDirectoryOffset) = unpack("l", get32BitsFromBuffer($buffer, $bigEndian));
+	
+	# Process IFD0 (main image)
+	processIFD($filehandle, $start, $firstDirectoryOffset, $bigEndian, $exifHashRef);
+
+	# Process EXIF sub IFD
+	if (defined(${$exifHashRef}{"Offset to EXIF Sub IFD"})) {
+		processIFD($filehandle, $start, ${$exifHashRef}{"Offset to EXIF Sub IFD"}, $bigEndian, $exifHashRef);
+	}
+
+	# Process IFD1 (thumbnail image) if it exists
+	if (defined(${$exifHashRef}{"Next IFD Offset"}) && defined($thumbnailDataRef)) {
+		processIFD($filehandle, $start, ${$exifHashRef}{"Next IFD Offset"}, $bigEndian, $exifHashRef, $exifThumbnailDomain);
+
+		if (${$exifHashRef}{$exifThumbnailDomain.".Thumbnail Compression Type"} == $compressionType{"JPEG"}) {
+			seek($filehandle, $start + ${$exifHashRef}{$exifThumbnailDomain.".JPEG Thumbnail Offset"}, 0);
+			read($filehandle, $buffer, ${$exifHashRef}{$exifThumbnailDomain.".JPEG Thumbnail Length"});
+			${$thumbnailDataRef} = $buffer;
+		}		
+	}
+
+	close($filehandle);
+	return 1;
+}
+
+sub processIFD {
+	my($filehandle) = $_[0];
+	my($base) = $_[1];
+	my($directoryOffset) = $_[2];
+	my($bigEndian) = $_[3];
+	my($exifHashRef) = $_[4];
+	my($domain) = $_[5];
+	my($buffer);
+	
+	seek($filehandle, $base + $directoryOffset, 0);
+	
+	read($filehandle, $buffer, 2);
+	my($numberOfEntries) = unpack("S", get16BitsFromBuffer($buffer, $bigEndian));
+	
+	$directoryOffset += 2;
+	
+	my($i);
+	
+	for ($i = 1; $i <= $numberOfEntries; $i++) {
+		read($filehandle, $buffer, 2);
+		my($tag) = unpack("S", get16BitsFromBuffer($buffer, $bigEndian));
+		
+		read($filehandle, $buffer, 2);
+		my($dataFormat) = unpack("S", get16BitsFromBuffer($buffer, $bigEndian));		
+
+		read($filehandle, $buffer, 4);		
+		my($fieldLength) = unpack("l", get32BitsFromBuffer($buffer, $bigEndian));
+
+		read($filehandle, $buffer, 4);
+
+		if ($dataTypeLength{$dataFormat} * $fieldLength > 4) {
+			my($fieldOffset) = unpack("l", get32BitsFromBuffer($buffer, $bigEndian));
+						
+			seek($filehandle, $base + $fieldOffset, 0);
+			
+			read($filehandle, $buffer, $fieldLength * $dataTypeLength{$dataFormat});
+	
+			seek($filehandle, $base + $directoryOffset + ($i * 12), 0);
+		}
+
+		my($fieldValue) = getValueForExifField($buffer, $dataFormat, $fieldLength, $bigEndian);
+
+		if (defined($fieldValue) && defined($exifTag{$tag})) {
+			my($exifKey);
+			
+			if (defined($domain)) {
+				$exifKey = "$domain.".$exifTag{$tag};
+			}
+			else {
+				$exifKey = $exifTag{$tag};
+			}
+			
+			${$exifHashRef}{$exifKey} = $fieldValue;
+		}
+		else {
+			next;	
+		}
+	}
+	
+	read($filehandle, $buffer, 4);		
+	my($nextOffset) = unpack("l", get32BitsFromBuffer($buffer, $bigEndian));
+
+	if ($nextOffset > 0) {
+		${$exifHashRef}{"Next IFD Offset"} = $nextOffset;
+	}
+}
+
+sub getValueForExifField {
+	my($rawValue) = @_[0];
+	my($dataFormat) = @_[1];
+	my($fieldLength) = @_[2];
+	my($bigEndian) = @_[3];
+	my($dataTypeLength);
+	my($swappedValue);
+	my($fieldValue);
+	
+	if ($dataTypeLength{$dataFormat} == 2) {
+		# 16 bit value
+		$swappedValue = get16BitsFromBuffer($rawValue, $bigEndian);
+	}
+	elsif ($dataTypeLength{$dataFormat} == 4) {
+		# 32 bit value
+		$swappedValue = get32BitsFromBuffer($rawValue, $bigEndian);
+	}
+	elsif ($dataTypeLength{$dataFormat} == 8) {
+		# 64 bit value
+		$swappedValue = get64BitsFromBuffer($rawValue, $bigEndian);
+	}
+	else {
+		$swappedValue = $rawValue;
+	}
+
+	if (defined($dataTypeTemplate{$dataFormat})) {
+		$fieldValue = unpack($dataTypeTemplate{$dataFormat}.$fieldLength, $swappedValue);
+	}
+	elsif ($dataFormat == $undefinedType) {
+		undef($fieldValue);
+	}
+	elsif ($dataFormat == $unsignedRationalType) {
+		my($numerator, $denominator) = unpack('L2', $swappedValue);
+		$fieldValue = $numerator."/".$denominator;
+	}
+	elsif ($dataFormat == $signedRationalType) {
+		my($numerator, $denominator) = unpack('l2', $swappedValue);
+		$fieldValue = $numerator."/".$denominator;
+	}
+	else {
+		$fieldValue = unpack("a", $swappedValue);
+	}
+	
+	return $fieldValue;
+}
+
+# --- Formatting Functions ---
+
+sub formatExifHash {
+	my($exifHashRef) = $_[0];
+	my(@keys) = keys(%{$exifHashRef});
+	my($tag);
+	
+	foreach $tag (@keys) {
+		my($fieldValue) = ${$exifHashRef}{$tag};
+		
+		if ($tag eq "X Resolution" || $tag eq "$exifThumbnailDomain.X Resolution") {
+			${$exifHashRef}{$tag} = convertRationalToFloat($fieldValue);
+		}
+		elsif ($tag eq "Y Resolution" || $tag eq "$exifThumbnailDomain.Y Resolution") {
+			${$exifHashRef}{$tag} = convertRationalToFloat($fieldValue);			
+		}
+		elsif ($tag eq "Resolution Unit" || $tag eq "$exifThumbnailDomain.Resolution Unit") {
+			${$exifHashRef}{$tag} = $resolutionUnit{$fieldValue};
+		}
+		elsif ($tag eq "YCbCr Positioning" || $tag eq "$exifThumbnailDomain.YCbCr Positioning") {
+			${$exifHashRef}{$tag} = $yCbCrPosition{$fieldValue};
+		}
+		elsif ($tag eq "Exposure Time") {
+			${$exifHashRef}{$tag} = reduceRational($fieldValue);
+		}
+		elsif ($tag eq "Exposure Date & Time") {
+			${$exifHashRef}{$tag} = formatExifDate($fieldValue);
+		}
+		elsif ($tag eq "F-Stop") {
+			${$exifHashRef}{$tag} = convertRationalToFloat($fieldValue);
+		}
+		elsif ($tag eq "Shutter Speed") {
+			${$exifHashRef}{$tag} = convertAPEXToShutter($fieldValue);
+		}
+		elsif ($tag eq "Aperture") {
+			${$exifHashRef}{$tag} = convertRationalToFloat($fieldValue);
+		}
+		elsif ($tag eq "Exposure Bias") {
+			${$exifHashRef}{$tag}= convertRationalToFloat($fieldValue);
+		}
+		elsif ($tag eq "Maximum Aperture") {
+			${$exifHashRef}{$tag} = convertRationalToFloat($fieldValue);
+		}
+		elsif ($tag eq "Metering Mode") {
+			${$exifHashRef}{$tag} = $meteringMode{$fieldValue};
+		}
+		elsif ($tag eq "Flash") {
+			${$exifHashRef}{$tag} = $flashStatus{$fieldValue};
+		}
+		elsif ($tag eq "Focal Length") {
+			${$exifHashRef}{$tag} = convertRationalToFloat($fieldValue);
+		}
+		elsif ($tag eq "Exposure Program") {
+			${$exifHashRef}{$tag} = $exposureProgram{$fieldValue};
+		}
+		elsif ($tag eq "Light Source") {
+			${$exifHashRef}{$tag} = $lightSource{$fieldValue};
+		}
+	}
+}
+
+sub formatExifDate {
+	my($date) = shift;
+	my($year, $month, $day, $hour, $minute, $second) = ($date =~ /(\d+):(\d+):(\d+) (\d+):(\d+):(\d+)/);
+	
+	my($timeLocal) = timelocal($second, $minute, $hour, $day, $month - 1, $year);
+	
+	return strftime($displayExifDateFormat, localtime($timeLocal));
+}
+
+# --- Math Functions ---
+
+sub convertAPEXToFStop {
+	return roundToFloat(sqrt(2) ** @_[0]);
+}
+
+sub convertAPEXToShutter {
+	my($numerator, $denominator) = splitRational(@_[0]);
+	
+	if ($numerator != 0 && $denominator != 0) {
+		return roundToInteger(2 ** ($numerator / $denominator));
+	}
+	
+	return 0;
+}
+
+sub convertRationalToFloat {
+	my($numerator, $denominator) = splitRational(@_[0]);
+	
+	if ($numerator != 0 && $denominator != 0) {
+		return roundToFloat($numerator / $denominator);
+	}
+	
+	return 0;
+}
+
+sub reduceRational {
+	my($numerator, $denominator) = splitRational(@_[0]);
+	
+	if ($numerator != 0 && $denominator != 0) {
+		my($newDenominator) =  $denominator / $numerator;
+
+		return "1/".roundToInteger($newDenominator);
+	}
+	
+	return "0/0";
+}
+
+sub splitRational {
+	return split(/\//, @_[0]);
+}
+
+sub roundToInteger {
+	if ($] >= 5.008) {
+		# BigFloat Rounding (requires Perl 5.8)
+		my($f) = Math::BigFloat->new(@_[0]);
+		Math::BigFloat::round_mode('even');
+		return $f->ffround(0);
+	}
+	else {	
+		# sprintf rounding (perl 5.6 compatible)
+		return sprintf("%.0f", $_[0]);
+	}
+}
+
+sub roundToFloat {
+	if ($] >= 5.008) {
+		# BigFloat Rounding -- requires Perl 5.8
+		use Math::BigFloat; 
+		my($f) = Math::BigFloat->new(@_[0]);
+		Math::BigFloat::round_mode('even');
+		return $f->ffround(-1);
+	}
+	else {
+		# sprintf rounding -- perl 5.6 compatible
+		return sprintf("%.1f", $_[0]);
+	}
+}
+
+# --- Binary Conversion Functions ---
+
+sub hostIsLittleEndian {
+	my($magicNum) = pack("s", 42);
+	my($firstByte, $secondByte) = unpack("c2", $magicNum);
+
+	if ($firstByte < $secondByte) {
+		return 0;
+	}
+	else {
+		return 1;
+	}
+}
+
+sub get16BitsFromBuffer {
+	my($buffer) = @_[0];
+	my($bigEndian) = @_[1];
+		
+	# If the byte order matches that of the host, simply return it
+	if ((!$bigEndian && &hostIsLittleEndian) || ($bigEndian && !&hostIsLittleEndian)) {
+		return $buffer;
+	}
+	# If the host byte order is different than the file byte order, swap it
+	else {
+		my($byte1, $byte2) = unpack("c2", $buffer);
+		return pack("c2", $byte2, $byte1);
+	}
+}
+
+sub get32BitsFromBuffer {
+	my($buffer) = @_[0];
+	my($bigEndian) = @_[1];
+
+	# If the byte order matches that of the host, simply return it		
+	if ((!$bigEndian && &hostIsLittleEndian) || ($bigEndian && !&hostIsLittleEndian)) {
+		return $buffer;
+	}
+	# If the host byte order is different than the file byte order, swap it
+	else {
+		my($byte1, $byte2, $byte3, $byte4) = unpack("c4", $buffer);
+		return pack("c4", $byte4, $byte3, $byte2, $byte1);
+	}
+}
+
+sub get64BitsFromBuffer {
+	my($buffer) = @_[0];
+	my($bigEndian) = @_[1];
+
+	# If the byte order matches that of the host, simply return it	
+	if ((!$bigEndian && &hostIsLittleEndian) || ($bigEndian && !&hostIsLittleEndian)) {
+		return $buffer;
+	}
+	# If the host byte order is different than the file byte order, swap it
+	else {
+		my($byte1, $byte2, $byte3, $byte4, $byte5, $byte6, $byte7, $byte8) = unpack("c8", $buffer);
+		return pack("c8", $byte4, $byte3, $byte2, $byte1, $byte8, $byte7, $byte6, $byte5);
+	}
+}
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: Pixom
+
+=head1 VERSION
+
+1.0+3i
+
+=head1 AUTHOR
+
+Buzz Andersen  <pixom@scifihifi.com>, http://www.scifihifi.com/
+
+=head1 SYNOPSIS
+
+Documentation forthcoming.
+
+=head1 SEE ALSO
+
+Introducing Pixom:
+http://www.scifihifi.com/weblog/software/Introducing-Pixom.html
+
+EXIF file format:
+http://park2.wakwak.com/~tsuruzoh/Computer/Digicams/exif-e.html
+
+EXIF RDF Schema (Pixom may include some sort of support for this in the future):
+http://www.w3.org/2003/12/exif/
+
+DeWitt Clinton's Blosxom Photogallery Plugin (Pixom drew a lot of inspiration for its general approach from Photogallery):
+http://www.unto.net/unto/meta/plugins/photogallery.html
+
+=head1 BUGS
+
+Address bug reports and comments to pixom@scifihifi.com.
+
+=head1 LICENSE
+
+This work is licensed under the Creative Commons Attribution License. To view a copy of this license, visit
+
+http://creativecommons.org/licenses/by/1.0/
+
+or send a letter to Creative Commons, 559 Nathan Abbott Way, Stanford,
+California 94305, USA.

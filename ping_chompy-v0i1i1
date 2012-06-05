@@ -1,0 +1,174 @@
+# Blosxom Plugin: ping_chompy
+# Author(s): SNF Labs <jacob@spaceshipnofuture.org>
+# Version: 0.1.1
+# Documentation: See the bottom of this file or type: perldoc ping_chompy
+
+package ping_chompy;
+use strict;
+use XMLRPC::Lite;
+
+# --- Configurable variables -----
+
+# Turn on to see verbose output in the error log (dynamic mode)
+# or at the console (static mode)
+use constant DEBUG => 0;
+
+# What URL should this plugin ping?
+#my $ping_url = "http://www.cpl593h.net/notify/xmlrpc.cgi";
+my $ping_url = "http://www.chompy.net/notify/xmlrpc.cgi";
+#my $ping_url = "http://www.weblogs.com/RPC2";
+
+# --------------------------------
+
+use FileHandle;
+use File::stat;
+
+# Keep track of the newest story's mtime
+my $newest = 0;
+# Keep track of the total number of weblog entries
+my $num_entries = 0;
+
+sub start {
+	#return $blosxom::static_or_dynamic eq 'static' ? 1 : 0;
+	1;
+}
+
+sub filter {
+	my($pkg, $files_ref) = @_;
+
+	$newest = $files_ref->{( sort { $files_ref->{$b} <=> $files_ref->{$a} } keys %$files_ref )[0]};
+	$num_entries = scalar(keys(%$files_ref));
+	warn "ping_chompy: # of current entries: $num_entries\n" if DEBUG;
+
+	1;
+}
+
+sub end {
+	# If no timestamped touch-file or newest is newer than the touch-file...
+	# AND the total number of entries has increased...
+	if ( (!-e "$blosxom::plugin_state_dir/.ping_chompy.output" or $newest > stat("$blosxom::plugin_state_dir/.ping_chompy.output")->mtime ) && $num_entries > get_num_entries() ) {
+
+		warn "ping_chompy: Pinging $ping_url...\n" if DEBUG;
+
+		my $response = '';
+		my $ping_success = 0;
+
+		my $chomp = XMLRPC::Lite
+			-> proxy($ping_url)
+			-> call('weblogUpdates.ping', $blosxom::blog_title, $blosxom::url)
+			-> result;
+	
+		$ping_success = not $chomp->{flerror};	# False = success, True = failure... weird
+		my $response = "flerror: " . $chomp->{flerror} . "\n";
+		$response .= "message: " . $chomp->{message} . "\n";
+
+		warn "ping_chompy: $response\n" if DEBUG;
+
+		$ping_success or return 0;
+
+		# Touch the touchfile (creates if doesn't already exist)
+		warn "ping_chompy: Updating touchfile $blosxom::plugin_state_dir/.ping_chompy.output...\n";
+		open TOUCH, "> $blosxom::plugin_state_dir/.ping_chompy.output"
+			or warn "ping_chompy: Couldn't open touchfile!\n";
+		print TOUCH $num_entries . "\n";
+		print TOUCH $response;
+		close TOUCH;
+  
+		return 1;
+	}  
+
+	return 1;
+}
+
+sub get_num_entries {
+	# Get total number of entries from prior runs
+	if (-e "$blosxom::plugin_state_dir/.ping_chompy.output") {
+		open TOUCH, "< $blosxom::plugin_state_dir/.ping_chompy.output";
+		my $num_entries = <TOUCH>;
+		chomp $num_entries;
+		close TOUCH;
+
+		warn "ping_chompy: # of prior entries: $num_entries\n" if DEBUG;
+		return $num_entries;
+	}
+	else {
+		warn "ping_chompy: touchfile not found!\n" if DEBUG;
+		return 0;
+	}
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: ping_chompy
+
+=head1 SYNOPSIS
+
+Purpose: Notifies chompy.net [http://www.chompy.net] that your weblog
+has been updated upon encountering any new story. 
+
+Maintains a touch-file ($blosxom::plugin_state_dir/.ping_chompy.output)
+to which to compare the newest story's creation date and the total number
+of entries.  Fills the touch-file with the results of the latest ping.
+This touch-file absolutely must be writable by the web server process
+(if using dynamic mode) or the user (static mode).
+
+=head1 PREREQUISITES
+
+The XMLRPC::Lite module is required for this plugin to function.
+XMLRPC::Lite is bundled with the SOAP::Lite distribution, available at
+soaplite.com [http://www.soaplite.com].
+
+=head1 VERSION
+
+0.1
+
+=head1 AUTHOR
+
+SNF Labs <jacob@spaceshipnofuture.org>, http://www.chompy.net/blogs/jacob/
+
+Based on Rael Dornfest's ping_weblogs_com plugin.
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+chompy.net: http://www.chompy.net/
+
+chompy-notify: http://www.chompy.net/notify/
+
+=head1 BUGS
+
+Address bug reports and comments to the author
+<jacob@spaceshipnofuture.org>.
+
+=head1 LICENSE
+
+Blosxom
+Copyright 2003, Rael Dornfest
+
+ping_chompy plugin
+Copyright 2003, SNF Labs
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

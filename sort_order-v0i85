@@ -1,0 +1,135 @@
+
+# Blosxom Plugin: sort_order
+# Author(s): Stu
+# Version: 0.85  Sept 5, 2003
+#
+#  There are plenty of better widgets for doing this ;-)
+#
+#  sort_order sorts entries by one of four methods:
+#     descending file name          default
+#     ascending file name           when calling url ends in "?sorder=1"
+#     descending file mtime         when calling url ends in "?sorder=2"
+#     ascending file mtime          when calling url ends in "?sorder=3"
+#
+#  sort_order also fills a var $sorderstr with an html-formatted 
+#  description of the displayed sort order, and a link to reverse 
+#  it; put "<p>
+#           $sort_order::sorderstr
+#           </p>"
+#  at the end of your HEAD template to put this text "just above" 
+#  your entries. Put it at the top of your FOOT template to put 
+#  this text "just after" your entries. The value of $sorderstr is 
+#  something like: "Entries are currently listed by descending name; to see 
+#                   them listed by ascending name, click here."
+#  Terms in the string adjust as appropriate.
+# ---------------------------------------------------------------
+
+package sort_order;
+
+use CGI;
+use File::Basename;
+
+use vars qw! $sorder !; 
+
+sub start {
+1;
+}
+
+sub head {
+  my($pkg, $path, $head_ref) = @_;
+$path and $path =~ s//\//;
+
+# find out which direction to sort in
+  $sorder = (CGI::param("sorder"));
+  if (!$sorder) {$sorder=0;}
+
+# clumsily load some strings:
+my @str = (
+  ['descending date','ascending date','?sorder=1'],
+  ['ascending date','descending date',''],
+  ['descending date','ascending date','?sorder=3'],
+  ['ascending date','descending date','?sorder=2']
+);
+
+# generate some html for the head template to use.
+# Here's something vanilla:
+#$sorderstr = qq(Entries are currently listed by $str[$sorder][0]; to see them listed by $str[$sorder][1], <a href="$blosxom::url$path$str[$sorder][2]">click here</a>.);
+
+$sorderstr = qq(Entries are currently listed by $str[$sorder][0]; to see them listed by $str[$sorder][1], <a href="$blosxom::url$path$str[$sorder][2]" onMouseOver="return rollon('Sort entries by $str[$sorder][1]')" onMouseOut="return rolloff()">click here</a>.);
+
+# Insert other strings here -- such as 'aorderstr', 'borderstr', etc. -- and then 
+# call them from your flavour files with '$sort_order::borderstr', etc.
+
+  1;
+
+}
+
+
+sub sort {
+  return sub {
+    my($files_ref) = @_;
+    # sort by desc file name
+    if ($sorder eq 0) {
+      return sort { basename($b) cmp basename($a) } keys %$files_ref;
+      }
+    # sort by asc file name
+    elsif ($sorder eq 1) {
+      return sort { basename($a) cmp basename($b) } keys %$files_ref;
+      }
+    # sort by desc mod time
+    elsif ($sorder eq 2) {
+      return sort { $files_ref->{$b} <=> $files_ref->{$a} } keys %$files_ref;
+      }
+    # sort by asc mod time
+    elsif ($sorder eq 3) {
+      return sort { $files_ref->{$a} <=> $files_ref->{$b} } keys %$files_ref;
+      }
+    # sort by desc file name
+    else {
+      return sort { basename($b) cmp basename($a) } keys %$files_ref;
+    }
+  };
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: sort-order -- allows sorting entries up or down by file name or by mod date
+
+=head1 SYNOPSIS
+
+Through a query string used in the url calling blosxom, sort_order will sort entry files by file name or mod date, in descending or ascending order. "?sorder=1" is asc name; "?sorder=2" is desc date; "?sorder=3" is asc date. No "sorder" query string item yields default desc name sort.
+
+=head1 VERSION
+
+2003-07-8 (v0.85)
+2003-07-8 (v0.8)
+
+=head1 LICENSE
+
+this Blosxom Plug-in
+Copyright 2003, Stu MacKenzie
+
+(This license is the same as Blosxom's)
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+

@@ -1,0 +1,79 @@
+# Blosxom plugin: pagetype
+# Author(s): Barijaona Ramaholimihaso
+# Version: 2006-01-01blosxom2
+# Documentation: see bottom of file or perldoc title
+
+package pagetype;
+
+# ------------------ Config variables ---------------------
+
+use vars qw($pagetype $static);
+$pagetype = "" ;
+
+# ---------------------------------------------------------
+sub start { 
+$static = ($blosxom::static_or_dynamic eq 'static');
+1; }
+
+sub skip {
+
+	if ($blosxom::path_info_yr ne '' )
+		{$pagetype = 'chrono' ; }
+	elsif ($static && ( $blosxom::path_info =~ m!^(\d{4})!))
+		{$pagetype = 'chrono' ; }
+	elsif (($blosxom::path_info =~ /$blosxom::flavour$/) or (($blosxom::path_info =~ /$blosxom::file_extension$/) && $static))
+		{$pagetype = 'story' ; }
+	elsif ($blosxom::path_info eq "")
+		{$pagetype = 'main' ; }
+	else
+		{ $pagetype = 'category';};
+
+	# let blosxom continue
+	return undef;
+}
+
+
+1;
+
+__END__
+=head1 NAME
+
+Blosxom Plug-in: pagetype
+
+=head1 SYNOPSIS
+
+The variable $pagetype::pagetype is to be used with interpolate_fancy.
+
+You can test it in your templates to know what kind of page Blosxom is currently rendering :
+
+main : the root of the blog
+category : a category archive page
+chrono : a chronological archive page (per year, per month, per day...)
+story : an individual story page
+
+=head1 VERSION
+
+2004-08-22blosxom2
+
+=head2 CHANGES
+
+2006-01-01blosxom2 : take into account the corrections of $path_info in recent versions of blosxom.cgi 
+
+2004-08-22blosxom2 : First published version
+
+=head1 AUTHOR
+
+Barijaona Ramaholimihaso <http://homepage.mac.com/barijaona>
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 COPYRIGHT
+
+This program is free software; you can redistribute
+it and/or modify it under the same terms as Perl itself.
+
+=cut

@@ -1,0 +1,377 @@
+#!/usr/bin/perl
+# Blosxom Plugin: hotlists
+# Author(s): Jason Thaxter <sseye@ahab.com>
+# Version: 0.9
+# Documentation: See the bottom of this file or type: perldoc hotlists
+
+package hotlists;
+
+# --- Configurable variables -----
+
+# Selection
+
+# number of entries to display in each box.
+$num_entries = 5;
+
+# plumb subdirectories to find the most recent stories
+$subdirs = 1;
+
+# exclude path
+# a good way to ignore subdirectories.
+$prune_path;
+
+# Formatting
+
+# remove initial and final / from list path - or not
+$trim_slashes = 1;
+
+# replace path components with the separator - only if defined
+$set_separator = '::';
+
+# if true, the list isn't some/path/to/MyList but just MyList
+$shorten_name = 0;
+
+# set to 0 or undef to disable processing dates through plugins
+$date_plugins = 1;
+
+# --------------------------------
+
+$num_entries ||= 5;
+$subdirs     ||= 0;
+$prune_path  ||= '!';
+$trim_slashes = 1 if $shorten_name;
+
+%hotstack;    # make stacks here
+%hotlists;
+%hotcount;
+$test;
+
+use FileHandle;
+$fh = new FileHandle;
+%template;
+
+use Time::localtime;
+
+sub start {
+    1;
+}
+
+sub filter {
+    my ( $pkg, $files_ref ) = @_;
+
+    # get lists
+    foreach my $fn ( keys %$files_ref ) {
+
+        next if $fn =~ /$prune_path/;
+        my $f = $fn;
+        $f =~ s!$blosxom::datadir!!;
+        my $path = '';
+
+ # work down the directory tree, remembering results for each directory as we go
+        while ( $f =~ s!([^/]*/)!! and $path .= $1 ) {
+
+            $subdirs_here = $subdirs;
+            unless ( $subdirs_here or !( $f =~ /\// ) )
+            {    # don't count unless we're at the end
+                next;
+            }
+            $hotcount{$path}++;    # running total
+
+            $entries_here = $num_entries;
+
+            # merge this into the stack, by modification date
+            for ( my $i = 0 ; $i <= $entries_here ; $i++ ) {
+                if ( $hotstack{$path}->[$i] ) {
+                    if ( $files_ref->{$fn} >
+                        $files_ref->{"$blosxom::datadir$hotstack{$path}->[$i]"}
+                      )
+                    {
+                        splice @{ $hotstack{$path} }, $i, 0, $path . $f;
+                        last;
+                    }
+                }
+                else {    # append until we run out of space
+                    $hotstack{$path}->[$i] = $path . $f;
+                    last;
+                }
+            }
+
+            # dump any excess entries
+            $#{ $hotstack{$path} } = ( $entries_here - 1 )
+
+              # but don't pad the list with undefs
+              unless @{ $hotstack{$path} } <= $entries_here;
+
+        }    # next directory down the path...
+    }
+
+    1;
+}
+
+# do the actual rendering...
+# once we know our actual context
+sub head {
+    my ( $pkg, $cf, $head_ref ) = @_;
+
+    # prep render defaults
+    my $flavour = ( $blosxom::flavour or $blosxom::default_flavour or 'html' );
+    while (<DATA>) {
+        last if /^(__END__)?$/;
+        my ( $flavour, $chunk, $txt ) = /^(\S+)\s(\S+)\s(.*)$/;
+        $txt =~ s/\\n/\n/mg;
+        $template{$flavour}{$chunk} = $txt;
+    }
+
+    # render items
+    while ( my ( $thislist, $entries ) = each %hotstack ) {
+
+        # destination variable name
+        my $var = "hot" . join( '_', ( split( '/', $thislist ) ) );
+        $var =~ s/::(\d)/::_$1/g;    # see note in pod doc about digits
+
+        # template variables
+        my $hot_count    = $hotcount{$thislist};
+        my $hot_path     = $thislist;
+        my $hot_pathname = $hot_path;
+        $hot_path = "$blosxom::url$hot_path";
+
+        # reformat pathname
+        $hot_pathname =~ s{^/}{}               if $trim_slashes;
+        $hot_pathname =~ s{/$}{}               if $trim_slashes;
+        $hot_pathname =~ s{(.*)/(.*)/*$}{$2}   if $shorten_name;
+        $hot_pathname =~ s{/}{$set_separator}g if $set_separator;
+
+        # head
+        $$var =
+          ( load_template( "$blosxom::datadir$thislist", 'hothead', $flavour )
+          );
+
+        # item
+        foreach my $hot_item (@$entries) {
+
+            # per-item template variables
+            my ($hot_item_title);
+            if ( -T "$blosxom::datadir$hot_item"
+                && $fh->open("< $blosxom::datadir$hot_item") )
+            {
+                chomp( $hot_item_title = <$fh> );
+            }
+            $fh->close;
+
+           # Render the date the way blosxom itself would, but with our template
+
+            # load template
+            $hot_date =
+              load_template( "$blosxom::datadir/$cf", 'hotdate', $flavour );
+
+            # get mtime/date
+            $file_time = $blosxom::files{"$blosxom::datadir$hot_item"};
+
+            # First make our usual date bits for translation
+            my ( $dw, $mo, $mo_num, $da, $ti, $yr ) =
+              &blosxom::nice_date($file_time);
+            ( $hr, $min ) = split /:/, $ti;
+            ( $hr12, $ampm ) = $hr >= 12 ? ( $hr - 12, 'pm' ) : ( $hr, 'am' );
+            $hr12 =~ s/^0//;
+            $hr12 == 0 and $hr12 = 12;
+
+            # then pass the date through each plugin that wants to fool with it
+            # just like in blosxom.cgi
+            if ($date_plugins) {
+                foreach my $plugin (@blosxom::plugins) {
+                    $blosxom::plugins{$plugin} > 0
+                      and $plugin->can('date')
+                      and $value = $plugin->date( "$blosxom::datadir/$cf",
+                        \$hot_date, $file_time, $dw, $mo, $mo_num, $da, $ti,
+                        $yr );
+                }
+            }
+
+            # and interpolate
+            $hot_date =~ s/((\$[\w:]+)|(\$\{[\w:]+\}))/$1 . "||''"/gee;
+
+            # render other stuff
+            $hot_item =~ s/$blosxom::file_extension$/$flavour/ee;
+            $hot_item = "$blosxom::url$hot_item";
+
+            my $item =
+              ( load_template( "$blosxom::datadir/$cf", 'hotbody', $flavour ) );
+            $item =~ s/((\$[\w:]+)|(\$\{[\w:]+\}))/$1 . "||''"/gee;
+            $$var .= $item;
+        }
+
+        # tail
+        $$var .=
+          ( load_template( "$blosxom::datadir/$cf", 'hotfoot', $flavour ) );
+        $$var =~ s/((\$[\w:]+)|(\$\{[\w:]+\}))/$1 . "||''"/gee;
+    }
+
+    1;
+}
+
+# the same as the one i wrote for blosxom proper.
+sub load_template {
+    my ( $path, $chunk, $flavour ) = @_;
+    do {
+        return join '', <$fh> if $fh->open("< $datadir/$path/$chunk.$flavour");
+    } while ( $path =~ s/(\/*[^\/]*)$// and $1 );
+    return $template{$flavour}{$chunk} || '';
+}
+
+1;
+
+__DATA__
+html hothead <div class="hotlist"><a href="$hot_path"><b>$hot_pathname</b> ($hot_count)</a><br />\n
+html hotdate $yr/$mo_num/$da
+html hotbody <a href="$hot_item">$hot_item_title</a> $hot_date<br />\n
+html hotfoot </div>\n
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: hotlists
+
+=head1 SYNOPSIS
+
+This plugin is for populating lists of recent entries, either in all or by
+category.  C<$hotlists::hotlists> gives the most recent articles in the entire
+C<$datadir>.  C<$hotlists::hot_computer_stuff> gives the most recent
+article in the C<computer_stuff> subdirectory of datadir.
+C<$hotlists::hot_beverages_moxie> contains the most recent articles in
+C<beverages/moxie>. And so on.
+
+=head1 USAGE
+
+The number of entries chosen is controlled by a configuration variable, but if
+the C<config> plugin is used, the value of C<$bloxsom::hotlists_entries> can be
+used to set the number of entries on a per-directory basis - per directory for
+the I<viewing> location, not the I<listing> location.
+C<$blosxom::hotlists_subdirs> sets whether hotlists counts the number of
+articles in a directory itself, or the directory and all its subdirectories.
+
+The configuration variable $prune_path is a simple regular expression for
+ignoring entries.
+
+Flavour and templates work in the same was as bloxsom.  The templates for this
+plugin are hothead, hotbody, and hotfoot.  They control the formatting for,
+repsectively, a lead-in, each recent item, usually a link to a story, and a
+tail.  Normally, you can use it without templates and do formatting via the css
+class "hotlist".  Standard bloxsom variables should work, but haven't yet been
+tested.
+
+Directories beginning with a number get prepended with C<_> so as not to cause
+the perl error C<Modification of a read-only value attempted>.  So, if you use
+both numbers and underscores at the at the beginning of your directory names,
+you are asking for trouble.
+
+Finally, dates for each story can be included. To enable any date-enhancing
+plugins to fix up the dates the same way, we call the date hook of plugins that
+have it.
+
+Variables:
+
+=over 4
+
+=item $hot_count
+
+This is the total number of items in a given directory/category.
+
+=item $hot_path
+
+The URL of the directory being summarized.
+
+=item $hot_pathname
+
+The path of the directory, relative to $dirpath.
+
+=item $hot_count
+
+The number of items summarized under $hot_count, taking into account whether or
+not subdirectories are being examined.
+
+=item $hot_item
+
+The link to a recent item.  Available on a per-item basis only.
+
+=item $hot_item_title
+
+The title of the item, from the first line of the file.
+
+=item $hot_date
+
+The date of the item as formatted by the C<hotdate> template. The C<hotdate>
+template uses the same date formatting bits as blosxom itself.
+
+=back
+
+Variable names could still change before version 1.0, if there is a good reason.
+
+=head1 VERSION
+
+Version 0.9
+
+=head1 AUTHOR
+
+Jason Thaxter <sseye@ahab.com>, http://ahab.com/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 TODO
+
+The following are planned between now and version 1.0
+
+=head2 Cache titles
+
+If there is some way to get the titles without opening the files, perhaps from
+another plugin, do it. Do this in a nice blosxom-y way (i.e. gracefully use the
+less efficient method if assisting plugin is not available). One option is to
+hack entries_cache to store meta stuff.
+
+=head2 Better variable name space
+
+I used the C<$hotlists::hot_path_to_list> pattern because it works. I'd rather use
+C<$hotlists::path::to::list>, which avoids possible collisions (e.g.
+path_to/list and path/to/list are munged). But blosxom's default interpolation
+won't do this; it would interpolate C<$hotlists::path> and leave "::to::list"
+uninterpolated.
+
+The solution will add another configuration variable; if set, hotlists will
+override blosxom's interpolate subroutine. Otherwise, current behavior will
+continue.
+
+Note that at the present C<interpolate> routines of other plugins are ignored.
+
+=head1 BUGS
+
+I found the date stuff with plugins can block for a long time on Apache 2, on at
+least one OS. I has no idea why. If you get this, undefine $date_plugins in the
+config section. Or, better yet, find out how to fix it.
+
+Address bug reports and comments to the Blosxom mailing list
+[http://www.yahoogroups.com/group/blosxom] or to the author.
+
+=head1 LICENSE
+
+Copyright 2003,2004 Jason Thaxter
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

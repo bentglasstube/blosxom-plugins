@@ -1,0 +1,240 @@
+# Blosxom Plugin: date_roman
+# Author(s): Thomas Meehan <meehans@mooserve.freeserve.co.uk>
+# Version: 0.1
+
+# BASED HEAVILY ON
+# Blosxom Plugin: date_fullname
+# Author(s): Rael Dornfest <rael@oreilly.com>
+# and Tamara Crowe <tamara@darkglass.org>
+# Version: 2.0b4
+
+
+package date_roman;
+
+# --- Configurable variables -----
+
+$caps=1;	# 0 = in lower case except for month names (e.g. Ian., Feb., Mart., etc.)
+		# 1 = all upper case: more authentic but looks like SHOUTING
+
+# --------------------------------
+
+
+sub date {
+$da_roman; # use $date_roman::da_roman to produce a date using the Roman calendar and Roman version of the Christian year
+my ($pkg, $path, $date_ref, $mtime, @date_bits) = @_;
+my ($theda, $themo, $theyr)=($date_bits[3], $date_bits[2], $date_bits[5]);
+if ($theyr%4==0 && !($theyr%100==0 && $theyr%400!=0)) {$leap=1;}
+my @months= (
+	"",
+	{ # JAN [1] see also 13
+		abbr	=> "Ian.",
+		nones => 5,
+		ides 	=> 13,
+		days	=> 31 
+	},
+	{ # FEB [2]
+		abbr	=> "Feb.",
+		nones => 5,
+		ides 	=> 13,
+		days	=> 28 
+	},
+	{ # MAR [3]
+		abbr	=> "Mart.",
+		nones => 7,
+		ides 	=> 15,
+		days	=> 31 
+	},
+	{ # APR [4]
+		abbr	=> "Apr.",
+		nones => 5,
+		ides 	=> 13,
+		days	=> 30 
+	},
+	{ # MAY [5]
+		abbr	=> "Mai.",
+		nones => 7,
+		ides 	=> 15,
+		days	=> 31 
+	},
+	{ # JUN [6]
+		abbr	=> "Iun.",
+		nones => 5,
+		ides 	=> 13,
+		days	=> 30 
+	},
+	{ # JUL [7]
+		abbr	=> "Iul.",
+		nones => 7,
+		ides 	=> 15,
+		days	=> 31 
+	},
+	{ # AUG [8]
+		abbr	=> "Aug.",
+		nones => 5,
+		ides 	=> 13,
+		days	=> 31 
+	},
+	{ # SEP [9]
+		abbr	=> "Sept.",
+		nones => 5,
+		ides 	=> 13,
+		days	=> 30 
+	},
+	{ # OCT [10]
+		abbr	=> "Oct.",
+		nones => 7,
+		ides 	=> 15,
+		days	=> 31 
+	},
+	{ # NOV [11]
+		abbr	=> "Nov.",
+		nones => 5,
+		ides 	=> 13,
+		days	=> 30 
+	},
+	{ # DEC [12]
+		abbr	=> "Dec.",
+		nones => 5,
+		ides 	=> 13,
+		days	=> 31 
+	},
+	{ # JAN [13] copy of 1 to allow calculations of Kalends from 12
+		abbr	=> "Ian.",
+		nones => 5,
+		ides 	=> 13,
+		days	=> 31 
+	}
+);
+
+
+sub start {
+  1;
+}
+
+sub convertdigit {	## @_ = digit, x, l, c
+	my $digit;
+	if ($_[0]<4) 		{$digit=	$_[1] x $_[0]			;}
+	elsif ($_[0]==4) 	{$digit=	$_[1].$_[2]			;}
+	elsif ($_[0]==5) 	{$digit=	$_[2]				;}
+	elsif ($_[0]<9)	{$digit=	$_[2].$_[1] x ($_[0]-5)	;}
+	else 			{$digit=	$_[1].$_[3]			;}
+	return $digit;
+}
+
+sub arabictoroman {	## @_ = 2004
+	my $roman;
+	my $arabic=$_[0];
+	while (length($arabic)<4) {
+		$arabic="0".$arabic;
+	}
+	for ($k=0; $k<4; $k++) {
+		if ($k==3) {$a="i"; $b="v"; $c="x";}
+		if ($k==2) {$a="x"; $b="l"; $c="c";}
+		if ($k==1) {$a="c"; $b="d"; $c="m";}
+		if ($k==0) {$a="m"; $b=""; $c="";}
+		$d=substr ($arabic,$k,1);
+		$roman.=convertdigit($d, $a, $b, $c);
+	}
+	return $roman;
+}
+
+sub kalends {
+	my $dat=$_[0];
+	my $mon=$_[1];
+	my $year=arabictoroman($_[2]);
+	if ($_[3] && $mon==2 && $dat>24) {
+		$months[$mon]{'days'}=29;
+	}
+
+	##SHORTCUTS
+
+	my $abbr=	$months[$mon]{'abbr'};
+	my $nones=	$months[$mon]{'nones'};
+	my $ides=	$months[$mon]{'ides'};
+	my $days=	$months[$mon]{'days'};
+
+	my $nonescount=		$nones-$dat+1;
+	my $idescount=		$ides-$dat+1;
+	my $kalendscount=	$days-$dat+2;
+	my $monext=		$months[$mon+1]{'abbr'};
+
+	my $romandate;
+
+	if    ($dat==1) 		{$romandate="kal. $abbr $year";}
+	elsif ($dat<$nones-1) 		{$romandate="a.d. ".arabictoroman($nonescount)." non. $abbr $year";}
+	elsif ($dat==$nones-1) 		{$romandate="prid. non. $abbr $year";}
+	elsif ($dat==$nones)		{$romandate="non. $abbr $year";}
+	elsif ($dat<$ides-1)		{$romandate="a.d. ".arabictoroman($idescount)." id. $abbr $year";}
+	elsif ($dat==$ides-1)		{$romandate="prid. id. $abbr $year";}
+	elsif ($dat==$ides)		{$romandate="id. $abbr $year";}
+	elsif ($dat==25 && $days==29)	{$romandate="a.d. bis vi kal. mart.";}
+	elsif ($dat<$days)		{$romandate="a.d. ".arabictoroman($kalendscount)." kal. $monext $year";}
+	else				{$romandate="prid. kal. $monext $year";}
+
+	if ($_[4]) {$romandate=uc($romandate);} # CAPITALS
+
+	return $romandate;
+}
+$da_roman=kalends ($theda,$themo,$theyr,$leap,$caps); # DATE, MONTH, YEAR, LEAPYEAR, CAPITALS
+
+1;
+
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: date_roman
+
+=head1 SYNOPSIS
+
+Purpose: Populates $date_numbers::da_short (day of the month) and 
+$date_numbers::da_ord (day of the month) with short numbers (without leading zeros) and ordinal numbers (1st, 2nd, etc.) respectively.
+
+=head1 VERSION
+
+1
+
+=head1 AUTHOR
+
+Thomas Meehan (meehans@mooserve.freeserve.co.uk)
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Blosxom
+Copyright 2003, Rael Dornfest
+
+This Blosxom Plug-in
+Copyright 2004, Thomas Meehan 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

@@ -1,0 +1,306 @@
+# Blosxom Plugin: FmtCat
+# Author:         Uncle Roger (http://www.sinasohn.net/notebooks/)
+# Based on:       prettycategory by Randall Hand (yerase@yeraze.com)
+# Version:        1.2
+# Date:           01/17/2005      
+# License:        GPL            
+#
+# This plugin is based heavily on prettycategory by Randall Hand 
+#
+# FmtCat
+#
+# Formats Categories nicely with separators.
+# 
+# Usage:
+# 
+#   Simply include "$fmtcat::fmtcat" in your story flavour file
+#   where you want the formatted category to show up.
+#
+# Configuration:
+#
+#   There are a number of variables that control what this plugin does
+#   and what the output looks like.  See the configuration section
+#   for a complete description of each.
+#
+#   Here's a quick summary of what fmtcat can do for you:
+#
+#     - Capitalize the first letter of category names
+#     - Insert a user defined spacer (such as ">" or "-") between
+#       levels of categorization
+#     - Prepend a top-level category name (such as "Home" or "Top")
+#     - Substitute user defined category descriptions for directory
+#       names at each level of categorization
+#     - Turn each category name/description into a link to a
+#       category-level-specific journal page
+#
+#   For more information on each option, read the comments in the
+#   configuration section.
+#
+# Updates, Bug Fixes, and Enhancements
+#
+#   If you find a bug or have a suggestion for an enhancement, please
+#   let me (Uncle Roger) know via the contact form at:
+#
+#       http://www.sinasohn.net/contact.html
+#
+#   Of course, feel free to modify this to suit your own needs.  If you
+#   make a change that would benefit the blosxom community at large,
+#   please share your work by letting me know so I can update the
+#   official version.
+#
+# Latest Version
+# 
+#   The latest version of fmtcat can always be found at:
+#
+#       http://www.sinasohn.net/downloads/blosxom/plugins/
+#
+#   or via the plugin registry at the Unofficial Blosxom User Group
+#   website:
+#
+#       http://blosxom.ookee.com/
+#  
+# Update History:
+#
+#   Date        Version Pgmr    Description
+#   01.01.2005  V1.0    RLS     Initial Released Version
+#   01.14.2005  V1.1    RLS     Added ability to alias category names
+#   01.17.2005  V1.2    RLS     Added ability to turn category levels
+#                               into links to category pages.  (Thanks
+#                               to Jason Bourne for helping me to 
+#                               figure this one out.)
+#
+
+package fmtcat;
+
+use CGI::Carp qw( fatalsToBrowser );
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# Configuration Section
+#
+
+# There are six variables that can be changed to control how
+# fmtcat works.  They are:
+#
+# cap_flag       - Controls capitalization of categories
+# spacer         - Defines category separator
+# home_text      - Defines a top level category name
+# cat_flag       - Controls directory name replacement
+# category_names - Lists human readable category names for
+#                  directories
+# link_flag      - controls whether or not categories will be
+#                  links to the corresponding category page
+#
+# Each is described in detail below.  The default values are
+# all valid so you don't even have to do anything, if you don't
+# mind your categories looking the way mine do.
+
+#
+
+#-----------------------------------------------------------------------
+# cap_flag controls whether or not each level of the category
+# tree is to be capitalized.  If set to "Y", then the first
+# letter of each category level will be capitalized.  For example,
+#
+# food/dinner/meat
+#
+# would become
+#
+# Food/Dinner/Meat
+#
+# If you don't want capitalization, (You know who you are, e. e.)
+# set this flag to "N" (or, actually, any value other than "Y").
+
+$cap_flag       = "Y";
+
+#-----------------------------------------------------------------------
+# spacer is the text that will separate each level of the
+# category tree.  Possible spacers include:
+#
+#    Spacer     Description     Sample
+#    ------     --------------  ---------------------------
+#    " > "      Yahoo Style     Food > Dinner > Meat
+#    " :: "     Arts & Crafts   Food :: Dinner :: Meat
+#    " | "      Unix Geek       Food | Dinner | Meat
+#    ", "       Librarian       Food, Dinner, Meat
+#
+# Feel free to make up your own, of course.  Also, there doesn't
+# seem to be any reason that this couldn't be an <img> tag to
+# use a graphic as the spacer instead.
+
+$spacer         = " :: ";
+
+#-----------------------------------------------------------------------
+# home_text is used to add a top level category to the category
+# tree.  If you don't want one, uncomment the first definition
+# by removing the number sign (#) at the start of the line and
+# adding one at the start of the second definition (the line
+# where it is given the value "Home" by default.
+#
+# Examples:
+#
+# Given a hierarchy of:
+#
+#       /Food
+#       /Food/Dinner/
+#       /Food/Dinner/Meat
+#       /Food/Dinner/Veg
+#       /Drink
+#       /Drink/Coffee
+#       /Drink/Coffee/Sumatra
+#
+# With a home_text of "Home", and a spacer of " > ", these would be
+# displayed as follows:
+#
+#       Home > Food
+#       Home > Food > Dinner
+#       Home > Food > Dinner > Meat
+#       Home > Food > Dinner > Veg
+#       Home > Drink
+#       Home > Drink > Coffee
+#       Home > Drink > Coffee > Sumatra
+#
+# With no home_text defined and the same spacer, the categories
+# would look like this:
+#
+#       Food
+#       Food > Dinner
+#       Food > Dinner > Meat
+#       Food > Dinner > Veg
+#       Drink
+#       Drink > Coffee
+#       Drink > Coffee > Sumatra
+#
+# It's your choice as to what you prefer.  It seems to me that if you
+# never post stories at that top level, you would probably not want a
+# home_text defined.  If you do, then might want one.
+
+# Remove the number sign from this line to disable the home category
+
+#$home_text;
+
+# Put your text in this variable (and leave the previous line alone)
+# if you want a top level category added.  Possible values include
+# "Home", "Top", your journal name, or whatever you like.
+
+$home_text      = "Home";
+
+#-----------------------------------------------------------------------
+# cat_flag controls whether or not to check the directory name against
+# a list (see Category_Names below) to get a nicer, more natural
+# category name.  Set it to "Y" (the default) to turn on this feature,
+# "N" to turn it off.  Basically, if this flag is on, FmtCat goes
+# through the list of directories in Category_Names and if it finds any,
+# swaps them for the nicer description.  For example, if the list
+# included "rovers" which had a description of "Land Rovers":
+#
+#                      'rovers' => 'Land Rovers'
+#
+# then any entries in the rovers directory would have, instead,
+# "Land Rovers" in the formatted category string.  Any directories
+# not found would be left the same.  That is, if "rovers" was the
+# only directory in the list, then "home" would not be changed.
+ 
+  $cat_flag          = "Y";
+
+#-----------------------------------------------------------------------
+# category_names is the list of directories and the text to be
+# displayed for each.  If no change is necessary (that is, you
+# want "family" to stay "family"), then it need not be included
+# in this list.  Anything, however, that you do want translated
+# for display should be listed.
+#
+# The format is simple:
+#
+#                       '[dir]'  => '[display]'
+#
+# Separate multiple pairs with a comma:
+#
+#                       'fred'   => 'Fredrick Flinstone',
+#                       'barney' => 'Barney Rubble'
+#
+# Note that the last pair should not have a comma.
+#
+  %category_names    = (
+                        'rovers' => 'Land Rovers',
+                        'home'   => 'House and Home'
+                       );
+
+#-----------------------------------------------------------------------
+# link_flag is used to control whether or not each level of the category
+# will be a link to the page for that particular category.  For example,
+# if a post was in the category hierarchy "food/dinner/meat", then if
+# this flag is turned on, the word "food" would link to "/food/",
+# "dinner" would link to "/food/dinner/", and "meat" would link to
+# "/food/dinner/meat/".  Set the value to "Y" (the default) to turn this
+# feature on and "N" to turn it off.
+
+  $link_flag = "Y";
+
+#
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+$fmtcat;
+
+sub start {
+    1;
+}
+
+sub story {
+    my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    $fmtcat = $path;
+
+    if ($link_flag eq "Y") {
+       $fmtcat =~ s:\/(\w+):$spacer . &anchor($fmtcat,$1):eg;
+    }  else {
+       $fmtcat =~ s:\/(\w+):$spacer . &rename_cat(&cap_cat($1)):eg;
+    }
+
+    $fmtcat =~ s:^$spacer::g;
+
+    if ($home_text) {
+       if ($link_flag eq "Y") {
+          $fmtcat = "<a href=\"" . $blosxom::url . "/\">" . $home_text . "</a>" . $spacer . $fmtcat;
+       }  else {
+          $fmtcat =  $home_text . $spacer . $fmtcat;
+       }
+    }
+
+    1;
+}
+
+sub anchor {
+  my $mypath = $_[0];
+  my $mydir  = $_[1];
+  my $dirloc = index($mypath,$mydir);
+  my $dirurl = $blosxom::url . substr($mypath,0,$dirloc + length($mydir)) . "/";
+
+  $dispdir = rename_cat($mydir);
+
+  $dispdir = cap_cat($dispdir);
+
+  return "<a href=\"" . $dirurl . "\">" . $dispdir . "</a>";
+}
+
+sub rename_cat {
+  my $rename_dir  = $_[0];
+  
+  if ($cat_flag eq "Y") {
+     foreach my $thiskey (keys %category_names) {
+       $rename_dir =~ s/$thiskey/$category_names{$thiskey}/egi;
+     }
+  }
+  return $rename_dir;
+}
+
+sub cap_cat {
+  my $cap_dir = $_[0];
+
+  if ($cap_flag eq "Y") {
+     return uc(substr($cap_dir,0,1)) . substr($cap_dir,1);
+  }  else {
+     return $cap_dir;
+  }
+
+}
+
+1;

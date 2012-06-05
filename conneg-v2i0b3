@@ -1,0 +1,84 @@
+# Blosxom Plugin: conneg
+# Author(s): DJ Adams <dj.adams@pobox.com>
+# Version: 2.0b3
+# Documentation: See the bottom of this file, or type perldoc conneg
+
+# Note: This plugin requires a new plugin hook in blosxom!
+# See http://www.pipetree.com/qmacro/2003/02/28#conneg
+
+package conneg;
+
+# --- Configurable variables -----
+
+# For which flavours are we going to support conneg?
+# The first one you specify in the list will be the 'default'
+my @flavour = qw/html rss10 rss/;
+
+# --------------------------------
+
+use CGI ":cgi"; # for the Accept() function
+
+sub start {
+  1;
+}
+
+
+sub flavour {
+  # Don't interfere if we have index.flav or ?flav=flav
+  return if param('flav')
+         or path_info() =~ /\/index\.\w+$/; 
+
+  # To hold flavour => content/type & scores
+  my %ct;
+
+  # Get content-type for each flavour
+  chomp ($ct{$_} = blosxom::load_template($blosxom::path_info,'content_type',$_)) foreach @flavour;
+
+  # Score client's "Accept"ance preferences
+  $ct{$_} = Accept($ct{$_}) foreach keys %ct;
+
+  # Default to first flavour in list if no matches or all equal
+  $ct{$flavour[0]} += 0.1 unless join("", values %ct) and ! sameValues(values %ct);
+
+  # Rank
+  my @rank = sort {$ct{$b} <=> $ct{$a}} keys %ct;
+
+  # Set winning flavour
+  return $blosxom::flavour = $rank[0];
+
+}
+
+
+sub sameValues {
+  my %x =  map { $_ => 1 } @_;
+  return scalar keys %x == 1 ? 1 : 0;
+}
+
+1;
+
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: conneg
+
+=head1 DESCRIPTION
+
+Determines the flavour required according to the Accept HTTP headers
+sent by the client. Called as a 'flavour' plugin (just after standard
+dynamic flavour determination) and can be used to override the
+$blosxom::flavour scalar. 
+
+=head1 VERSION
+
+2.0b3
+
+=head1 AUTHOR
+
+DJ Adams <dj.adams@pobox.com> http://www.pipetree.com/qmacro
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+Blosxom Plugins Docu: http://www.raelity.org/apps/blosxom/plugin.shtml

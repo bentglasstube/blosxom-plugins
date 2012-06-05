@@ -1,0 +1,151 @@
+# Blosxom Plugin: thum_image
+# Author(s): hinoa
+# Version: 2005-09-08
+# Documentation: See the bottom of this file or type: perldoc thum_image
+
+package thum_image;
+
+use strict;
+
+# --- Configurable variables -----------
+my @image_extension = ('jpg','gif','png');
+my $image_dir = $blosxom::datadir;
+my $image_url = $blosxom::url.'/files';
+my $thum_prefix = 'thm_';
+my $thum_extension = 'png';
+my $thum_size = 60;
+
+# --- Plug-in package variables --------
+$thum_image::image = '';
+
+# --------------------------------------
+
+use Image::Magick;
+
+sub start {
+    1;
+}
+
+sub story {
+  my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+  my $tag = '';
+  my $image_path = '';
+  my $image_fn = '';
+  my $thum_fn = '';
+  my $size;
+  $thum_image::image = '';
+  
+  #search image
+  foreach (@image_extension) {
+    if (-f qq!$image_dir$path/$filename.$_!){
+        $image_path = qq!$image_dir$path/$filename.$_!;
+        $image_fn = qq!$filename.$_!;
+        last;
+    }
+  }
+  return 0 if ($image_fn eq '');
+  
+  #create thumbnail
+  my $org = Image::Magick->new;
+
+  if (-f qq!$image_dir$path/$thum_prefix$filename.$thum_extension!) {
+    #already exsist
+    $thum_fn = qq!$thum_prefix$filename.$thum_extension!;
+    
+  } else {
+    #make thumbnail
+    $org->Read($image_path);
+    $org->Scale( geometry=>"$thum_size x $thum_size" );
+    $org->Write(qq!$image_dir$path/$thum_prefix$filename.$thum_extension!);
+    if (-f qq!$image_dir$path/$thum_prefix$filename.$thum_extension!) {
+        $thum_fn = qq!$thum_prefix$filename.$thum_extension!;
+    }
+  }
+  
+  #original
+  if ($blosxom::path_info =~ /\./) {
+    my ($size_w, $size_h, $size, $format) = $org->Ping($image_path);
+    $tag .= qq!<a href="$image_url$path/$image_fn">!;
+    $tag .= qq!<img width="$size_w" height="$size_h" src="$image_url$path/$image_fn"!;
+    
+  #thumbnail
+  } else {  
+    my ($size_w, $size_h, $size, $format) = $org->Ping(qq!$image_dir$path/$thum_fn!);
+    $tag .= qq!<a href="$blosxom::url$path/$filename.$blosxom::default_flavour">!;
+    $tag .= qq!<img width="$size_w" height="$size_h" src="$image_url$path/$thum_fn"!;
+    
+  }
+  
+  #alt
+  $tag .= " alt=\"" . $blosxom::title;
+  $tag .= "\"/></a>";
+
+  $thum_image::image = $tag;
+
+  undef $size;
+
+  1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: thum_image
+
+=head1 SYNOPSIS
+
+
+=head1 VERSION
+
+2005-09-08
+
+=head1 AUTHOR
+
+hinoa
+
+=head1 INSTALLATION
+
+Drop thum_image into your plugins directory.
+
+=head1 CONFIGURATION
+
+
+=head1 REQUIREMENTS
+
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+Blosxom Plugin Docs: http://www.blosxom.com/documentation/users/plugins.html
+
+=head1 BUGS
+
+Address bug reports and comments to:
+bkkb.net: http://bkkb.net/webdev/blosxom/thum_image.html
+all about blosxom ML: http://www.freeml.com/info/blosxom\@freeml.com
+
+=head1 LICENSE
+
+Blosxom and this Blosxom Plug-in
+Copyright 2005, hinoa
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

@@ -1,0 +1,477 @@
+# Blosxom Plugin: nospam
+# Author(s): Greg Schueler <greg-blosxom@vario.us>
+# Version: 0.01
+# Documentation: See the bottom of this file or type: perldoc nospam
+
+package nospam;
+
+
+###### config ########
+
+# writebackflav: the flavour used for the page templates containing your writeback form
+# normally "writeback" is used.
+$writebackflav = "writeback";
+
+# ugliness: how ugly the generated javascript should be
+# use a value from 0 to 4
+$ugliness = 0;
+
+# failmessage: message to display on page if user submits bad request
+#
+$failmessage = "Sorry, your writeback was not posted.  Turn javascript on?";
+
+# password_frequency: how often to generate a new password (in seconds)
+# default: 60 * 60 * 24 = 24 hours
+$password_frequency = 60*60*24;
+
+# pfile: filepath for generated daily password file
+#
+$pfile="$blosxom::plugin_state_dir/nospam.daily";
+
+# block_lwp: set to 1 or 0.  1 means disallow writebacks from perl-script user agents
+# may block some spam, but it's possible it would block some valid trackbacks, so up to you
+$block_lwp=1;
+
+
+###### end config ########
+
+#exported
+$script;
+$input;
+
+use CGI qw/:standard/;
+use File::stat;
+
+my $daily;
+my $fieldname='nospam';
+my $debug=0;
+
+
+# hidden config: allow_trackback: set to 1 or 0.
+# if you set it to 0, then nobody can send trackbacks.
+$allow_trackback=1;
+
+$trackback_response =<<'TRACKBACK_RESPONSE';
+<?xml version="1.0" encoding="iso-8859-1"?>
+<response>
+<error>1</error>
+<message></message>
+</response>
+TRACKBACK_RESPONSE
+
+$blosxom::template{'trackback_failed'} = {
+  'content_type' => 'text/xml',
+  'head'         => '$nospam::trackback_response',
+  'date'         => ' ',
+  'story'        => ' ',
+  'foot'         => ' '
+};
+
+sub start{
+    &dbg("start");
+    my $l = time();
+    if(!-e $pfile){
+        &makedaily();    
+    }elsif(($l - stat($pfile)->mtime) > $password_frequency ){
+        &makedaily();
+    }else{
+        open(F,$pfile) || die "couldn't open daily nospam file: $pfile $!";
+        $fieldname=<F>;
+        chomp($fieldname);
+        $daily=<F>;
+        chomp($daily);
+        close(F)  || die "couldn't close daily nospam file $pfile";
+        #warn "found daily: $daily and fieldname: $fieldname\n";
+    }
+    &check();
+1;
+}
+sub dbg{
+    warn($_[0]."\n") if $debug;
+}
+sub makedaily{
+    &dbg("makedaily");
+    my $str = join('',&rndstr(r(21)+10));
+    my $field = join('',&rndstr(r(21)+10));
+    open(F,"> $pfile") || die "couldn't write daily nospam file: $pfile $!";
+    print F "$field\n$str";
+    close(F) || die "couldn't close daily nospam file $pfile";
+    $daily=$str;
+    $fieldname=$field;
+}
+sub fail{
+    &dbg("fail");
+    param(-name=>'plugin',-value=>'nospam');
+    $trackback_response =~ s!<message></message>!<message>$failmessage</message>!m;
+    $blosxom::flavour="trackback_failed" if $blosxom::flavour eq $writeback::trackback_flavour;
+	
+    $writeback::writeback_response=$failmessage;
+}
+sub story{
+    my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    
+    $path =~ s!^/*!!; $path &&= "/$path";
+    if ( $blosxom::flavour eq $writebackflav ) {
+        &makejs();
+    }
+    1;
+}
+sub check{
+    &dbg("check");
+    if($allow_trackback and $blosxom::flavour eq $writeback::trackback_flavour){
+        return 1;
+    }
+      # Only spring into action if POSTing to the writeback plug-in
+    if ( request_method() eq 'POST' and (param('plugin') eq 'writeback' or $blosxom::flavour eq $writeback::trackback_flavour) ) {    
+        if($block_lwp && ( user_agent("^libwww") || user_agent("^lwp") || user_agent("^LWP"))){
+            &fail();
+        }elsif($daily and $fieldname){
+            if(param($fieldname) and param($fieldname) eq $daily){
+                return 1;
+                #warn "valid, looks good";
+            }else{
+                #fail spamwise
+                &fail();                
+            }
+        } 
+    }
+    1;
+}
+%strs=();
+%nums=();
+%vnames=();
+sub vname{
+    my $vn = join("",&rndstrv(10));
+    while(exists($vnames{$vn})){
+        $vn = join("",&rndstrv(10));
+    }
+    return $vn;
+}
+sub mkvrs(){
+    my @out;
+    my @keys = keys %strs;
+    for my $s(keys %strs){
+        push @out,"var $strs{$s}=\"$s\"; "; 
+    }
+    for my $s(keys %nums){
+        push @out,"var $nums{$s}=$s; "; 
+    }
+    return join("\r",@out);
+}
+sub makejs{
+    &dbg("makejs");
+    my $rh = remote_host();
+    $input = qq{
+<input type="hidden" name="$fieldname" value="$rh" id="nswb$fieldname"/>
+    };
+    my $prec =0;
+    my $sufc = 0;
+    my $dreg;
+    my $x;
+    if($ugliness < 1){
+        $dreg="\"$daily\"";
+        
+    }elsif($ugliness == 1){
+        $dreg= &dreg($daily,0,0);
+    }elsif($ugliness > 1){
+         $prec = r(49)+1;
+         $sufc = r(49)+1;
+        $dreg= &dreg($daily,$prec,$sufc);
+    }
+    $x = $prec+length($daily);
+    my $var ="x";
+    $var = &vname() if $ugliness > 1 ;
+    my ($prea,$fprea)=&mkf($prec) if $ugliness > 2;
+    my ($xa,$fxa)=&mkf($x) if $ugliness > 2;    my $js=qq{
+    var $var = 
+    $dreg;
+    document.getElementById(
+    'nswb$fieldname').value=};
+    if($ugliness > 2){
+        $js.= qq{
+        $var.substring($prea(), $xa());
+        };
+    }elsif($ugliness > 1){
+        $js.= qq{
+        $var.substring($prec, $x);
+        };
+    }else{
+        $js.= qq{ $var; } ;
+    }
+    
+    $js.="\n$fprea\n$fxa";
+    $js = &mkvrs()."\n".$js;
+    $ajs = $js;
+    $js=~s/\s+//sg;
+    $js=~s/var/var /sg;
+    $js=~s/function/function /gs;
+    if($ugliness >3){
+        my ($func,$xjs)=&mkbl($js);
+        $js = "$func();\n$xjs";
+    }
+    $script = qq{
+<script language="javascript">
+//<!--
+    $js
+-->
+</script>
+
+    };
+
+}
+
+%memo=();
+%memn=();
+
+sub mkf{
+    my ($n,$again)=@_;
+    &dbg("mkf");
+    my @ns;
+    my @os;
+    my @ops=qw(+ - *);
+    my %ops=("+" => "-","-" => "+","/" => "*","*" => "/");
+    my $mm = r(10)+1 + $n;
+    for(1..r(10)+10){
+        push @ns,r(15)+1;
+        push @os,$ops[r(3)];
+    }
+    my $out;
+    my $val=$n;
+    for my $k (0..$#ns){
+        my $v = $ns[$k];
+        my $o = $os[$k];
+        if($v ==0 && ($o eq "/" || $o eq "*")){
+            $v=1;
+            $ns[$k]=1;
+        }
+        $val = eval("$val $o $v");
+        $val = $val;
+        $os[$k]=$ops{$os[$k]};
+    }
+    $out = &getnvar($val);
+    my @funcs;
+    for my $k (0..$#ns){
+        my $v = $ns[$#ns-$k];
+        my $o = $os[$#ns-$k];
+        if($v ==0 && ($o eq "/" || $o eq "*")){
+            $v=1;
+            $ns[$#ns-$k]=1;
+        }
+        if(!defined($again) && exists $memo{$v}){
+            $v="$memo{$v}()";
+        }elsif(!defined($again) && (scalar(keys%memo) < 5) && r(4)==0){
+            my ($fn,$fx) =  &mkf($v,1);
+            $v = "$fn()";
+            push @funcs,$fx;
+        }else{
+            my $vn = &getnvar($v);
+            $v=$vn;
+        }
+        $out = " ($out $o $v)";
+    }
+    
+    my $name= join("",&rndstrv(r(10)+3));
+    while(defined($memn{$name})){
+        warn "already seen $name, try again \n";
+        $name = join("",&rndstrv(r(10)+3));
+    }
+    warn "picked $name for $n\n";
+    $memo{$n}=$name unless $memo{$n};
+    $memn{$name}=1;
+    $out = "return $out ;";
+
+    return ($name, qq/function $name(){ 
+    $out
+    }/.join("\n",@funcs));
+    
+}
+sub r{
+    return int(rand(shift));
+}   
+
+sub mkbl{
+    my $js=shift;
+    my @jsc=split(//,$js);
+    my %freq = map{$_=>0}@jsc;
+    map{$freq{$_}++}@jsc;
+    my @ord = sort{$freq{$b}<=>$freq{$a}}keys %freq;
+    my $n=0;
+    my %ord=map{$_=>$n++}@ord;
+    my @locs = map{$ord{$_}}@jsc;
+    my $ordv = " = [ ".join(",",map{s/"/\\"/;"\"$_\""} @ord)."];";
+    my $vn = "a";#&vname();
+    $ordv = "var ".$vn.$ordv;
+    my $chv = "return eval( ".join("+", map{ $vn."[".$ord{$_}."]" } @jsc )." ) ; " ;
+    my $fn= &vname();
+    return ($fn,"function $fn"."(){\r".$ordv."\r".$chv."\r}");
+}
+
+sub rndstr{
+    &dbg("rndstr");
+    my @chr;
+    my @cs = ((map{chr($_)}ord('A')..ord('Z')),(map{chr($_)}ord('a')..ord('z')),(map{chr($_)}ord('0')..ord('9')));
+
+    for(1..$_[0]){
+        my $x = r(scalar@cs);
+        push @chr, $cs[$x];
+    }
+    return @chr;
+}
+sub rndstra{
+    &dbg("rndstra");
+    my $n = shift;
+    
+    my $x = r($n);
+    my $o;
+    if($x < 26){
+        return (chr($x+ord('A')),&rndstr($n-1));
+    }else{
+        return (chr(($x - 26) + ord('a')),&rndstr($n-1));
+    }    
+}
+sub rndstrv{
+    &dbg("rndstrv");
+    my @chr;
+    my @cs = qw(i I l L o O B 1 0 8);
+
+    for(2..$_[0]){
+        my $x = r(scalar@cs);
+        push @chr, $cs[$x];
+    }    
+    return ($cs[r(scalar@cs -3 )],@chr);
+}
+sub getnvar{
+    my $c=shift;
+    if(!exists($nums{$c})){
+        my $vn=&vname();
+        $nums{$c}=$vn;
+    }
+    return $nums{$c};
+
+}
+sub getcvar{
+    my $c=shift;
+    if(!exists($strs{$c})){
+        my $vn=&vname();
+        $strs{$c}=$vn;
+    }
+    &dbg("getcvar($c)=$strs{$c}");
+    return $strs{$c};
+}
+sub dreg{
+    &dbg("dreg");
+    my ($pass, $prec, $sufc)=@_;
+    my @c = split(//,$pass);
+    my @pre = &rndstr($prec);
+    my @suf = &rndstr($sufc);
+    my $f='';
+    my @r = (@pre,@c,@suf);
+    @r = map{ s#"#\\"#g ; $_} @r;
+    if($ugliness ==3){
+        @r = map{ &getcvar($_) } @r;
+         return join("+\r",@r);
+    }else{
+         return '"'.join('"+"',@r).'"';
+    }
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: nospam
+
+=head1 SYNOPSIS
+
+This plugin provides a simple anti-spam mechanism for your writeback plugin, using javascript.
+
+=head1 QUICK START
+
+Edit your "foot.writeback" template file and add the following somewhere within the writeback form:
+
+   $nospam::input
+   
+Also add the following anywhere on that page:
+
+   $nospam::script
+
+=head1 WHY
+
+First of all, I never really figured that the blosxom+writeback using blogger community would so large that we would serve as a good target for spammers.  But I began to notice blog-comment spam on several different blogging software packages, including blosxom+writeback.  It's an annoyance to keep weeding your garden of this spam, and annoying to keep trying to block spammers from doing it again.  
+
+I figured that the normal writeback plugin is a good target for these spammers because it only takes one measly script for them to write to be able to spam everyone who uses it.  I then modified my plugin to require a password before allowing the writeback to be posted.  From a blog-reader/commentor's perspective, this is an annoyance.  So I figured that I would make the password field hidden, and have a simple javascript that would fill in the password automatically without the user even being aware of it.  This would block two techniques that I figured might be what is used by the spammers: rote "hardcoded" form spamming, and screen-scraping spamming which only looks for the HTML form information.  Normal users with javascript enabled on their web browser would still be able to submit comments, and spammers would not.
+
+This led me to design this plugin. However I realized that once spammers got a whiff of people using this plugin with writeback, they would eventually circumvent it.  I figured I would prepare for that by allowing the plugin users to vary the way that the plugin works, making it harder for spammers to spam everyone using the same technique.  Probably the best defense is having a very diverse field of spam prevention, making it not worth the spammers' while to figure out every little mechanism.  I would encourage others to come up with other ways to prevent the spam as well.
+
+I realize that a continuing escalation of spam vs. anti-spam mechanisms is not a winnable war, and is a PITA in the mean time.  I don't see this plugin as a solution to the problem, it is merely a small barricade.  It will probably work for you for a while, since the vast majority of the people using the writeback plugin probably won't even know about this plugin, and so spammers may just ignore your site.  If spammers catch on to it and do eventually subvert it, oh well, we'll have to make another barricade.
+
+=head1 DESCRIPTION
+
+This plugin adds a hidden password field to the writeback form, and a section of javascript which sets the correct password before the user submits the writeback form.  
+
+The way it works is that each day a new random "password" is generated for your site.  When the user loads the writeback page using an actual browser, this password is automatically filled in on a hidden field in the writeback form by the javascript, so it is invisible for valid users.  If the form is submitted without the correct password, then the writeback won't get posted.  
+
+You can choose an "ugliness" level for the generated javascript, with a value from 0 to 4 (with 4 being most "ugly" or difficult to evaluate).  The least ugly is very simple, and is probably easy for a spammer to eventually scrape for your password.  You might start at 0 because it adds the least amount of crap into your html, however you may want to increase it if you find that spammers are catching onto you and getting around the simplified mechanism. At level 2 or more, simple screen-scraping and/or regexes won't work for the spammers, and the only way to determine the password is by evaluating the javascript with a true javascript engine.
+
+If a spammer wants to spam your site, their normal writeback script won't work.  If they try to scrape your site for the password within the javascript, they will have to do it every day (or as often as you want the password changed).  If you think that a spammer is going to give up at that point you can leave the ugliness at 0.  If you want to make it harder, you can increase the ugliness.  At level 3 or more,  only a real javascript evaluation engine would even be able to glean the correct password. 
+
+If you do find that spammers are getting through this plugin, set your ugliness level up by 1. If it's at 4 and you are still having the problem, begin increasing the $tarlevel value.  Please don't email me directly, because I'm being pessimistic and betting that spammers will eventually be able to bypass this plugin.  If they do just post a writeback onto my site (http://greg.vario.us/blog/software/blosxom/antispam.writeback).  
+
+Hopefully this plugin will make it easier for the simple blosxom+writeback blogger to maintain a clean site with minimal impact on their users, and stay a few steps ahead of the spammers.
+
+=head1 CONFIGURATION
+
+A few configuration values can be modified:
+
+=over
+
+=item $ugliness (default: 0)
+
+Start at level 0, and if you see spam getting through, increase by only 1 (up to max 4).  This will hopefully prolong the usefulness of this script.
+
+=item $block_lwp (Default: 0)
+
+Set to 1 to black deny all writebacks posted with LWP (perl www library), which is used by many spammers in their perl scripts.  It only can determine that LWP is used some of the time (and you'd think the spammers would know not to tell you, but apparently many don't.)
+
+Downside: possible valid uses of LWP for posting writebacks? this would block them.  
+
+=item $failmessage (default: "Sorry, your writeback was not posted.  Turn javascript on?")
+
+Message to display when a writeback is submitted and this plugin determines that it shouldn't be allowed.
+
+=item $password_frequency (default: 24 hours)
+
+How long each generated password lasts (in seconds).
+
+=item $pfile (default: $blosxom::plugin_state_dir/nospam.daily)
+
+File to store the daily password.
+
+
+
+=back
+
+=head1 VERSION
+
+0.01
+
+=head1 AUTHOR
+
+Greg Schueler <greg-blosxom@vario.us> http://greg.vario.us
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS / I'M STILL BEING SPAMMED
+
+Let me know: http://greg.vario.us/blog/software/blosxom/antispam.writeback
+
+=head1 LICENSE
+
+This Blosxom Plug-in is placed in the public domain.
+

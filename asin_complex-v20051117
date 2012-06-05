@@ -1,0 +1,160 @@
+# Blosxom Plugin : asin_complex
+# Author(s) : kay <info@ellinikonblu.com>
+# Version : 2005-11-17
+
+package asin_complex;
+
+# --------------------------------------
+# Configurable Variable
+my $associatetag   = "YOUR_ASSOCIATE_TAG";  # Associate Tag
+my $subscriptionid = "GTYDRES564THU";       # Subscription ID(Manual Default)
+my $xslfile        = "/lib/asinsimple.xsl"; # XML Stylesheet URL
+
+my $locale         = "jp";
+
+# Cache Configuration
+my $asin_dir = "$blosxom::plugin_state_dir/asin";
+my $modify   = "24";
+
+# Path to no image
+my $noImage        = "no-image_URL";
+my $noImageHeight  = "130";
+my $noImageWidth   = "130";
+# --------------------------------------
+# Base URL
+my $requesturl     = "http://xml-jp.amznxslt.com/onca/xml3";      # for Amazon.co.jp
+my $targeturl      = "http://www.amazon.co.jp/exec/obidos/ASIN/"; # for Amazon.co.jp
+#Constant value for deadlock routine
+#--- v20051108 New
+my $LockName = "$asin_dir/Locked";
+my $retry    = 10;
+# ======================================
+use LWP::Simple;
+
+sub start {
+    if (!-e $asin_dir) {
+        my $mkdir_r = mkdir($asin_dir, 0755) or die "Can't creat $asin_dir : $1";
+        $mkdir_r or return 0;
+    }
+
+    return 1;
+}
+
+sub story {
+  my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+  $$body_ref =~ s/´[asin:([A-Z0-9]{10})´]/requestAWS($1)/gei;
+  $$body_ref =~ s/<a´s+href="asin:([A-Z0-9]{10})"´s*>/'<a href="'.rewriteASIN($1).'">'/gei;
+
+  return 1;
+}
+
+sub rewriteASIN { # SubRoutine to make URL from ASIN code
+  my ($asinCode) = @_;
+
+  return "$targeturl" . "$asinCode/$associatetag" . "/ref=nosim/";
+}
+
+sub requestAWS { # SubRoutine to request to AWS
+  my ($asinCode) = @_;
+
+  my $request = "$requesturl?" .
+    "dev-t=$subscriptionid&" .
+    "t=$associatetag&" . "f=$xslfile&" .
+    "locale=$locale&type=lite&" . "AsinSearch=$asinCode";
+
+  my $cache    = "$asin_dir/$asinCode.html";
+  my $tmpcache = "$asin_dir/$asinCode.tmp";
+
+  my $rtn = "";
+
+  if ( -e "$LockName$asinCode" ) {
+  # for LockFile exist
+    if ( -M "$LockName$asinCode" < 1/288 ) {
+    # Now cache being creat or refreshing
+      while ( -e "$LockName$asinCode" ) {
+        if ( --$retry < 1 ) { last; } # Give up to refresh cache after 10s waiting
+        sleep(1);
+      }
+    } else {
+    # cleaning
+      if ( -e $tmpcache ) { unlink( $tmpcache ); }
+      rmdir( "$LockName$asinCode" ); # LockFile Cleaning
+    }
+  } else {
+  # for LockFile do not exist
+    mkdir( "$LockName$asinCode", 0755 ); # Cache Locked!
+
+    if ( -e $cache ) {
+      if ( -M $cache > ( $modify / 24 ) or -s _ < 160 ) {
+      # Cache files less 160bytes is refreshed by my experiense.
+        create_cache( $tmpcache, $request );
+
+        if ( unlink( $cache ) ) {
+          rename( $tmpcache, $cache );
+        }
+      }
+    } else {
+    # Create new cache
+      create_cache( $cache, $request );
+    }
+
+    rmdir( "$LockName$asinCode" ); # Cache unlocked!
+  }
+
+  # Read from cache
+  if ( open CACHE, $cache ) {
+    $rtn = join( '', <CACHE> );
+    $rtn = '<div class="asinSimple">' . $rtn . '</div>';
+
+    close CACHE;
+  }
+
+  return $rtn;
+}
+
+sub create_cache { # SubRoutine to create new cache
+  my ( $cache_file, $request ) = @_;
+  my $url = "s?https?://[-_.!~*'()a-zA-Z0-9;/?:@&=+$,%#]+";
+
+  # Request and get that response
+  my $ua = new LWP::UserAgent;
+  $ua->agent("asin_complex");
+  $ua->timeout(10);
+  my $r = $ua->mirror($request, $cache_file);
+
+  my $rtn = "";
+
+  # Cache Conversion
+  if ( open CACHE, $cache_file ) {
+    while ( <CACHE> ) {
+      if ( /<img´s+src="($url)"´s*>/ ) { # Is image legal?
+        my $header  = head( $1 );
+        my $convtag = '<img src="' . $1 . '" />';
+
+        if ( $header->content_length < 820 ) {
+          # Image file less 820bytes is "No Image".
+          $convtag = '<img src="' . $noImage . '" ' .
+            'height="' . $noImageHeight . 'px" ' .
+            'width="' . $noImageWidth . 'px" />';
+        }
+
+        $_ =~ s/<img´s+src="$url"´s*>/$convtag/gs;
+      }
+
+      # for HTML 1.0
+      $_ =~ s/<br>/<br ´/>/gs;
+
+      $rtn .= $_;
+    }
+
+    close CACHE;
+
+    if ( open CACHE, "> $cache_file" ) {
+      print CACHE $rtn;
+      close CACHE;
+    }
+  }
+
+  return 1;
+}

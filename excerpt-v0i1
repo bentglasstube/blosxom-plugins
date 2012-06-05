@@ -1,0 +1,19 @@
+# v0i1
+package excerpt;
+
+use strict;
+use warnings;
+
+our $data;
+
+sub start {
+Ê 1;
+}
+
+sub story {
+Ê my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+Ê ($data,$$body_ref) = ($$body_ref =~ /(?:<div class="excerpt">(.*?)<\/div>)?\s*(.*)/s);
+Ê return 1;
+}
+
+1;

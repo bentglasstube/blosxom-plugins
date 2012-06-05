@@ -1,0 +1,96 @@
+# Blosxom Plugin: timezone
+# Author(s): Mark Ivey <zovirl@zovirl.com>
+#            Raffi Krikorian <r@bitwaste.com>
+# Version: 0.0.2
+# Documentation: See the bottom of this file or type: perldoc timezone
+
+package timezone;
+use POSIX qw(tzname tzset);
+
+# --- Configurable variables -----
+
+# what timezone is the blog author in
+my $blog_timezone = "PST8PDT";
+
+# --------------------------------
+
+use vars qw( $name );
+
+sub start {
+    $ENV{TZ} = $blog_timezone;    
+
+    my $isdst = (localtime())[8];  # is DST in effect?
+    POSIX::tzset();
+    my @tz_name = POSIX::tzname(); # ($std, $dst)
+    $name = $isdst ? $tz_name[1] : $tz_name[0];
+    1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: timezone
+
+=head1 SYNOPSIS
+
+Lets Blosxom timestamps use a different timezone than the server.  
+Exports a variable, $timezone::name, so flavors can include the timezone.
+
+=head1 VERSION
+
+0.0.2
+
+=head1 AUTHOR
+
+Mark Ivey <zovirl@zovirl.com>, http://zovirl.com
+Raffi Krikorian <r@bitwaste.com>, http://www.bitwaste.com/
+
+=head1 DESCRIPTION
+
+The format for $blog_timezone is the same as for the tzset command 
+(www.die.net/doc/linux/man/man3/tzset.3.html).
+
+$timezone::name can be used in flavors, like this:
+...posted: $hr:$min $timezone::name...
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+This plugin can't be disabled by appending an underscore to the filename 
+(timezone_).  I don't think this should cause any problems, but I might 
+be wrong.
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+timezone Blosxom plugin
+Copyright 2003, Mark Ivey
+Copyright 2003, Raffi Krikorian 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

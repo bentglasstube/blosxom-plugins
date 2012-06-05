@@ -1,0 +1,19 @@
+<div class="form">
+<form method="post" class="bbs">
+<input type="hidden" name="plugin" value="newentry" />
+
+<label for="name">Name: (必ず入力して下さい)</label><br />
+<input id="name" name="name" value="$newentry::name" /><br />
+
+<label for="url">URL/E-Mail:</label><br />
+<input id="url" name="url" value="$newentry::url" /><br /><br />
+
+<label for="comment">Comments: (タグは使用できません)</label><br />
+<textarea id="comment" name="comment" rows="7" cols="75"></textarea><br />
+
+<input type="checkbox" id="save_preferences" name="save_preferences" value="1" checked="checked" /><label for="save_preferences">Name, URL/E-Mail を保存する</label><br /><br />
+
+<input style="font-weight:bold;" type="submit" name="post" value="&nbsp;Post&nbsp;" />
+<em>$newentry::response</em>
+</form>
+</div>

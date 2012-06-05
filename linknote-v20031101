@@ -1,0 +1,93 @@
+# Blosxom Plugin: linknote
+# Author: Nelson Minar <nelson@monkey.org>
+# Version: 20031026
+# http://www.nelson.monkey.org/~nelson/weblog/
+# License: Public Domain
+
+package linknote;
+
+# Configure - where to read entries from
+my $datafile = '/home/nelson/blosxom/linkblog/entries/links.dat';
+
+# Use these in flavour file if you want:
+$url;         # URL of each entry
+$trackedURL;  # URL with click tracking
+$text;        # Text commentary for each entry
+
+# State from file is read into here.
+my $dates = [];
+my $names = [];
+my $ips = [];
+my $urls = [];
+my $titles = [];
+my $comments = [];
+
+sub start {
+    open(FP, $datafile);
+    while (<FP>) {
+        @l = split('\t');
+        push (@dates, $l[0]);
+        push (@names, $l[1]);
+        push (@ips, $l[2]);
+        push (@urls, $l[3]);
+        push (@titles, $l[4]);
+        push (@comments, $l[5]);
+    }
+    close(FP);
+    1;
+}
+
+sub entries {
+  return sub {
+    my(%files, %indexes);
+    foreach $n (0 .. $#dates) {
+        $files{"$blosxom::datadir/$n.txt"} = $dates[$n];
+    }
+    return (\%files, \%indexes);
+  };
+}
+
+# Escaping code taken from blosxom.cgi
+my %escape = ('<'=>'&lt;', '>'=>'&gt;', '&'=>'&amp;', '"'=>'&quot;');  
+my $escape_re = join '|' => keys %escape;
+
+# Modify the body of stories by rewriting asin: URIs to real URLs
+sub story {
+    my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+    # Generate data to serve as the story
+    $url=$urls[$filename];
+    $trackedURL = clicktrack::generateRedirURL($url);
+
+    $title = $titles[$filename];
+
+    $text =~ s/($escape_re)/$escape{$1}/g;
+    $title =~ s/($escape_re)/$escape{$1}/g;
+
+    $text="$comments[$filename]";
+    $text =~ s/^\s*(.*)\s*$/$1/;
+
+    $$body_ref = "<a title=\"$title\" href=\"$url\">$text</a>";
+
+    # Generate escaped versions for XML output; stolen from blosxom.cgi
+    if ($blosxom::flavour =~ m/xml|rss/) {
+        $url =~ s/($escape_re)/$escape{$1}/g;
+        $trackedURL =~ s/($escape_re)/$escape{$1}/g;
+    }
+    
+    1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: linknote
+
+=head1 SYNOPSIS
+
+Override Blosxom machinery to read blog entries from a single file and
+format them as links. Input file is a tab delimited file
+  $date\t$url\t$title\t$comment

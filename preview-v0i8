@@ -1,0 +1,134 @@
+#!/usr/bin/perl
+# Blosxom Plugin: preview
+# Author(s): Jason Thaxter <sseye@ahab.com>
+# Version: 0.8
+# Documentation: See the bottom of this file or type: perldoc preview
+
+package preview;
+
+# --- Configurable variables -----
+
+# fill this in with the location of preview if it's not in the usual one found
+$prefix = '';
+
+# set your password here
+$password = 'abc';
+
+# if you set this to zero, per-file passwords override the global password
+$master_password = 1;
+
+# --------------------------------
+
+# defaults
+$prefix ||= 'pre';
+$password ||= 'abc';
+$master_password = 1 if !defined($master_password);
+
+$cgipassword;
+use CGI qw/:standard/;
+
+sub start {
+  1;
+}
+
+sub filter {
+	my ($pkg, $files_ref) = @_;
+	# skip if possible
+	return 1 if (
+		$master_password and
+		$cgipassword = param('preview') and
+		$cgipassword eq $password
+		);
+	# prune unwanted files
+	foreach my $fn ( keys %$files_ref ) {
+		if ($fn =~ /$prefix([^\-]*)\-[^\/]+$/ and
+			(($1 and $cgipassword ne $1) or
+			 (!$1 and $cgipassword ne $password)
+			)
+		){ delete $files_ref->{$fn}; }
+	}
+}
+
+1;
+
+__END__
+
+=head1 NAME - preview
+
+Blosxom Plug-in: preview
+
+=head1 SYNOPSIS
+
+Use this plugin to preview an item before making it generally available.
+
+=head1 USAGE
+
+To preview a file before making it generally available, make the filename with a
+special prefix, e.g.  C<pre-todays_news.txt>.  This will make the item invisible
+to normal users, but visible when a password is present in the query string,
+e.g.  C</my/blosxom.cgi?preview=abc>.
+
+Once your item is ready, just rename it to, e.g. C<todays_news.txt> and it's
+"published".
+
+Since this will make invisible any files that just happen to have the prefix,
+you can configure the prefix to use, but it cannot have a hyphen in it.
+
+You can also set a per-file password with the filename, e.g.
+C<preFOOBAR-todays_news.txt>.  For this file, C<FOOBAR> would be the password.
+Of course, anyone with access to the filesystem can read it, but they can do
+that anyway by reading the file itself.
+
+For speed reasons, if the global password is present, all preview files are
+shown.  If for some reason the per-file password should override the master
+password, you can set C<$master_password> to zero, which means that the main
+password is not a master password.
+
+=head1 TODO
+
+The two features that could be added for 1.0 are the ability to use the config
+plugin, if present, to make local settings for configuration variables, and the
+ability to put C<$preview::preview> into your template urls so that links work
+in the preview mode.
+
+=head1 VERSION
+
+Version 0.8
+
+=head1 AUTHOR
+
+Jason Thaxter <sseye@ahab.com>, http://ahab.com/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list
+[http://www.yahoogroups.com/group/blosxom] or to the author.
+
+=head1 LICENSE
+
+Blosxom and this Blosxom Plug-in
+Copyright 2003, Jason Thaxter
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

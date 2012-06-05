@@ -1,0 +1,28 @@
+#!/usr/bin/perl -w
+
+# Blosxom Plugin: reverse
+# Author(s): Garrett Rooney
+# Version: 0.0
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+package reverse;
+
+sub start {
+  1;
+}
+
+sub sort {
+  return sub {
+    my($files_ref) = @_;
+
+    if ($blosxom::path_info_yr eq ""
+        && $blosxom::path_info_mn eq ""
+        && $blosxom::path_info_dy eq "") {
+      return sort { $files_ref->{$b} <=> $files_ref->{$a} } keys %$files_ref;
+    } else {
+      return sort { $files_ref->{$a} <=> $files_ref->{$b} } keys %$files_ref;
+    }
+  };
+}
+
+1;

@@ -1,0 +1,264 @@
+# Blosxom Plugin: canonicaluri
+# Author(s): Frank Hecker <hecker@hecker.org>
+# Version: 0.6
+# Documentation: See the bottom of this file or type: perldoc canonicaluri
+
+package canonicaluri;
+
+use strict;
+
+use CGI qw/:standard :netscape/; 
+
+
+# --- Configurable variables -----
+
+my $debug = 0;                          # set to 1 to print debug messages
+
+# --------------------------------
+
+
+use vars qw!$redirecting!;              # 1 if we are redirecting, 0 if not
+
+
+sub start {
+    warn "canonicaluri: start\n" if $debug > 1;
+
+    $redirecting = 0;
+
+    # Activate this plugin only when doing dynamic page generation.
+    return $blosxom::static_or_dynamic eq 'dynamic' ? 1 : 0;
+}
+
+
+sub filter {
+    my ($pkg, $files_ref) = @_;
+
+    warn "canonicaluri: filter\n" if $debug > 1;
+
+    warn "canonicaluri: \$blosxom::path_info: '" . $blosxom::path_info . "'\n"
+        if $debug > 0;
+    warn "canonicaluri: path_info(): '" . path_info() . "'\n"
+        if $debug > 0;
+
+    # We need a copy of the original PATH_INFO, prior to Blosxom having
+    # parsed it, because we need to see the original URI passed into
+    # Blosxom, including whether the URI had an index.* component, trailing
+    # slash, or file extension.
+
+    my $path = path_info();
+
+    # If the requested URI has an explicit "index.*" component where the
+    # the file extension corresponds to the default flavour (typically
+    #  "html") then we rewrite the URI to strip the "index.*" component
+    # (and any spurious slashes after it) and leave a single trailing slash.
+
+    $path =~ s!/index\.$blosxom::default_flavour/*$!/!;
+
+    warn "canonicaluri: \$path (after index.html check): '" . $path . "'\n"
+	if $debug > 0;
+
+    # If the requested URI has an explicit "index.*" component for any
+    # flavour other than the default then we rewrite the URI if necessary
+    # to remove any trailing slashes.
+
+    $path =~ s!/(index\.[^./]*)/*$!/$1!;
+
+    warn "canonicaluri: \$path (after index.foo check): '" . $path . "'\n"
+	if $debug > 0;
+
+    # If the URI has a trailing slash but corresponds to an individual entry
+    # then we rewrite the URI to remove the trailing slash. On the other hand
+    # if the URI does not have a trailing slash but corresponds to a category
+    # or archive page then we rewrite the URI to add the trailing slash
+    # unless an "index.*" component is present in the URI.
+
+    if ($path =~ m!/$!) {               # trailing slash, remove if need be
+	$blosxom::path_info =~ m!\.! and $path =~ s!/+$!!;
+    } else {                            # no trailing slash, add if needed
+	$blosxom::path_info !~ m!\.!
+	    and $path !~ m!/index.[^./]*$!
+	    and $path =~ s!$!/!;
+    }
+
+    warn "canonicaluri: \$path (after slash check): '" . $path . "'\n"
+	if $debug > 0;
+
+    # If the URI has a flavour extension corresponding to the default flavour
+    # (typically "html") then we rewrite the URI to remove the extension.
+
+    $path =~ s!\.$blosxom::default_flavour!!;
+
+    warn "canonicaluri: \$path (after extension check): '" . $path . "'\n"
+	if $debug > 0;
+
+    # If we have rewritten the URI then we force a redirect to the new URI.
+
+    $path ne path_info() and redirect($path);
+
+    1;
+}
+
+
+sub skip {
+    warn "canonicaluri: skip\n" if $debug > 1;
+
+    return $redirecting;                # skip story generation if redirecting
+}
+
+
+sub redirect {
+    my ($path) = @_;
+
+    my $uri = "$blosxom::url$path";
+    $uri .= "?" . $ENV{QUERY_STRING} if $ENV{QUERY_STRING};
+
+    warn "canonicaluri: redirecting to '$uri'\n"
+	if $debug > 0;
+
+    $blosxom::output = qq!Redirecting to <a href="$uri">$uri</a>.\n!;
+    print "Status: 301\n";
+    print "Location: $uri\n";
+    $redirecting = 1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom plugin: canonicaluri
+
+=head1 SYNOPSIS
+
+Have Blosxom force a redirect if a URI is not in canonical form with
+respect to index.* component, trailing slash, or flavour extension.
+
+=head1 VERSION
+
+0.6
+
+=head1 AUTHOR
+
+Frank Hecker <hecker@hecker.org>, http://www.hecker.org/
+
+=head1 DESCRIPTION
+
+This plugin checks to see whether the requested URI is in the
+canonical form for the type of page being requested, and if necessary
+does a browser redirect to the canonical form of the URI. The
+canonical forms are defined as follows:
+
+=over
+
+=item * URIs for the blog root, categories, and date-based archives
+should not have an "index.*" component if the flavour being requested
+is the default flavour, and if an "index.*" component is not present
+then the URI should have one (and only one) trailing slash.
+
+=item * URIs for individual entry pages should not have a trailing
+slash and also should not have a flavour extension if the flavour
+being requested is the default flavour (typically "html").
+
+=back
+
+For example, if you request the URIs
+
+  http://www.example.com/blog/foo
+
+or
+
+  http://www.example.com/blog/foo/index.html
+
+where "foo" is a category and "html" is the default flavour, this
+plugin will force a redirect to the canonical URI
+
+  http://www.example.com/blog/foo/
+
+Similarly, if you request the URIs
+
+  http://www.example.com/blog/foo/
+
+or
+
+  http://www.example.com/blog/foo.html
+
+where "foo" is an individual entry and "html" is the default flavour,
+this plugin will force a redirect to the canonical URI
+
+  http://www.example.com/blog/foo
+
+Note that using this plugin makes the most sense if you are also using
+URI rewriting rules to hide use of "/cgi-bin/blosxom.cgi" and support
+URIs similar to those traditionally used to access normal directories
+and files. This plugin should also be used in conjunction with the
+extensionless plugin in order to recognize extensionless URIs for
+individual entries. (See also below.)
+
+This plugin was inspired by the redirect plugin by Fletcher T. Penny
+http://www.blosxom.com/plugins/general/redirect.htm and adapts a bit
+of its code.
+
+=head1 INSTALLATION AND CONFIGURATION
+
+Copy this plugin into your Blosxom plugin directory. You do not
+normally need to rename the plugin; however see the discussion below.
+
+You can change the value of the variable C<$debug> to 1 if you need to
+debug the plugin's operation; the plugin will print to the web
+server's error log the original path component of the URI and the new
+URI if redirection is to be done.
+
+This plugin supplies a filter and skip subroutine and can normally
+coexist with other plugins with filter subroutines. However this
+plugin needs to be run after the extensionless plugin, since it needs
+the flavour extension on C<$blosxom::path_info> (provided by
+extensionless if not already present) to distinguish between
+individual entry pages and other pages.
+
+Finally, note that this plugin is sensitive to the exact URI rewriting
+rules you might have configured (e.g., in the Apache httpd.conf
+configuration file or in a .htaccess file). In particular, when
+rewriting URIs to add the name of the Blosxom CGI script (e.g.,
+"/cgi-bin/blosxom.cgi") you need to ensure that such rules preserve
+any trailing slash on the end of the URI and pass it on to Blosxom.
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+Blosxom Plugin Docs: http://www.blosxom.com/documentation/users/plugins.html
+
+=head1 BUGS
+
+This plugin depends on the Apache URI rewriting rules to enforce the
+restriction that a URI should never have more than one trailing
+slash. The plugin as presently written can't handle this case properly
+because it depends on the C<path_info()> function to get the URI path,
+and the C<path_info()> value has already been stripped of any excess
+trailing slashes that might have been present in the original URI.
+
+Please address other bug reports and comments to the Blosxom mailing list:
+http://www.yahoogroups.com/group/blosxom
+
+=head1 LICENSE
+
+canonicaluri Blosxom plugin Copyright 2004 Frank Hecker
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

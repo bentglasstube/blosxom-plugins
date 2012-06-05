@@ -1,0 +1,120 @@
+# Blosxom Plugin: tableit
+# Author:         Uncle Roger (http://www.sinasohn.net/notebooks/)
+# Version:        1.0
+# Date:           01/03/2005      
+# License:        GPL            
+#
+# This plugin is based heavily on AutoImg by Bruce Alderson
+#
+
+# TableIt
+#
+# Puts selected text within a single cell table.  
+#
+# 
+# Usage:
+# 
+#   Include the string [tbl] in the post where you want the
+#   the table to begin and [lbt] ([tbl] backwards) where you
+#   want it to end.
+#
+# Example:
+#
+#   [tbl]This text would show up in a table[lbt]
+#
+# Configuration:
+#
+#   Some aspects of the table can be controlled by variables
+#   set in the configuration section.  These variables are:
+#
+#       table_width     Defines the actual width of the table,
+#                       either in pixels or in a percentage of
+#                       the parent element (the web browser or
+#                       another, enclosing table).  If using a
+#                       percentage, suffix the number with a
+#                       percent sign (%).
+#       
+#       table_cspacing  Defines the amount of space between
+#                       cells within the table.  Irrelevant
+#                       unless your enclosed text includes
+#                       multiple cell definitions.
+#
+#       table_cpadding  Defines the amount of space between
+#                       the contents of a cell and the cell
+#                       boundaries.
+#
+#       table_border    Defines the width of the border around
+#                       the table and between the cells.
+#
+#       table_start     Defines the HTML tags (and any other data)
+#                       that will define the start of your table.
+#                       May also include any header info or titles
+#                       that should be displayed at the top of
+#                       every table.
+#
+#       table_close     Defines the HTML tags (and other data) that
+#                       closes your table.  May also include footer
+#                       information to be appended to the bottom of
+#                       every table.
+#
+#   For more information on these values, consult your favorite
+#   HTML reference work.  If you are unsure about any of them, the
+#   default values will work fine.
+#
+# Update History:
+#
+#   Date        Version Pgmr    Description
+#   01.01.2005  V1.0    RLS     Initial Released Version
+#
+
+package tableit;
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# Configuration Section
+
+$table_width    = "400";
+$table_cspacing = "0";
+$table_cpadding = "0";
+$table_border   = "0";
+
+$table_start    = <<__end__;
+<p>
+<center>
+<table width="$table_width" cellspacing="$table_cspacing" cellpadding="$table_cpadding" border="$table_border">
+  <tr>
+    <td>
+__end__
+#
+
+$table_close    = <<__end__;
+    </td>
+  </tr>
+</table>
+</center>
+</p>
+__end__
+#
+
+#
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+
+sub start {
+  1;
+}
+
+sub story {
+ my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+    # Pick up and replace the starting tag
+
+    $$body_ref =~ s/\[tbl\]/\n$table_start\n/gs;
+
+    # Pick up and replace the ending tag
+
+    $$body_ref =~ s/\[lbt\]/\n$table_close\n/gs;
+
+ 1;
+}
+
+1;

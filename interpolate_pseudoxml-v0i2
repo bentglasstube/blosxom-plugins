@@ -1,0 +1,261 @@
+# Blosxom Plugin: interpolate_fancy
+# Author(s): Victor Ganata <aswang@fatoprofugus.net> 
+# Version: 0.2
+# Documentation: See the bottom of this file or type: 
+# perldoc interpolate_pseudoxml
+
+package interpolate_pseudoxml;
+
+# --- Configurable variables -----
+
+# --------------------------------
+
+sub start {
+  1;
+}
+
+sub interpolate {
+  return sub {
+
+    package blosxom;
+
+    my $template = shift;
+
+    # Defined
+    # e.g. <blosxom:if-exists var="$var">display if defined</blosxom:if-exists>
+    $template =~ s#<blosxom:if-exists var=\"(\$\w+(?:::)?\w*)\">(.*?)<\/blosxom:if-exists>#"defined $1 ? \$2 : undef"#sgee;
+
+    # Undefined 
+    # e.g. <blosxom:if-not-exists var="$var">display if not defined</blosxom:if-not-exists>
+    $template =~ s#<blosxom:if-not-exists var=\"(\$\w+(?:::)?\w*)\">(.*?)<\/blosxom:if-not-exists>#"!defined $1 ? \$2 : undef"#sgee;
+
+
+    # Tests 
+    # eq (eq), ne (ne), lt (<), gt (>), like (=~), unlike (!~)
+    # e.g. <blosxom:test var="$var" lt="123">display if $var less than 123</blosxom:test>
+    $template =~ s#<blosxom:test var=\"(\$\w+(?:::)?\w*)\"\s+?(.+?)>(.*?)<\/blosxom:test>#"interpolate_pseudoxml::_test(qq{$1}, q{$2}, q{$3})"#sgee;
+
+    # Actions 
+    # e.g. <blosxom:action name="plugin.subroutine" arg1="a" output="no" />
+    # e.g. <blosxom:action name="plugin.subroutine" encoding="Latin1" output="yes">pass content</blosxom:action> 
+    $template =~ s#<blosxom:action name=\"(\w+?)\.(\w+?)\"\s+?(.+?)?(?:>(.*?)<\/\blosxom:action>|\s+?\/>)#&interpolate_pseudoxml::_action($1, $2, $3, $4)#ge;
+
+    # Unconditional, Recursive 
+    # e.g. {$var}
+    while( $template =~ s/\{\$([a-zA-Z?]\w+(?:::)?\w*)\}/"defined \$$1 ? \$$1 : undef"/gee ) { }
+
+    return $template;
+
+  };  
+}
+
+sub _test {
+  my($variable, $attr, $content) = @_;
+
+  my $result;
+
+  my $attributes = interpolate_pseudoxml::_attributes($attr);
+
+  $attributes->{eq} and return $variable eq $attributes->{eq} ? $content : undef;
+  $attributes->{ne} and return $variable ne $attributes->{ne} ? $content : undef;
+  $attributes->{gt} and return $variable > $attributes->{gt} ? $content : undef;
+  $attributes->{lt} and return $variable < $attributes->{lt} ? $content : undef;
+  $attributes->{like} and return $variable  =~ /$attributes->{like}/ ? $content : undef;
+  $attributes->{unlike} and return $variable  !~ /$attributes->{unlike}/ ? $content : undef;
+
+  return undef;
+}
+
+sub _action {
+  my($plugin, $action, $attr, $content) = @_;
+
+  my $result;
+
+  my $attributes = interpolate_pseudoxml::_attributes($attr);
+
+  $blosxom::plugins{$plugin} 
+    and $plugin->can($action) 
+      and $result = $plugin->$action($attributes, $content);
+
+  return $attributes->{'output'} =~ /yes/i ? $result : undef;
+}
+
+sub _attributes {
+  my $attr = shift;
+
+  my $attributes = {};
+  while ( $attr =~ /\b(\w+?)\s*?=\s*?(["'])(.*?)\2/g ) {
+    $attributes->{$1} = $3;
+#    warn "found $1=$3\n";
+  }
+
+  return $attributes;
+}
+ 
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: interpolate_pseudoxml
+
+=head1 SYNOPSIS
+
+Overrides Blosxom's far simpler to use, but more limited, default interpolate() subroutine.
+
+Perform actions (i.e. call plug-in subroutines) at any point in your page, 
+whether to act on current content and return results or no.
+
+Include bits of text and template variable values in templates, either 
+conditionally or unconditionally:
+
+=head2 Actions
+
+Perform an action (i.e. call a plug-in's subroutine) at any point in your page.
+Optionally pass arguments as key/value pairs stated as XML-style attributes.
+For example: 
+
+  <blosxom:action name="plugin.subroutine" arg1="a" arg2="bee" />
+
+calls &plugin::subroutine( {'arg1'=>'a', 'arg2'=>'bee' } ).
+
+Specify that results should be sent to the browser using the output="yes" 
+attribute like so:
+  
+  <blosxom:action name="plugin.subroutine" arg1="a" arg2="bee" output="yes" />
+
+Otherwise, subroutines will still have their effect, but the results will 
+be tossed out.
+
+Content wrapped in the action call is sent as another argument to the 
+subroutine:
+
+  <blosxom:action name="plugin.subroutine" encoding="Latin1" output="yes">pass this content</blosxom:action> 
+
+This calls &plugin::subroutine( {'encoding'=>'Latin1', 'output'=>'yes' }, "pass this content" ).
+
+For those of you interested in writing plugin actions, here's a sample 
+subroutine to (for no real reason) substitute a particular character with 
+another:
+
+sub silly_substitute {
+  my($self, $attributes, $content) = @_;
+
+  $content =~ s/$attributes->{'from'}/$attributes->{'to'}/g;
+
+  return $content;
+}
+
+=head2 Includes
+
+  * Unconditionally and recursively
+
+    e.g. include a link to the story's path using various template variables.
+
+    <a href="{$url}{$path}">{$path}</a>
+
+  * The template variable has a value (i.e. is defined)
+
+    e.g. include a hyperlink to the story's path if it has a path (i.e.
+    $path is defined).
+
+    <blosxom:if-exists var="$path"><a href="{$url}{$path}">{$path}</a></blosxom:if-exists>
+
+  * The template variable doesn't have a value (i.e. is NOT defined)
+
+    e.g. include a hyperlink to home if path is undefined.
+
+    <blosxom:if-not-exists var="$path"><a href="{$url}">home</a></blosxom:if-not-exists>
+
+  * The template variable is equal (=) to a particular value
+
+    e.g. include "1 writeback" (singular) if the value of writeback count is 1
+
+    {$writeback::count} <blosxom:test var="$writeback::count" eq="1">writeback</blosxom:test>
+
+  * The template variable is not equal (!=) to a particular value
+
+    e.g. include "x writebacks" (plural) if the value of writeback 
+         count (x) is not 1
+
+    {$writeback::count} <blosxom:test var="$writeback::count" ne="1">writebacks</blosxom:test>
+
+  * The template variable is less than (<) a particular value
+
+    e.g. include "no writebacks" if the value of writeback count is < 1
+
+    <blosxom:test var="$writeback::count" lt="1">no writebacks</blosxom:test>
+
+  * The template variable is greater than (>) a particular value
+
+    e.g. include "oodles of writebacks" if the value of writeback count is > 50
+
+    <blosxom:test var="$writeback::count" gt="50">oodles of writebacks</blosxom:test>
+
+  * The template variable is like (=~) a particular regular expression
+
+    e.g. Greet a visitor properly, depending on their courtesy title
+
+    Howdy, 
+    <blosxom:test var="$user::courtesy" like="^(Mr\.?|Sir)$">Sir</blosxom:test>
+    <blosxom:test var="$user::courtesy" like="^(Mr?s\.?|Miss)$">M'am</blosxom:test>
+
+  * The template variable is unlike (!~) a particular regular expression
+
+    e.g. The posting is neither a film nor a book
+
+    <blosxom:test var="$path" unlike="/(Film|Literature)">no review</blosxom:test>
+
+
+=head1 INSTALLATION
+
+Drop the interpolate_pseudoxml plug-in into your Blosxom plugins folder.
+
+=head1 VERSION
+
+0.2
+
+=head1 HISTORY
+
+2003-09-16 Changed action tags
+2003-08-23 Initial version based on interpolate_fancy
+
+=head1 AUTHOR
+
+Victor Ganata  <aswang@fatoprofugus.net>, http://www.fatoprofugus.net/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Blosxom: 
+Copyright 2003, Rael Dornfest 
+this Blosxom plug-in:
+Copyright 2003, Victor Ganata
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

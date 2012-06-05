@@ -1,0 +1,334 @@
+# Blosxom Plugin: crumz
+# Author: Stu MacKenzie <http://groups.yahoo.com/group/blosxom/messages>
+# Based on "breadcrumbs" plugin by: Rael Dornfest
+# Version: v0.88  2005-04-08
+# License: MIT/Public Domain
+# crumz home: http://www.enilnomi.net/download.html
+# Documentation: See the bottom of this file or type: perldoc crumz
+
+package crumz;
+
+# = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
+#
+#  Configuration Section
+#
+# = = = = = = = = = = = = = = = =
+#
+#  What divider between path items in the link trail?
+#     Leave blank for the default divider, or enter
+#     characters between the single quote marks
+#   ex: crumz_$divider = ' > '   (default)
+ $crumz_divider = ' > ' 
+           unless defined $crumz_divider;
+#
+#  Should the trail start with a link back to the blog?
+#     Leave blank to exclude a home link (normal), or
+#     specify link text for a "home" link back to
+#     $blosxom::url between the single quote marks
+#   ex: $home = 'home'
+ $home = '' 
+           unless defined $home;
+#
+#  Should the trail end with the entry file name?
+#     0 = no; 1 = yes  (normal is 0)
+ $show_filename = 0 
+           unless defined $show_filename;
+#
+#  Should the last item in the link trail be linked?
+#     (This may be a directory name or a file name,
+#     depending on the setting above)
+#     0 = no; 1 = yes  (normal is 1)
+ $link_last_item = 1 
+           unless defined $link_last_item;
+#
+# = = = = = = = = = = = = = = = =
+#  Should date-based blosxom URLs get date-based link trails?
+#     0 = no;  crumz will always be category-based (normal)
+#     1 = yes; date-based blosxom URLs will produce date-based crumz
+ $match_date_based_url = 0 
+           unless defined $match_date_based_url;
+#
+#  Should link trails ALWAYS be date-based?
+#     0 = no; 1 = yes  (normal is 0)
+ $always_date_based = 0 
+           unless defined $always_date_based;
+#
+#  Should date-based links be restricted to the current category?
+#     0 = no; 1 = yes  (normal is 0)
+#     e.g. for the entry file "(datadir)/perl/rants/argh.txt", 
+#     posted on April 15, 2005:
+#     When set to 0, date-based links look like this:
+#         www.sample.net/blosxom.cgi/2005/04/15/index.html
+#       and expose those dates in *all* categories
+#     When set to 1, date-based links look like this:
+#         www.sample.net/blosxom.cgi/perl/rants/2005/03/15/index.html
+#       and expose those dates *only* in the /perl/rants category
+ $restrict_dates_to_category = 0 
+           unless defined $restrict_dates_to_category;
+#
+# = = = = = = = = = = = = = = = =
+#  Trim the START of the link trail --
+#  How many items should be trimmed from the START of each link trail?
+#   (excluding home link, if any)
+#   Enter 0 to trim no leading items  (normal is 0)
+#     e.g.: when $trim_start = 1:
+#       '/dir1/dir2/dir3' becomes  '/dir2/dir3'
+#       '/dir1/dir2'      becomes  '/dir2'
+ $trim_start = 0 
+           unless defined $trim_start;
+#
+#  Trim the END of the link trail --
+#  After how many leading items should the END of each link trail be trimmed?
+#   Or, put another way, how many leading items should REMAIN in each crum?
+#   (excluding home link and trailing file name, if any)
+#   Enter 0 to trim no trailing items  (normal is 0)
+#     e.g.: when $show_filename = 0 and $trim_after = 2:
+#       '/dir1/dir2/dir3/dir4' becomes  '/dir1/dir2'
+#       '/dir1/dir2'           becomes  '/dir1/dir2'
+#       '/dir1'                becomes  '/dir1'
+#     when $show_filename = 1 and $trim_after = 2:
+#       '/dir1/dir2/dir3/dir4/filename' becomes  '/dir1/dir2/filename'
+#       '/dir1/dir2/filename'           becomes  '/dir1/dir2/filename'
+#       '/dir1/filename'                becomes  '/dir1/filename'
+ $trim_after = 0 
+           unless defined $trim_after;
+#
+#  Trim all but the LAST directory --
+#   (This internally sets $trim_start and $trim_after to 0)
+#     e.g.: when $last_dir_only = 1:
+#       '/dir1/dir2/dir3' becomes  '/dir3'
+#       '/dir1/dir2'      becomes  '/dir2'
+#   0 = no; 1 = yes  (normal is 0)
+ $last_dir_only = 0 
+           unless defined $last_dir_only;
+#
+# = = = = = = = = = = = = = = = =
+#  Flavours in link trails --
+#  What flavours should be called in link trail urls? 
+#     Leave blank to use Blosxom's current flavour (normal),
+#     or enter a flavour name between the single quote marks
+#   ex: my $home_flavor = 'index' 
+#
+#  flavour for the home link (if any):
+ $home_flavor = '' unless defined $home_flavor;
+#
+#  flavour for directory links:
+ $dir_flavor = '' unless defined $dir_flavor;
+#
+#  flavour for the entry (filename) link (if any):
+ $entry_flavor = '' unless defined $entry_flavor;
+#
+# = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
+
+use strict;
+
+# call $crumz::crumz in your story template
+use vars qw { $crumz $crumz_divider $home $show_filename $link_last_item $match_date_based_url $always_date_based $restrict_dates_to_category $trim_start $trim_after $last_dir_only $home_flavor $dir_flavor $entry_flavor };
+
+sub start {
+  1;
+}
+
+# return safe offset for splice()
+sub offset_limit {
+  @_[1]>@_[0] ? @_[0] : @_[1];
+}
+
+my $template;
+
+sub head {
+  my ($pkg, $dir, $head_ref) = @_;
+
+  while (<DATA>) {                             # manually load default template bits
+    last if /^(__END__)?$/;
+    my ($flavor, $comp, $txt) = split ' ', $_, 3;
+    $txt =~ s:\\n:\n:g;
+    $blosxom::template{$flavor}{"$pkg.$comp"} = $txt;
+  }                                            # automatically load template file
+  $template = $blosxom::template->('', "$pkg.story", $blosxom::flavour);
+
+  1;
+}
+
+sub story {
+  my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+  my $path_info = $path;
+  my $cat = "";
+                                              # fiddle with stuff for date-based links
+  if ($always_date_based or ($match_date_based_url and $blosxom::path_info_yr)) {
+    $last_dir_only = 0;
+    #$restrict_dates_to_category and $path and $cat = $path;
+    $restrict_dates_to_category and $cat = $path;
+    $path = "$blosxom::yr/$blosxom::mo_num/$blosxom::da";
+    $trim_start = 0;
+    $path =~ s!//!/!g;
+  }
+                                              # compile safely
+  $last_dir_only and (($trim_start,$trim_after) = 0);
+
+  $show_filename and $path .= "/$filename";   # append filename as called
+
+  $path =~ s/^\/*//;                          # trim any leading /
+
+  $home_flavor  ||= $blosxom::flavour;        # get default flavours
+  $dir_flavor   ||= $blosxom::flavour;
+  $entry_flavor ||= $blosxom::flavour;
+
+  $crumz_divider =~ s/^\s*$/ > /;             # get default divider
+
+  my $last_item = $show_filename              # get last item per setting
+    ? ".$entry_flavor" 
+    : "/index.$dir_flavor";
+
+  my(@p, $p, $len);
+  foreach ( split /\//, $path ) {             # build an array of items from $path,
+    $p .= "/$_";                              # linking (or not) per setting
+    $link_last_item 
+    ? $p ne "/$path" 
+      ? push @p, qq{<a class="crumz" href="$blosxom::url$cat$p/index.$dir_flavor">$_</a>} 
+      : push @p, qq{<a class="crumz" href="$blosxom::url$cat$p$last_item">$_</a>} 
+    : push @p, 
+      $p ne "/$path"
+      ? qq{<a class="crumz" href="$blosxom::url$cat$p/index.$dir_flavor">$_</a>}
+      : qq{$_};
+  }
+
+  ($trim_start>0)                             # trim leading items
+    and @p = splice(@p,offset_limit(scalar(@p),abs($trim_start)));
+
+  ($trim_after>0) and                         # trim trailing items
+    ($len = $show_filename ? -1 : scalar(@p)) and 
+      splice(@p,offset_limit(scalar(@p),abs($trim_after)),$len);
+
+  $last_dir_only and                          # trim all but last item
+    ($len = $show_filename ? -2 : -1) and 
+      (@p = splice(@p,$len));
+
+  $crumz = join $crumz_divider, @p;           # build a string with dividers
+
+  $home and                                   # prepend home link per setting
+    $crumz =~ s/^/<a class="crumz" href="$blosxom::url\/index.$home_flavor">$home<\/a>$crumz_divider/;
+
+  $crumz =~ s/$crumz_divider$//;              # remove trailing divider (if any)
+  $crumz ||= '&nbsp;';                        # protect divs/styles; don't return empty
+
+  my $output = &$blosxom::interpolate($template);
+  $output and $crumz = $output;
+
+  1;
+}
+
+1;
+
+__DATA__
+html story <div class="perm">DATA$crumz::crumz</div>
+__END__
+
+
+=head1 NAME
+
+Blosxom Plug-in: crumz
+
+
+=head1 SYNOPSIS
+
+Generates a trail of links along the current story's path in $crumz::crumz
+
+ex: a/b/c becomes 
+<a href="/a">a</a> :: <a href="/a/b">b</a> :: <a href="/a/b/c">c</a>
+
+Links can be path-based, date-based, or context-sensitive to the 
+blosxom URL; the link trail item divider can be specified; an optional 
+link to the blog can lead all link trails; leading and/or trailing 
+items can be trimmed from the link trail; the entry file name can be 
+added to the link trail, linked or unlinked; separate (or similar) 
+flavours can be specified for the (optional) leading Home link, 
+directory links, and (optional) file name link. Optional flavour 
+files can save clutter in story templates.
+
+
+=head1 INSTALLATION
+
+Enter configuration info as instructed, then drop this file 
+into your blosxom plugins folder. Blog on.
+
+
+=head1 CONFIGURATION
+
+With any luck, the instructions in the "Configuration Section" 
+at the top of this file are sufficient; if more information is 
+needed, see the documentation at:
+  http://www.enilnomi.net/dltext/crumz.dl
+
+Info about using the settings appears in the USAGE section, below.
+
+
+=head1 FLAVOURS
+
+The links that crumz produces are assigned to the css class "crumz"; 
+other than that, they're just plain links. To give the links more 
+styling (say, a DIV to set position or style the dividers), more 
+markup will be needed. You can add this markup right to your 
+story template, as in:
+  <div class="crumz_block">$crumz::crumz</div>
+
+Or you can add it to a flavour file and just call "$crumz::crumz" 
+in your story template. The advantage of using a flavour file is 
+that crumz can be disabled for certain cases (no output at all), 
+and the content-less DIV won't have a chance to affect any other 
+elements on your page.
+
+There are two ways to use crumz flavours: create a flavour file 
+named "crumz.story.flavour_name" at the top level of your datadir, 
+or stash flavour info in the DATA section of the plugin. (If you 
+use the flavourdir plugin, keep your crumz flavour files at the 
+top level of your $flavour_dir.)
+
+
+=head1 USAGE
+
+To use crumz, find a spot to call the $crumz::crumz variable in 
+your story flavour file(s); then play with the config vars until 
+you like what you see. All crumz settings are available to the 
+config plugin.
+
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list:
+ http://www.yahoogroups.com/group/blosxom
+
+
+=head1 VERSION
+
+ 2005-04-08 (v0.88)  - added date-based link trails
+ 2005-04-08 (v0.87)  - cleanup
+ 2004-08-08 (v0.86a) - bug fix for last_dir_only
+ 2004-08-04 (v0.86)  - more trimming, more flavours
+ 2003-09-09 (v0.85)  - it's alive
+ 2003-09-05 (v0.8)   - wip
+
+
+=head1 LICENSE
+
+this Blosxom Plug-in
+Copyright 2003-2005, Stu MacKenzie
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

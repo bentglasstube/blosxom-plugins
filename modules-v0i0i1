@@ -1,0 +1,78 @@
+# Blosxom Plugin: modules
+# Author(s): Raffi Krikorian <r@bitwaste.com>
+# Version: 0.0.1
+# Documentation: See the bottom of this file or type: perldoc modules
+
+package modules;
+
+# --- Configurable variables -----
+
+# what directory are the perl modules installed in? 
+my $perl_module_dir = "/Users/r/Sites/wasted-bits/modules";
+
+# --------------------------------
+
+sub start {
+    unshift @INC, $perl_module_dir;
+    1;
+
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: modules
+
+=head1 SYNOPSIS
+
+Allows Blosxom to bring in other perl modules for use by the other
+plugins.  Simply place the modules into the $perl_module_dir, and this
+module will make sure they load.
+
+It is recommended to actually install this module under the name
+00modules so it gets loaded absolutely first.
+
+=head1 VERSION
+
+0.0.1
+
+=head1 AUTHOR
+
+Raffi Krikorian <r@bitwaste.com>, http://www.bitwaste.com/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+modules Blosxom plugin
+Copyright 2003, Raffi Krikorian
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

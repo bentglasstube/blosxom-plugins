@@ -1,0 +1,100 @@
+package this_flavour;
+use strict;
+
+=head1 NAME
+
+this_flavour - Blosxom plugin to change relative links to the current flavour
+
+=head1 VERSION
+
+This describes version B<0.01> of this_flavour.
+
+=cut
+
+our $VERSION = '0.01';
+
+=head1 DESCRIPTION
+
+This plugin changes relative links in stories from the default flavour
+into the current flavour (if the flavours are not the same).
+Naturally this only works in dynamic mode.
+
+=cut
+
+=head1 INSTALLATION
+
+=head2 Installation
+
+Drop the this_flavour plug-in into your Blosxom plugins folder.
+
+=head2 Configuration
+
+Set $this_flavour::convert_links to zero to turn off this plugin
+(say, using the B<config> plugin to give different behaviour in
+different directories).
+
+=cut
+
+our $convert_links = 1;
+
+=head1 PLUGIN FUNCTIONS
+
+=head2 start
+
+Check if we are in dynamic mode.
+
+=cut
+
+sub start {
+	return ( $blosxom::static_or_dynamic eq "dynamic" );
+} # start
+
+=head2 story
+
+story($pkg, $path, $filename, $story_ref, $title_ref, $body_ref)
+
+Convert the relative links to the current flavour.
+
+=cut
+
+sub story {
+    my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+    if ($convert_links
+	&& ($blosxom::default_flavour ne $blosxom::flavour))
+    {
+	$$body_ref =~ s/(href\s*=\s*"?(?!http:)[^">?#]+)\.${blosxom::default_flavour}?([">?#\s]|$)/$1.${blosxom::flavour}$2/gi;
+    }
+
+} # story
+
+=head1 REQUIRES
+
+Perl 5.6.0
+
+=head1 SEE ALSO
+
+config plugin
+
+=head1 BUGS
+
+Please report any bugs or feature requests to the author.
+
+=head1 AUTHOR
+
+    Kathryn Andersen (RUBYKAT)
+    perlkat AT katspace dot com
+    http://www.katspace.com
+
+=head1 COPYRIGHT AND LICENCE
+
+Copyright (c) 2004 by Kathryn Andersen
+
+This program is free software; you can redistribute it and/or modify it
+under the same terms as Perl itself.
+
+=cut
+# vim: ft=perl
+
+1; # End of type_sniffer
+__END__

@@ -1,0 +1,57 @@
+# Blosxom Plugin: autoimg
+# Author: Bruce Alderson
+# Version: 2003-08-31 (v0.2)
+# License: GPL            
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/blosxom
+
+# Autoimg
+#
+# Turns square-bracketed image references into useful html markup.
+#   * Can exist in any part of story body
+#   * image root is configurable
+#   * thumbnail name assumed to exist as: name.thumbnail.type 
+#   * optionally sets 'align' html attribute (defaulting to left)
+#   * sets 'alt' tag for html4.01 zen
+#
+#
+# Usage Examples:
+# 
+#   [name.jpg:right] A right-aligned image
+#   [name.jpg:left]  A left-aligned image
+#   [name.png]       A default-aligned image
+#   
+# TODO
+#   * Auto-thumbnail generation (fn in s//x/ that checks)
+#   * Configurable thumbnail name
+#   * Allow to occur at the beginning of a ling || after ws
+
+package autoimg;
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# Configuration Section
+
+$image_root     = "/images/";       # the base image path (from webserver pov)
+$default_align  = 'left';           # the default image alignment
+
+#
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+
+sub start {
+  1;
+}
+
+
+sub story {
+ my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+    # directive with alignment
+    $$body_ref =~ s/\[(\w+)\.(jpg|jpeg|gif|png):(\w+)\]/ <a href="$image_root$1.$2"><img src="$image_root$1.thumbnail.$2" align="$3" alt="[$1]"\/><\/a>/gs;
+    
+    # directive with default alignment
+    $$body_ref =~ s/\[(\w+)\.(jpg|jpeg|gif|png)\]/ <a href="$image_root$1.$2"><img src="$image_root$1.thumbnail.$2" align="$default_align" alt="[$1]"\/><\/a>/gs;
+ 1;
+}
+
+1;
+

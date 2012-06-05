@@ -1,0 +1,41 @@
+# Blosxom Plugin: path_image
+# Author: Kengo Ichiki <kengoichiki@yahoo.com>
+# Version: $Id: path_image,v 1.1 2004/01/09 05:58:16 ichiki Exp $
+
+package path_image;
+
+$path_image = '';
+
+# --- Configurable variables ---
+%images = ('/blosxom' => '/images/blosxom.gif',
+	   '/WaoN' => '/images/WaoN.gif',
+	   '/diary' => '/images/diary.gif',
+	   '/diary/phys' => '/images/phys.gif');
+
+# ------------------------------
+sub start {
+    1;
+}
+
+
+# ------------------------------
+sub story {
+    my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+    my $p; # for path
+    my $i; # for image
+
+    $path_image = '';
+    while ( ($p, $i) = each (%images)) {
+	if ($path eq $p) {
+	    $path_image
+		= "<img src=\"$i\" alt=\"$p\" width=\"50\" height=\"50\" align=\"right\" />";
+	}
+    }
+
+    if ($path_image eq '') {
+	$path_image = $path;
+    }
+}
+
+1;

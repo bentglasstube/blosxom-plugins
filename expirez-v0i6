@@ -1,0 +1,250 @@
+# Blosxom plug-in: expirez
+# Author: Stu MacKenzie <http://groups.yahoo.com/group/blosxom/messages>
+# Version: v0.61 2005-05-02 (2)
+# License: MIT/Public Domain
+# expirez home: http://www.enilnomi.net/download.html
+# Documentation at the bottom of this file or type: perldoc expirez
+
+package expirez;
+
+# - USAGE - - - - - - - - - - - - - - - - - -
+# set an "expiration date" for an entry by
+# adding a meta-tag in this format:
+# meta-expire_date: YYYY MM DD
+# (and so, expirez requires the meta plugin)
+#
+# expirez uses a cache file to do its work. When 
+# you first add an expiration date to an entry, the 
+# cache file is automatically updated; deleting or 
+# modifying expiration dates, however, does *not* 
+# automatically update the cache. To force an update, 
+# either delete the current cache file, or call blosxom 
+# with an "?expirez=PASSWORD" CGI param, where PASSWORD 
+# is the $recache_password value configured below. 
+#
+# - - - - - - - - - - - - - - - - - - - - - -
+
+# = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
+#
+#  Configuration Section
+#
+# = = = = = = = = = = = = = = = =
+#
+# Expiration Dates cache file location --
+#       The plugin uses a cache file of pathnames and dates to determine 
+#       which stories are expired.
+#
+#      What's the complete path to the expiration dates cache file?
+#       (leave empty for automatic configuration using Blosxom's plugins state dir)
+my $expiration_dates_file_path = "";
+
+# Password for re-caching --
+#       To force the cache to update, end your URL in "?expirez=PASSOWRD", 
+#       where PASSWORD is what you enter here:
+my $recache_password = '';
+
+# Server Location adjustment --
+#       Entry files expire at *your server's midnight*; not necessarily at
+#       *your* midnight, nor at your readers' midnights. To help compensate 
+#       for distant servers, you can enter a value representing your "normal 
+#       user's" position in hours east or west of your server. Hours east are 
+#       positive; hours west are negative.  
+#       For instance, if your server is in London and your readers are in 
+#       Chicago, the server expires articles at 7pm "Chicago time." Chicago 
+#       is west of London, so $reader_hours_from_server = -5. Or if your 
+#       server is in Los Angeles and your readers are in New York, 
+#       $reader_hours_from_server = 4. (normal is 0)
+my $reader_hours_from_server = 0;
+
+#
+# = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
+
+use strict;
+use CGI qw/:standard :netscape/;
+use Time::Local;
+
+my $time;
+my %expired;
+my $dirty = 0;
+my $hour = 60 * 60;
+
+sub start {
+  $blosxom::path_info =~ /\./ and return 0;     # don't run if displaying only one story
+  $expiration_dates_file_path ||= "$blosxom::plugin_state_dir/expiration_dates";
+  $time = time;
+  $reader_hours_from_server ||= 0 and 
+    $reader_hours_from_server *= $hour and 
+      $reader_hours_from_server -= ((localtime($time))[8] * $hour);
+  $time += $reader_hours_from_server;
+  
+  1;
+}
+
+sub filter {
+  my ($pkg, $files_ref) = @_;
+  
+  $recache_password and                         # OK to re-cache, and we're done here
+    param('expirez') eq $recache_password and 
+      return 1;
+                                                # process the cache file into a hash
+  if (open INCACHE, "< $expiration_dates_file_path") {
+    my $str;
+    while ($str = <INCACHE>) {
+      ($str =~ /\s*'?(.*?)'?\s*=>\s*(\d*),?/) and ($expired{$1} = $2);
+    }
+    close INCACHE;
+                                                # we're going to compare the keys of two 
+                                                # hashes; to make the loop efficient, the 
+                                                # smaller hash is selected for iteration.
+    my @ptr_ref = ($files_ref, \%expired, $files_ref);
+    my $c = scalar(keys %$files_ref) < scalar(keys %expired) ? 1 : 0;
+    my $list_a = $ptr_ref[$c];
+    my $list_b = $ptr_ref[$c+1];
+
+    foreach (keys %$list_a) {                   # delete entry file paths that the cache 
+      exists $$list_b{$_} and                   # says are expired
+        ($expired{$_} < $time) and
+          delete $$files_ref{$_};
+    }
+  }
+
+  1;
+}
+
+
+sub story {
+  my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+  
+  $meta::expire_date or return 1;                   # skip entry if no expiration date
+  my @date_items = split(' ', $meta::expire_date);  # get the expiration date,
+                                                    # and convert it to local time
+  my $exp_time = timelocal(0,0,0,$date_items[2],$date_items[1]-1,$date_items[0]);
+                                                    # update cache with new expiration date
+  $expired{"$blosxom::datadir$path/$filename.$blosxom::file_extension"} ne $exp_time and 
+    $expired{"$blosxom::datadir$path/$filename.$blosxom::file_extension"} = $exp_time and 
+      $dirty = 1;
+
+  1;
+}
+
+
+sub end {
+  $dirty or return 1;                           # only continue if the cache changed
+  if (open OUTCACHE, "> $expiration_dates_file_path") {
+    foreach (sort keys %expired) {
+      print OUTCACHE "$_ => $expired{$_}\n";    # write cache file
+    }
+  close OUTCACHE;
+  }
+  else { param('log_expirez_cache_error') and warn "Expirez plugin couldn't write its cache: $!" }
+
+  1;
+}
+
+1;
+
+__END__
+
+
+=head1 NAME
+
+Blosxom plug-in: expirez
+
+
+=head1 SYNOPSIS
+
+To give a story an "expiration date," add this line just below 
+the story title: 
+meta-expire_date: YYYY MM DD
+(and, of course, fill in the date ;-)
+
+Permalinks are not affected.
+
+
+=head1 INSTALLATION
+
+Upload or drop the "expirez" file into your blosxom plugins folder. 
+Configuration is optional. Blog on.
+
+
+=head1 CONFIGURATION
+
+With any luck, the instructions in the "Configuration Section" 
+at the top of this file are sufficient; if more information is 
+needed, see the documentation at:
+  http://www.enilnomi.net/dltext/expirez.dl
+
+
+=head1 USAGE NOTES
+
+To easily check expirez' operation after installation, create 
+an entry with an expired expiration date. After uploading the 
+file, call blosxom twice; if the "expired" article is still 
+displaying, you've got a problem. Most likely, expirez can't 
+get permission to write its cache file; to check, add a 
+"?log_expirez_cache_error=1" CGI param to blosxom's URL and 
+call it again, and then check your log (this assumes you have 
+access to your server's error log). For help on setting 
+permissions, post to the blosxom list.
+
+NOTE that to force a re-cache via CGI parameter, you *must* 
+configure a value for $recache_password.
+
+NOTE that if you "un-expire" an entry by changing an expired 
+expiration date to an un-expired date, the cache *must* be 
+forced to update before the story will be displayed (either 
+by trashing the existing cache file, or by calling blosxom 
+with an "?expirez=PASSWORD" CGI param).
+
+While these "cache cavaets" may seem like a PITA to you, the 
+blogger, they make life much easier on the server running 
+blosxom: expirez makes no unusual memory or file system demands 
+which might lead your host to consider you a cycle-hog.
+
+
+=head1 BUGS
+
+The whole "server location adjustment" thing can be seen as 
+a bug ;-) What's needed is a client-side mechanism to send 
+the browser's local time to blosxom, from which expirez can 
+then calculate localized expiration times. I dunno how to do
+that...any help will be appreciated ;-)
+
+Address bug reports and comments to the Blosxom mailing list:
+http://www.yahoogroups.com/group/blosxom
+
+
+=head1 VERSION
+
+2005-05-02 (v0.61)  - dox
+2005-04-10 (v0.6)   - re-cache via param; half-fast time correction
+2005-04-08 (v0.59)  - play nice with date templates
+2005-03-28 (v0.5)   - it's alive
+
+
+=head1 CREDITS
+expirez was inspired by a post from Justin Simoni to the blosxom list  [http://groups.yahoo.com/group/blosxom/message/10384]
+
+
+=head1 LICENSE
+
+this Blosxom Plug-in
+Copyright 2005, Stu MacKenzie
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

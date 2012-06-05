@@ -1,0 +1,129 @@
+# Blosxom Plugin: mailpost
+# Version: 1.31
+# Date:    2005.12.07
+# Author:  color99
+# spam_blocker, x_double_posting_blocker の設定で、mailpostを対象プラグインに指定して併用する事を推奨。
+#---------------------------------------------
+
+package mailpost;
+
+use strict;
+use CGI::Carp qw(fatalsToBrowser); #エラー時にはブラウザへ表示する
+use CGI  qw(:standard);
+use vars qw($posting_form); # posting form for flavour
+require Jcode;
+
+# --- Configurable variables -----------
+my $form_width = 25; # 投稿フォームの横幅指定
+my $form_rows  = 8;  # 投稿コメントの行数指定
+my $post_name  = '投稿'; # 投稿ボタンに表示させる内容
+my $sendmail   = '/usr/sbin/sendmail'; # sendmailのパス（ご使用のサーバー仕様に合わせて下さい）
+my $from       = 'xxx@yyy.com';  # Fromヘッダに使用するメールアドレス（ご使用のメールアドレスを記入下さい）
+my $to         = 'xxx@www.co.jp';  # Toヘッダに使用するメールアドレス（ご使用のメールアドレスを記入下さい）
+my $subject    = "$blosxom::blog_titleへのメール投稿"; # メールのサブジェクト
+my $charset    = 'utf8'; # 文字コードを指定、'UTF-8' => 'utf8' , 'Shift_JIS' => 'sjis' , 'EUC-JP' => 'euc' 
+my $use_cc     = 0; # メール投稿者へＣＣを送る場合"1"に設定する
+my $align      = 'center'; # 配置を'left','center','right'より選択
+# --------------------------------------
+
+# --- Initial Settings -----------------
+my $package    = __PACKAGE__;
+my $version    = 'v1.31';
+my $parmalink  = qq(<a href="http://kangaroo.oh.land.to/blosxom/plugin/$package.htm" 
+                    title="http://kangaroo.oh.land.to/blosxom/plugin/$package.htm" target="_blank">
+                    - $package $version -</a>);
+my ($cc,$bcc);
+my $req_url    = "http://$ENV{'HTTP_HOST'}$ENV{'REQUEST_URI'}";
+my @input1     = ('お名前'        , 'name'   , $form_width);
+my @input2     = ('メールアドレス', 'mail'   , $form_width);
+my @input3     = ('ホームページ'  , 'url'    , $form_width);
+my @textarea   = ('コメント'      , 'comment', $form_rows );
+my $form_table = &make_input_text_tr(@input1).&make_input_text_tr(@input2)
+                .&make_input_text_tr(@input3).&make_textarea_tr(@textarea);
+# --------------------------------------
+
+sub start{
+  if(request_method() eq 'POST' and param('plugin') eq $package){
+    my $body = &br3(param('comment'))."\n----------\n".'お名前: '.param('name')."\n".
+               'メール: '.param('mail')."\n".'ＨＰ　: '.param('url');
+    $cc  = param('mail') if($use_cc);
+    &send_mail($body);
+  }  
+  &make_form;
+  1;
+}
+
+sub make_form{
+  $posting_form = qq
+  !<div class="sendmail">
+   <form action="$req_url" method="post">
+
+   <div align = "$align">
+   <table>
+    $form_table
+    <tr>
+     <td><p align = "left"><input type="submit" value="$post_name"/></p></td>
+    </tr>
+    <tr>
+     <td><p align = "center">$parmalink</p></td>
+    </tr>
+   </table>
+   </div>
+
+   <input type="hidden" name="plugin" value="$package"/>
+   <input type="hidden" name="d_pwd"  value="$spam_blocker::sb_pwd"/>
+   </form>
+   </div>
+  !;
+}
+
+sub make_input_text_tr{
+  my ($title, $name, $size) = @_;
+  my $tr = qq
+  ! <tr>
+     <td><p align = "left">$title</p><input type="text" name="$name" size="$size"/></td>
+    </tr>
+  !;
+  return $tr;
+}
+
+sub make_textarea_tr{
+  my ($title, $name, $row) = @_;
+  my $tr = qq
+  ! <tr>
+     <td><p align = "left">$title</p><textarea name="$name" rows="$row" cols="" style="width:100%;"></textarea></td>
+    </tr>
+  !;
+  return $tr;
+}
+
+sub send_mail{
+  my $body = shift;
+  $subject = Jcode->new($subject, $charset)->mime_encode;
+  $body    = Jcode->new($body,    $charset)->jis;
+  my $mail = 
+qq(From: $from
+To: $to
+Cc: $cc
+Bcc: $bcc
+Subject: $subject
+Content-Type: text/plain; charset=ISO-2022-JP
+X-Mailer: blosxom $blosxom::version
+
+$body);
+  if (open(MAIL, "| $sendmail -t")) {
+    print MAIL $mail;
+    close(MAIL);
+  }
+}
+
+# br
+sub br3{
+  my $str = shift;
+  $str =~ s!\x0D\x0A!\n!g;   #cr,lf
+  $str =~ s!\x0D!\n!g;       #cr
+  $str =~ s!\x0A!\n!g;       #lf
+  return $str;
+}
+
+1;

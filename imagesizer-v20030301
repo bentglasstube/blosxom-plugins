@@ -1,0 +1,85 @@
+# Blosxom Plugin: imagesizer
+# Author: Nelson Minar <nelson@monkey.org>
+#         Todd Larason http://molelog.molehill.org/blox/
+# Version: 20030301
+# http://www.nelson.monkey.org/~nelson/weblog/
+# License: Public Domain
+
+# Imagesizer is a Blosxom plugin that inserts width and height
+# tags into images you include in your Blosxom entries.
+# It requires the Perl module Image::Size, available from
+#   http://www.blackperl.com/Image::Size/
+#   (Or if you use Debian, apt-get install libimage-size-perl)
+
+# Installation:
+#   Modify the $rootURL and $docRoot variables below
+#   Drop imagesizer in your plugins directory
+
+package imagesizer;
+use Image::Size 'html_imgsize';
+
+# Root of URLs for your images
+$rootURL = '^/~nelson/';
+
+# Pathname those URLs map to
+$docRoot = '/home/nelson/html/';       
+
+# Sub to turn a URL into a filename. With the default config,
+# this maps URLs like /~nelson/img/foo.gif into filenames like
+# /home/nelson/html/img/foo.gif
+sub imgSrcToFile {
+    my ($src) = @_;
+    if ($src =~ s!$rootURL!$docRoot!) {
+        return $src;
+    }
+    return 0;
+}
+
+sub start {
+    1;
+}
+
+# Debug output holder - debug output is commented out at the bottom.
+$debug = '';
+
+# Rewrite image tags to include size info
+# Input: an HTML image tag. Output: HTML image tag with size info added
+sub rewriteImg {
+    my ($tag) = @_;
+    $debug .= "Tag: " . CGI::escapeHTML($tag) . "<br>\n";
+
+    # Skip image tags that already have height or width specified
+    return $tag if ($tag =~ m/(width|height)=/i);
+
+    # Grab the source out of the image tag
+    $tag =~ m/src="([^\"]+)"/is;
+    $debug .= "Src: " . $1 . "<br>\n";
+
+    # Ask Image::Size to give us width & height data
+    $filename = imgSrcToFile($1);
+    $debug .= "File: " . $filename . "<br>\n";
+    if (-r $filename) {
+        $size = html_imgsize($filename);
+	$debug .= "Size: " . $size . "<br>\n";
+	$tag =~ s/\s/ $size /;
+    }
+
+    # And substitute it into the image
+    return $tag;
+}
+
+# Modify the body of stories by including image width and height tags
+sub story {
+    my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    # Rewrite any <img> tag in the post body
+    $$body_ref =~ s/(<img\s[^>]+>)/rewriteImg($1)/geis;		
+    1;
+}
+
+# Only needed for debug output
+# sub end {
+#     print "<p>", $debug;
+#     1;
+# }
+
+1;

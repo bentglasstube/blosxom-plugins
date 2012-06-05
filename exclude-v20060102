@@ -1,0 +1,166 @@
+# Blosxom Plugin: exclude
+# Author(s): Barijaona Ramaholimihaso
+# Credits to :
+#   Breyten Ernsting author of the original exclude plugin http://www.bje.nu/
+#   Fletcher T. Penney author of the hide plugin http://fletcher.freeshell.org
+# IMPORTANT : requires a recent version of Blosxom (v2.0.1+ aka CVS revision 1.9)
+# Version: 2006-01-02blosxom2
+
+package exclude;
+
+# --- Configurable variables -----
+
+# name of the file where the patterns of the posts to be hidden
+# are stored
+$ign_file = 'exclude';
+
+# location of the file : I prefer it in the flavour directory
+$refdir = "$blosxom::basedir/flavours";
+
+$refdir = $blosxom::datadir unless defined $refdir ;
+
+# --------------------------------
+use CGI qw/:standard/;
+
+# --------------------------------
+
+sub start {
+  # compatiblily with Fletcher T. Penney find plugin and wikieditish
+ ((param('plugin') eq 'find') || (param('find')) || (param('plugin') eq 'wikieditish')) ? 0 : 1 ;
+
+}
+
+sub read_exclude_file {
+  if (open(EXCLUDE, "< $ign_fn")) {
+    while ($line = <EXCLUDE>) {
+#      $line =~ s/\n//;
+      chomp $line;
+      $line =~ s/\r//;
+      $exclude_pattern = "$ign_fp2$line";
+      # takes into account patterns corresponding to our directory path,
+      # and patterns from parallel paths which are hidden from upper index views
+      if ( $line && (( $ign_fp2 eq $workingdir2 ) || ($exclude_pattern  !~ /$workingdir/ )) ){
+		push(@excludes, $exclude_pattern);
+	  }
+    }
+    close(EXCLUDE);
+    }
+}
+
+
+sub filter {
+  my ($pkg, $files_ref) = @_;
+
+ 
+  if (($blosxom::path_info) && ( $blosxom::path_info !~ m#^(\d{4})#)) { $path = "/$blosxom::path_info" ;} else { $path = '';} ;
+
+  # if the path_info corresponds to a single story, we remember it,
+  # and we refer to the directory where our file is stored, 
+  $queried_file = "$blosxom::datadir$path";
+  if ( ! -d "$blosxom::datadir$path" ) {
+   $path =~ s#\/?[^\/]*$## ;
+   $queried_file =~ s/$blosxom::flavour$/$blosxom::file_extension/ ;
+   } ;
+
+  $workingdir = "$blosxom::datadir$path";
+  $path .= "/";
+  $workingdir2 = "$blosxom::datadir$path" ;
+  @excludes =();
+  do {
+      $ign_fp = "$refdir$path";
+      $ign_fp2 = "$blosxom::datadir$path";
+      $ign_fn = "$ign_fp$ign_file.$blosxom::flavour";
+      if (-e $ign_fn) {read_exclude_file(); };
+      $ign_fn = "$ign_fp$ign_file";
+      if ( -e $ign_fn) {read_exclude_file(); };
+	} while ($path =~ s#([^/]*\/?)$## and $1) ;
+
+
+
+  foreach $exclude (@excludes) {
+    foreach $ign_cf (keys %$files_ref) {
+ 	if ($ign_cf =~ m#^$exclude# && $ign_cf ne $queried_file){ delete $files_ref->{$ign_cf} ;  };
+ 	}
+  }
+ 1;
+}
+  	 
+
+1;
+
+__DATA__
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: exclude
+
+=head1 SYNOPSIS
+
+Purpose: ignores files and directories in entries. Still allow these stories to appear in the results of a search via Fletcher T. Penney's find plugin <http://fletcher.freeshell.org>
+ 
+This file does not make any new variables available for use in template files.
+
+=head1 VERSION
+
+2006-01-02blosxom2
+
+Version number is the date on which this version of the plug-in was created.
+
+=head2 CHANGES
+
+2006-01-02blosxom2 : takes into account the modified call of filter subroutines in recent versions of blosxom.cgi. Tested with Blosxom CVS revision 1.9  (http://cvs.sourceforge.net/viewcvs.py/blosxom/blosxom2/)
+
+2004-09-13blosxom2 : First published version. Very hackish, needs a specific version of blosxom.
+
+=head1 AUTHOR
+
+Barijaona Ramaholimihaso http://homepage.mac.com/barijaona/
+The original exclude plugin was written by Breyten J. Ernsting <bje@dds.nl> http://www.bje.nu/
+Compatibility with the find plugin provided by Fletcher Penney.
+
+=head1 BUGS
+
+Probably ;)
+IMPORTANT : Needs a recent version of Blosxom2. Tested with Blosxom CVS revision 1.9  (http://cvs.sourceforge.net/viewcvs.py/blosxom/blosxom2/) 
+
+=head1 CONFIGURATION
+
+C<$ign_file> name to use for exclude files. Defaults to C<exclude>.
+
+C<$refdir> directory where you put the exclude files. The default is your flavourdir. Some people might prefer the datadir.
+
+=head1 EXAMPLE
+
+Your C<exclude> file should look like this:
+
+apps/
+life/about.txt
+
+One entry per line. You should be able to use regexes.
+
+=head1 LICENSE
+
+this Blosxom Plug-in
+Copyright 2003, Breyten Ernsting
+Copyright 2004-2006, Barijaona Ramaholimihaso
+
+(This license is the same as Blosxom's)
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

@@ -1,0 +1,166 @@
+# Blosxom plugin: storytitle
+# Author(s): Struan Donald <code@exo.org.uk>
+#            Archive titles by Nick Leverton <nick@leverton.org>
+# Version: 0.7
+# Documentation: see bottom of file or perldoc storytitle
+
+package storytitle;
+
+# ------------------ Config variables ---------------------
+
+# default separator to add to story title
+
+my $sep = ' : ';
+
+# do we default to the right aligned title
+# 1 for right aligned, 0 for left
+
+my $right = 1;
+
+# separator for right aligned title 
+
+my $right_sep = ''
+    || $sep;
+
+# separator for left aligned title
+
+my $left_sep = ''
+    || $sep;
+
+# ---------------------------------------------------------
+
+sub start { 1; }
+sub head {
+    my ($p, $dir, $head) = @_;
+    my $title;
+    if (!$dir) {
+        $title = "$blosxom::path_info_yr $blosxom::path_info_mo";
+        
+    } elsif ($dir =~ m#(.*?)/?([\-\.\w]+)\.(\w+)$# and $2 ne 'index') {
+        $file = join('/', $blosxom::datadir, $1, "$2.$blosxom::file_extension");
+        my $fh = new FileHandle;
+        if (-f "$file" && $fh->open("< $file")) {
+            chomp($title = <$fh>);
+            $fh->close;
+	    # remove any html markup tags from the title
+	    $title =~ s#<[^>]*>##g;
+	    $title =~ s#</[^>]*>##g;
+        }
+
+    } else {
+        $title = "$blosxom::path_info";
+	$title =~ s:/:$sep:g;
+    }
+
+    if (defined $title and $title =~ /\S/) {
+        $page_title_right = $right_sep . $title;
+        $page_title_left = $title . $left_sep;
+        $page_title = defined $right ? $page_title_right : $page_title_left;
+    } else { # these need to be reset otherwise we'll get the last value
+        $page_title_right = undef;
+        $page_title_left = undef;
+        $page_title = undef;
+    } 
+}
+
+1;
+
+__END__
+=head1 NAME
+
+Blosxom Plug-in: storytitle
+
+=head1 SYNOPSIS
+
+Allows you to include the story title in the page header for individually viewed blosxom stories.
+
+=head1 QUICK START
+
+Put storytitle in your plug-ins directory.
+
+Alter the formatting if desired, see L</OPTIONS>.
+
+Finally place B<$storytitle::page_title> in your B<E<lt>titleE<gt>> tag in head.I<flavour> where you want to display the story title, something like this:
+
+  <title>$blog_title $storytitle::page_title</title>
+
+=head1 OPTIONS
+
+=over
+
+=item Separator
+
+If required change the B<$sep> variable. This controls the separator that goes at the start of the story title, and between path entries for categories and archives. E.g. if B<$sep> is ' : ' and the story title is 'A blosxom entry' then B<$storytitle::page_title> will return ' : A blosxom entry'.  If the category path is I<Categories/Blosxom> then the plugin will return ' : Categories : Blosxom'.
+
+Now all individually displayed stories can have their title in the pages title tag, or anywhere else in the page header you want. Just place $storytitle::page_title anywhere in the flavours where you want to display the story title.
+
+=item Left and right aligned titles
+
+If you have a need for a left aligned title (e.g. you want to have 'story title : blog title') there are two ways to achieve it:
+
+=over 2
+
+=item *
+
+either you can use B<$storytitle::page_title_left> in your template,
+
+=item *
+
+or you can set the value of B<$right> in the configuration to any value other than I<undef>, e.g. '$right = 0;'  In that case B<$storytitle::page_title> will have the separator at the right.
+
+=back
+
+You can also individually configure the left and right sided separators with the B<$left_sep> and B<$right_sep> configuration options. B<$storytitle::page_title_left> will have B<$left_sep> appended on the right, and B<$storytitle::page_title_right> will have B<$right_set> prepended to the left.  If they are not set, they both default to B<$sep>.
+
+=back
+
+=head1 VERSION
+
+0.7
+
+=head2 CHANGES
+
+0.7 - Provide title for Category pages as well as Stories and Archive pages.
+    - Also included rus.berrett's patch to remove formatting,
+      from http://rus.berrett.org/blog/contrib/blosxom/storytitle_plugin.html
+
+0.6 - Now uses the users file extension setting rather than always .txt
+
+0.5 - deals with filenames with like foo.bar.txt and foo-bar.txt (thanks to
+      Antti Vähä-Sipilä for pointing this out)
+      catches titles containing only white space.
+
+0.4 - bugfix to stop title values hanging around under static generation
+
+0.3 - fixed left_title to actually be a left title
+
+0.2 - introduced left and right options
+
+=head1 AUTHOR
+
+Struan Donald <code@exo.org.uk>, L<http://exo.org.uk/code/>
+
+=head2 CREDITS
+
+Lim Chee Aun L<http://phoenity.com/> for the left/right sided titles idea.
+
+Anthony DeLorenzo <anthony.delorenzo@gmail.com> for fix to make it use the users file extension setting.
+
+Rus Berrett L<http://rus.berrett.org/blog/> for patch to remove formatting.
+
+Nick Leverton <nick@leverton.org>, L<http://www.leverton.org/blosxom> for Category page titles.
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: L<http://blosxom.sourceforge.net/>
+
+Blosxom Plugin Docs: L<http://blosxom.sourceforge.net/documentation/users/plugins.html>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2003-2005 Struan Donald. 
+
+This program is free software; you can redistribute
+it and/or modify it under the same terms as Perl itself.
+
+=cut

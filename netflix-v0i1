@@ -1,0 +1,258 @@
+# Blosxom Plugin: netflix
+# Author: Todd Larason (jtl@molehill.org)
+# Version: 0+1i
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/blosxom
+# Netflix plugin Home/Docs/Licensing:
+#   http://molelog.molehill.org/blox/Computers/Internet/Web/Blosxom/Netflix/
+package netflix;
+
+# -------------- Configuration Variables --------------
+
+# Get this from your browser's cookie file.  I don't know (yet) how often it
+# will need to be updated
+$ShopperID     = undef
+  unless defined $ShopperID;
+
+# how long to go between re-fetching the data, in seconds
+# default value is 1 day
+$max_cache_age = 60 * 60 * 24
+  unless defined $max_cache_age;
+
+$debug_level   = 1
+  unless defined $debug_level;
+
+# -----------------------------------------------------
+
+$have  = '';
+$queue = '';
+
+use LWP::UserAgent;
+use HTTP::Cookies;
+use Storable;
+use vars qw/$ShopperID $debug_level $max_cache_age $have $queue/;
+
+use strict;
+
+my $cache;
+my $package    = "netflix";
+my $cachefile  = "$blosxom::plugin_state_dir/.$package.cache";
+my $save_cache = 0;
+my $url        = 'http://www.netflix.com/Queue?';
+my $main_re    = qr!DVDs\sYou\sHave\sOut
+                   (.*)
+                   </table> .* DVDs\sin\sYour\sQueue
+                   (.*)
+                   </table>!xs;
+my $item_re    = qr!href="http://www\.netflix\.com/MovieDisplay\?movieid=
+                    (\d+)
+                    &trkid=\d+">
+                    ([^<]+)
+                    </a>!xs;
+
+sub debug {
+    my ($level, @msg) = @_;
+
+    if ($debug_level >= $level) {
+	print STDERR "$package debug $level: @msg\n";
+    }
+}
+
+sub load_template {
+    my ($bit) = @_;
+    return $blosxom::template->('', "$package.$bit", $blosxom::flavour);
+}
+
+sub report {
+    my ($bit, $list, $id, $title) = @_;
+    my $f = load_template($bit);
+    $f =~ s/((\$[\w:]+)|(\$\{[\w:]+\}))/$1 . "||''"/gee;
+    return $f;
+}
+
+sub prime_cache {
+    $cache = (-r $cachefile ? Storable::lock_retrieve($cachefile) : undef);
+    if ($cache && time - $cache->{timestamp} < $max_cache_age) {
+	debug(1, "Using cached state");
+	return 1;
+    }
+    $cache = {timestamp => time};
+    return 0;
+}
+
+sub save_cache {
+    return if (!$save_cache);
+    debug(1, "Saving cache");
+    Storable::lock_store($cache, $cachefile);
+}
+
+sub get_page {
+    return $cache->{text} if defined $cache->{text};
+    my $jar = HTTP::Cookies->new;
+    my $req = HTTP::Request->new(GET => $url);
+    my $ua = LWP::UserAgent->new;
+    $jar->set_cookie(0, 'NetflixShopperId', $ShopperID, '/', '.netflix.com');
+    $jar->add_cookie_header($req);
+    my $res = $ua->request($req);
+    if (!$res->is_success) {
+	my $error = $res->status_line;
+	debug(0, "HTTP error: $error");
+	return undef;
+    }
+    $cache->{text} = $res->content;
+
+    # don't set $save_cache, because we only want to save the text
+    # if it's valid & parsable
+
+    return $cache->{text};
+}
+
+sub parse_page {
+    return if $#{$cache->{items}{have}}  >= 0;
+    return if $#{$cache->{items}{queue}} >= 0;
+    local ($_) = @_;
+    my ($out_text, $queue_text) = (m/$main_re/);
+    push @{$cache->{items}{have}}, [$1,$2] while ($out_text   =~ m/$item_re/g);
+    push @{$cache->{items}{queue}},[$1,$2] while ($queue_text =~ m/$item_re/g);
+}
+
+sub build_list {
+    my ($name, $items) = @_;
+    my $results;
+
+    return $cache->{list}{$name}{$blosxom::flavour}
+      if defined $cache->{list}{$name}{$blosxom::flavour};
+
+    $results  = report("head", "$name");
+    $results .= report("item", "$name", $_->[0], $_->[1]) foreach (@$items);
+    $results .= report("foot", "$name");
+
+    $cache->{list}{$name}{$blosxom::flavour} = $results;
+    $save_cache = 1 if $#{$items} >= 0;
+
+    return $results;
+}
+
+sub start {
+    return 0 unless defined $netflix::ShopperID;
+    while (<DATA>) {
+	last if /^(__END__)?$/;
+	chomp;
+	my ($flavour, $comp, $txt) = split ' ',$_,3;
+	$txt =~ s:\\n:\n:g;
+	$blosxom::template{$flavour}{"$package.$comp"} = $txt;
+    }
+    return 1;
+}
+
+sub head {
+    prime_cache();
+    my $text = get_page();
+    return 0 unless defined $text;
+    parse_page($text);
+    $have  = build_list('have',  $cache->{items}{have});
+    $queue = build_list('queue', $cache->{items}{queue});
+    save_cache();
+}
+
+1;
+
+__DATA__
+error head <ul class="netflix $list">\n
+error item <li><a href="http://www.netflix.com/MovieDisplay?movieid=$id">$title</a></li>\n
+error foot </ul>\n
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: netflix
+
+=head1 SYNOPSIS
+
+Purpose: Lets you easily share your Netflix queue information
+
+  * $netflix::have -- list of DVDs currently checked out (or on the way))
+  * $netflix::queue -- list of DVDs in your queue
+
+=head1 VERSION
+
+0+1i
+
+1st test release
+
+=head1 AUTHOR
+
+Todd Larason  <jtl@molehill.org>, http://molelog.molehill.org/
+
+=head1 BUGS
+
+None known; address bug reports and comments to me or to the Blosxom
+mailing list [http://www.yahoogroups.com/groups.blosxom].
+
+=head1 Customization
+
+=head2 Configuration variables
+
+C<$ShopperID> is the key to your Netflix identity; it's a cookie set by the
+login process.  If your browser keeps its cookies in the historical Netscape
+format, look in C<cookies.txt> for a line like:
+
+.netflix.com	TRUE	/	FALSE	1050405980	NetflixShopperId	P0000000000000000000000445557579205
+
+The long value starting with "P000" is the ShopperID.  Until you define this,
+the plugin does nothing at all.
+
+C<$max_cache_age> sets how long to cache the queue information for.
+
+C<$debug_level> can be set to a value between 0 and 5; 0 will output
+no debug information, while 5 will be very verbose.  The default is 1,
+and should be changed after you've verified the plugin is working
+correctly.
+
+=head2 Classes for CSS control
+
+There's are some classes used, available for CSS customization.
+
+  * C<netflix> -- both lists are in the netflix class
+  * C<have> -- the 'have' list is also in the have class
+  * C<queue> -- the 'queue' list is also in the queue class
+
+=head2 Flavour-style files
+
+If you want a format change that can't be made by CSS, you can
+override the HTML generated by creating files similar to Blosxom's
+flavour files.  They should be named netflix.I<bit>.I<flavour>; for
+available I<bit>s and their default meanings, see the C<__DATA__>
+section in the plugin.
+
+=head1 Caching
+
+Because fetching the queue information is relatively slow, I don't believe
+anyone would want to use it without caching.  Thus, this module requires
+Storable, and caching is always on.
+
+=head1 LICENSE
+
+this Blosxom Plug-in
+Copyright 2003, Todd Larason
+
+(This license is the same as Blosxom's)
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+=end

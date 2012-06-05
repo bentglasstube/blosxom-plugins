@@ -1,0 +1,320 @@
+# Blosxom Plugin: gallery
+# Author(s): Rick Hogan
+# Version: 0+2i
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+# !!WARNING!! You *must* configure $font to point to a Truetype font.
+# This font file need not be installed on your system.  Just drop
+# a font anywhere and point to it.  You only need to configure
+# $font_title if you set $generate independent to 1.
+
+use strict;
+use Image::Magick;
+use Storable qw(lock_store lock_nstore lock_retrieve);
+
+package gallery;
+
+# --- Configurable variables -----
+my $dynamic=1; # forces static-only mode
+my $font="/usr/share/fonts/truetype/Font - TrueType - Classical Garamond BT.ttf";
+my $fontsize=13;
+
+my $across=3; # number of thumbnails across
+my $maxsize=115; # 3*115=345 pixels across
+my $maxsize_out=125;
+
+my $generate_independent=0; # generate independent page with title graphic?
+my $font_title="/usr/share/fonts/truetype/Font - TrueType - Oz Handicraft BT.ttf";
+my $fontsize_title=13;
+# --------------------------------
+
+sub start 
+{ 
+    # return if dynamic -- too slow to generate on the fly!
+
+    return $blosxom::static_or_dynamic eq 'static' ? 1 : $dynamic;
+}
+
+
+sub story {
+    my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref)=@_;
+
+    if($$body_ref=~ /<gallery(.*)>/g) {
+	my $var=$1;
+	if(defined $var) {
+	    if($var=~ /(\d+)/) { 
+		$maxsize=$1;
+		$maxsize_out=$maxsize*1.1;
+	    }
+	}
+
+	my $dir=$filename;
+	if(-d $blosxom::datadir.$path."/".$dir) {
+	    my $html=gallery($path."/".$dir);
+	    $$body_ref=~ s/<gallery.*>/$html/g;
+	}
+    }
+
+    return 1;
+}
+
+
+sub gallery
+{
+    my $dir=shift;
+    my @files;
+    my $count=1;
+    my ($line_html,$html);
+    my $numthumbs=0;
+
+    my ($w_title,$h_title);
+    my ($warn, $warning);
+
+    my $orig_dir=$dir;
+    my $static_gallery=$blosxom::static_dir.$orig_dir;
+
+    $dir=$blosxom::datadir.$dir;
+
+    my %state;
+    my $safe_dirname=$dir;
+    $safe_dirname=~ s/\// /g;
+    my $statefile=$blosxom::plugin_state_dir."/.gallery.$safe_dirname.index";
+    my $stateref=Storable::lock_retrieve($statefile) if -e $statefile;
+    if(defined $stateref) { %state=\$stateref; } # cheat
+
+    @files=glob $dir."/*.{jpg,png,gif,tiff}";
+    my $thisdir=$dir; #$ENV{PWD}; # for titling purposes
+    $thisdir=~ s/.*\///g; 
+
+    return if not $#files;
+
+    my $thumbdir=$static_gallery."/Thumbs";
+    if(not -d $thumbdir) {
+        if(mkdir($thumbdir)) { 
+		print "Created $thumbdir\n"; 
+	} else {
+		warn "Could not create $thumbdir: $!\n";
+	}
+    }
+    foreach my $file (@files) {
+	my $barefile=$file;
+	$barefile=~ s/(.*\/)//g;
+        my $img_html;
+        my $img=Image::Magick->new;
+        $img->Read($file);
+        my $comment=$img->get("comment");
+        my ($w,$h)=$img->Get("width","height");
+        my $size=readable_size($img->Get("filesize"));
+
+        my $file_thumb=$thumbdir."/".$barefile;
+#        $file_thumb=~ s/([^\/]+?)$/Thumbs\/$1/;
+        my ($w_thumb,$h_thumb);
+        my ($w_border,$h_border);
+        if($w>$h) {
+            $w_thumb=$maxsize; $h_thumb=int($maxsize*($h/$w)); 
+            $h_border=45; $w_border=30;
+        } else { 
+            $h_thumb=$maxsize; $w_thumb=int($maxsize*($w/$h)); 
+            $w_border=45; $h_border=30; 
+        }
+
+        if(not -e $file_thumb) {
+            $img->Resize(geometry=>$w_thumb."x".$h_thumb);          
+            $warn=$img->Border(width=>$w_border, height=>$h_border, fill=>"white");
+            $warning.=$warn."\n" if $warn;
+            ($w_thumb,$h_thumb)=$img->Get("width","height");
+
+# size text
+	    $warn=$img->Annotate(font=>$font, pointsize=>$fontsize, undercolor=>
+"white", fill=>"black", antialias=>"true", text=>$size, x=>23, y=>($h_thumb-($fontsize*.5)-5));
+            $warning.=$warn."\n" if $warn;
+
+# dimension text
+            $warn=$img->Annotate(font=>$font, pointsize=>$fontsize, undercolor=>
+"white", fill=>"black", antialias=>"true", text=>"$w x $h", x=>$w_thumb-23, y=>($h_thumb-($fontsize*.5)-5), align=>"Right");
+            $warning.=$warn."\n" if $warn;
+
+# title text
+            my $title=$file;
+            $title=~ s/.*\///g; # no dir
+            $title=~ s/["."](jpg|gif|png|tiff?)$//; # no ext
+            $title=~ s/_/ /g;
+            if($h_border > $w_border) { # room on bottom
+                $warn=$img->Annotate(font=>$font, pointsize=>$fontsize_title, undercolor=>"white", fill=>"black", antialias=>"true", text=>$title, 
+				     x=>$w_thumb/2, y=>($h_thumb-($fontsize*1.5)-10), align=>"Center");
+            } else {
+                $warn=$img->Annotate(font=>$font, pointsize=>$fontsize_title, undercolor=>"white", fill=>"black", antialias=>"true", text=>$title, 
+				     x=>$w_thumb/2, y=>(($fontsize)+10), align=>"Center");
+            }
+
+# place border (last, so overwrites too-long text if necessary)
+            foreach my $border (0..4) {
+                $warn=$img->Draw(primitive=>"rectangle", stroke=>"#".((8-$border) x 6), strokewidth=>$border, points=>"$border,$border ".($w_thumb-$border).",".($h_thumb-$border), antialias=>"true");
+                $warning.=$warn."\n" if $warn;
+            }
+
+	    $state{$file_thumb}="$w,$h"; # save state
+
+            $warn=$img->Write($file_thumb);
+            $numthumbs++;
+            $warning.=$warn."\n" if $warn;
+            if(not $warning) { $warning="done"; }
+            print "$file: $warning\n";
+            $warning="";
+        } else {
+	    if($state{$file_thumb}) {
+		($w_thumb,$h_thumb)=split ",", $state{$file_thumb}; # get state
+	    } else {
+		($w_thumb,$h_thumb)=$img->Ping($file_thumb);
+		$state{$file_thumb}="$w_thumb,$h_thumb"; # save state
+	    }
+        }
+
+        $line_html.=" \n<a href=\"$blosxom::url$orig_dir/$barefile\" title=\"".((defined $comment)?$comment:"Click to enlarge")."\"><img class=\"Image\" src=\"$blosxom::url$orig_dir/Thumbs/$barefile\" width=\"$w_thumb\" height=\"$h_thumb\" border=\"0\"></a>\n";
+
+        if((++$count)>$across) { 
+            $html.="<div class=\"Images\">".$line_html."</div>\n";
+            $line_html=""; # reset for next line
+            $count=1;
+        }
+    }
+    $html.="<div class=\"Images\">".$line_html."</div>\n"; # leftover
+
+    if($generate_independent) {
+# title graphic (optional, for independent html page)
+	if(not -e $thumbdir."/".$thisdir.".png") {
+	    my $title_img=new Image::Magick;
+	    $h_title=80;
+	    $w_title=500;
+	    $title_img->Set(size=>"500x80");
+	    $title_img->ReadImage("xc:transparent");
+	    $title_img->Annotate(font=>$font_title, pointsize=>50, fill=>"black", antialias=>"true", text=>$thisdir, x=>15, y=>50);
+	    $title_img->Write($thumbdir."/".$thisdir.".png");
+	} else {
+	    my $title_img=new Image::Magick;
+	    ($w_title,$h_title)=$title_img->Ping($thumbdir."/".$thisdir.".png");
+	}
+
+# write independent html page
+        
+	open(HTML, ">$dir/index.html");
+	print HTML "<html><body><title>".$thisdir."</title>\n";
+	print HTML "<img src=\"Thumbs/".$thisdir.".png\" height=\"$h_title\" width=\"$w_title\">\n";
+	print HTML $html;
+	print HTML "</body></html>\n";
+	close(HTML);
+    }
+
+    if(not -e $static_gallery) {
+           system("cp -a $dir $static_gallery");
+	   print "Created $static_gallery (from $dir)\n";
+    }
+    print "$numthumbs thumbs created\n" if $numthumbs;
+
+    Storable::lock_store(\%state, $statefile) or print "Unable to cache gallery information: $!\n";
+
+    return $html; # for inline "thumb" style
+}
+
+sub readable_size
+{
+    my $unreadable=shift;
+    my $readable;
+    my $count=0;
+
+    while(($unreadable/1024)>1) { $unreadable/=1024; $count++; }
+
+    my @sizetypes=("bytes", "kb", "mb", "gb", "tb");
+
+    $readable=sprintf("%d %s", $unreadable, $sizetypes[$count]);
+    $readable=~ s/["."]0//; #remove insignificant digit
+    $readable=~ s/(\d+)(\d\d\d)/$1,$2/; # add separator
+  
+    return $readable;
+}
+
+1;
+
+
+=head1 NAME
+
+Blosxom Plug-in: gallery
+
+=head1 SYNOPSIS
+
+Creates a gallery of thumbnails, wrapping each in a "slide" frame with 
+description and image information.  Thumbnail images are stored in a 
+subdirectory from the directory where the gallery is found, and called
+"Thumbs".  A standalone webpage is also generated and located 
+at "Thumbs/index.html".  
+
+It is called by a <gallery> pseudo-tag.  You can change the thumbnail size
+without editing the plugin by passing a size parameter, like so:
+<gallery 150> will base its thumbnails on 150 pixels rather than 
+the default 115.
+
+=head1 REQUIREMENTS
+
+Gallery needs the perl library Image::Magick to work. It also requires
+Truetype fonts for the titling.
+
+As of 0.2i, Gallery will run in dynamic or static mode.  It both, it will
+still generate static thumbnails and cache the information for quick
+regeneration.  You may still find it worth your while to generate
+the pages in static mode first -- because new material will not be fast
+on most older machines.
+
+The price for  file locking the cache(the safe way) is to require perl's 
+Storable.  This library should be a basic part of your perl installation, 
+but older versions of perl may require installation.  If there are good
+alternatives, please let me know; this plug-in is already fairly heavy
+on requirements.
+
+=head1 CHANGES
+
+0.2i Faster: cache directory's state infor in [statedir]/.gallery.$dir.index
+0.2i Independent html page and graphic now optional with config variable
+0.2i Place border last, so overlong text is bordered cleanly.
+
+=head1 VERSION
+
+0.2i
+
+=head1 AUTHOR
+
+Rick Hogan  <gloveless .at. sympatico .pt. ca>
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Blosxom and this Blosxom Plug-in
+Copyright 2003, Rael Dornfest 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+

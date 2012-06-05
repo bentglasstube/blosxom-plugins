@@ -1,0 +1,257 @@
+# Blosxom Plugin: permalink 
+# Author(s): Mark Ivey <zovirl@zovirl.com> 
+# Version: 0.0.2
+# Documentation: See the bottom of this file or type: perldoc permalink
+
+package permalink;
+
+# --- Configurable variables -----
+# Pick one set of formats, or modify them to make your own
+
+# Blosxom Date based
+#$root_format            = '$url/';
+#$root_flavor_format     = '$url/index.$flavour';
+#$category_format        = '$url$path/';
+#$category_flavor_format = '$url$path/index.$flavour';
+#$file_format            = '$url/$yr/$mo_num/$da#$fn.$default_flavour';
+#$file_flavor_format     = '$url/$yr/$mo_num/$da#$fn.$flavour';
+
+# Blosxom Category based
+#$root_format            = '$url/';
+#$root_flavor_format     = '$url/index.$flavour';
+#$category_format        = '$url$path/';
+#$category_flavor_format = '$url$path/index.$flavour';
+#$file_format            = '$url$path/$fn.$default_flavour';
+#$file_flavor_format     = '$url$path/$fn.$flavour';
+
+# Cool URI 2
+#$root_format            = '$url/';
+#$root_flavor_format     = '$url/index.$flavour';
+#$category_format        = '$url/$yr/$mo_num/$da$path/';
+#$category_flavor_format = '$url/$yr/$mo_num/$da$path/index.$flavour';
+#$file_format            = '$url/$yr/$mo_num/$da$path/$fn';
+#$file_flavor_format     = '$url/$yr/$mo_num/$da$path/$fn.$flavour';
+
+# Cool URI 2 (Year-only)
+$root_format            = '$url/';
+$root_flavor_format     = '$url/index.$flavour';
+$category_format        = '$url/$yr$path/';
+$category_flavor_format = '$url/$yr$path/index.$flavour';
+$file_format            = '$url/$yr$path/$fn';
+$file_flavor_format     = '$url/$yr$path/$fn.$flavour';
+
+# --------------------------------
+
+use File::stat;
+
+use vars qw($story $category);
+
+my $debug = 0;  # log debug messages or not?
+
+my $interpolate = $blosxom::interpolate || sub {
+      package blosxom;
+      my $template = shift;
+      $template =~
+      s/(\$\w+(?:::)?\w*)/"defined $1 ? $1 : ''"/gee;
+      return $template;
+};
+
+# see perldoc for description of get_link()
+sub get_link
+{        
+    # temporarily override existing blosxom variables & match variables
+    local ($blosxom::fn, $blosxom::flavour, $blosxom::path);
+    local ($1, $2);
+    
+    $blosxom::path = shift || "/";
+    warn "permalink::get_link([$blosxom::path])\n" if $debug > 0;
+    
+    $blosxom::path =~ s!^([^/])!/$1!;    # add a leading / if needed
+    $blosxom::path =~ s!/*$!!;           # remove any slashes from the end
+    
+    # strip off filename & extension
+    my $fn  = ($blosxom::path =~ s[(.*)/(.*)$][$1]) ? $2 : "";
+    my $extension = ($fn =~ s!(.*)(\..*)!$1!) ? $2 : "";
+    
+    my $fullpath = "$blosxom::datadir$blosxom::path";
+    
+    warn "permalink::get_link() fp[$fullpath] fn[$fn] ext[$extension]\n" 
+        if $debug > 0;
+
+    # We look several different places trying to find a matching file.  We
+    # check from the most specific to the least specific.
+    my @places = 
+    (
+        "$fullpath/$fn$extension",                  # exact match
+        "$fullpath/$fn.$blosxom::file_extension",   # story
+        "$fullpath/$fn"                             # category (with flavor)
+    );
+    push @places, "$fullpath/" if ($fn eq "index"); # category (with index)
+
+    my ($out, $location);
+    while (defined ($location = shift @places))
+    {
+        next unless (-e "$location");
+        warn "permalink::get_link() found $location\n" if $debug > 0;
+        
+        if ($extension)
+        {
+            $blosxom::flavour = $extension;
+            $blosxom::flavour =~ s/^\.//;   # remove leading .
+        }
+        
+        if (-d "$location")
+        {
+            # filename is part of the path for categories...
+            $blosxom::path .= "/$fn" if ($fn and $fn ne "index");
+            
+            # check to see if we are working on the root or not
+            if ($location =~ m!^$blosxom::datadir/*$!)
+            {
+                $out=($extension) ? $root_flavor_format : $root_format;
+            }
+            else
+            {
+                $out=($extension) ? $category_flavor_format : $category_format;
+            }
+        }
+        else
+        {
+            $blosxom::fn = $fn;
+            $out = ($extension) ? $file_flavor_format : $file_format
+        }
+        last;
+    }
+
+    unless (defined $location)
+    {
+        warn "permalink::get_link() can't find $fullpath/$fn$extension\n";
+        return "";
+    }
+    
+    # look up the date on the file
+    my $mtime = $blosxom::files{"$location"}  ||
+                $blosxom::others{"$location"} || 
+                $metadate::dirs{"$location"}  ||
+                $metadate::all{"$location"} ||
+                stat("$location")->mtime;
+    local ($blosxom::dw, $blosxom::mo, $blosxom::mo_num, $blosxom::da, 
+        $blosxom::ti, $blosxom::yr) = blosxom::nice_date($mtime);
+
+    # use interpolate() to fill in all the variables in our template
+    $out = &$interpolate($out);
+
+    warn "permalink::get_link() returning [$out]\n" if $debug > 0;
+    return $out;
+}
+
+sub head
+{    
+    my($pkg, $currentdir, $head_ref) = @_;
+
+    $story = "";
+    $category = get_link("/$currentdir");
+    return 1;
+}
+
+sub start
+{    
+    return 1;
+}
+
+sub date
+{    
+    my ($pkg, $currentdir, $date_ref, $mtime, $dw,$mo,$mo_num,$da,$ti,$yr) = @_;
+    $story = "";
+    $category = get_link("/$currentdir");
+    return 1;
+}
+
+sub story
+{    
+    my ($pkg, $path, $fn, $story_ref, $title_ref, $body_ref) = @_;
+    $story = get_link("$path/$fn");
+    $category = get_link("$path");
+    return 1;
+}
+
+sub foot
+{    
+    my($pkg, $currentdir, $foot_ref) = @_;
+    $story = "";
+    $category = get_link("/$currentdir");
+    return 1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: permalink 
+
+=head1 SYNOPSIS
+
+Generate permalinks
+
+=head1 VERSION
+
+0.0.2
+
+=head1 AUTHOR
+
+Mark Ivey <zovirl1@zovirl.com>, http://zovirl.com
+
+=head1 DESCRIPTION
+
+This plugin generates permalinks to help make it easier to use a consistent
+format throughout a site.  For use in flavor files, two variables are
+exported: $permalink::story and $permalink::category.  These link to the
+current story and category, respectively.  For other plugins which may
+wish to generate links, $permalink::get_link() is provided.  Given a path
+to a file, story, or category, it returns the correct permalink.
+
+$permalink::get_link() expects the path to a file, category, or story 
+(starting from $blosxom::datadir).  If there is an extension present it 
+is used as flavor.
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+get_link() can't be used for files outside the $blosxom::datadir directory.  
+This might be a problem if your $blosxom::datadir isn't publically available
+(by being under the web-server's document root, by using the static_file plugin,
+etc.)
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+permalink Blosxom Plugin Copyright 2003, Mark Ivey
+
+(This plugin is release under the same license as Blosxom itself)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of 
+this software and associated documentation files (the "Software"), to deal in 
+the Software without restriction, including without limitation the rights to 
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all 
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR 
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER 
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN 
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. 
+

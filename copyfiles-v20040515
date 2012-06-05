@@ -1,0 +1,168 @@
+# Blosxom Plugin: copyfiles
+# Author(s): Simon Fraser <smfr@smfr.org>
+# Version: 2004-05-15
+# Documentation: when running blosxom in static mode, look for files called
+#                "fileslist" (configurable), and copy files or directories
+#                listed therein to the equivalent place in the destination
+#                directory hierarchy.
+#
+#                'fileslist' files contain a simple list of files or directories,
+#                for example (this should be left-aligned without comments):
+#
+#                blog.css
+#                scripts/testscript.js
+#                images/
+#                docs/test/
+#
+#                In this case "blog.css" is a simple file. testscript.js lives
+#                in a subdirectory, which will be created in the destination.
+#                "images/" and "docs/test/" are directories, and will be copied
+#                with their contents to the destination
+#
+
+package copyfiles;
+
+# --- Configurable variables -----
+
+$list_filename = "fileslist";
+
+my $noisy = 0;
+
+# --------------------------------
+
+use File::Copy;
+use File::Find;
+use File::Path;
+use File::Basename;
+use File::stat;
+
+# --------------------------------
+
+# used to pass data to copy routine
+my $cur_src, $cur_dest;
+
+# calling File::Find recursively is bad (very bad). So we have to store an array
+# of hashes, listing directories to copy (with src and dest)
+my @copy_dirs;
+
+sub start
+{
+  # we only make sense in static mode
+  return $blosxom::static_or_dynamic eq 'dynamic' ? 0 : 1;
+}
+
+sub end
+{
+  find(\&find_filelist, $blosxom::datadir);
+  do_copy_dirs();
+  1;
+}
+
+sub find_filelist()
+{
+  my($filename) = $_;
+  if ($filename eq $list_filename)
+  {
+    my($cur_dir) = $File::Find::dir;
+
+    open(FILESLIST, $File::Find::name) || die "Failed to open file $File::Find::name: $!\n";
+    while (<FILESLIST>)
+    {
+      my($line) = $_;
+      chomp($line);
+      
+      # three cases here:
+      # 1. file name
+      # 2. directory name with trailing /
+      # 3. relative path to file or dir
+      
+      if ($line =~ m/\/$/)
+      {
+        my($src_file) = $File::Find::dir."/".$line;
+        my($dst_file) = $src_file;
+        $dst_file =~ s/^$blosxom::datadir/$blosxom::static_dir/;
+        append_copy_dir($src_file, $dst_file);
+      }
+      else
+      {
+        my($src_file) = $File::Find::dir."/".$line;
+        my($dst_file) = $src_file;
+        $dst_file =~ s/^$blosxom::datadir/$blosxom::static_dir/;
+        mkpath(dirname($dst_file), 0, 0777);    # ensure dest dir exists
+
+        if ($src_file eq $dst_file) { die "Copying a file over itself will empty it\n"; }
+        
+        if ($noisy) { print "copyfiles: copying file $src_file to $dst_file\n"; }
+        copy($src_file, $dst_file) || die "Failed to copy $src_file to $dst_file: $!\n";
+      }
+    }
+    close(FILESLIST);
+  }
+}
+
+sub append_copy_dir($$)
+{
+  my($srcdir, $dstdir) = @_;
+  push @copy_dirs, { "src" => $srcdir, "dest" => $dstdir };
+}
+
+sub do_copy_dirs()
+{
+  for $i (0 .. $#copy_dirs)
+  {
+    my $srcdir = $copy_dirs[$i]{"src"};
+    my $dstdir = $copy_dirs[$i]{"dest"};
+    
+    recursive_copy($srcdir, $dstdir) || die "Failed to copy $srcdir to $dstdir: $!\n";
+  }
+}
+
+sub recursive_copy($$)
+{
+  my($src, $dest) = @_;
+  
+  $cur_src  = $src;
+  $cur_dest = $dest;
+
+  if ($noisy) { print "copyfiles: copying directory $cur_src to $cur_dest\n"; }
+  find(\&copy_one_file, $src);
+  return 1;
+}
+
+sub copy_one_file()
+{
+  my $src_path = $File::Find::name; 
+  my $rel_path = $src_path;
+  
+  if ($rel_path =~ s/^$cur_src//)
+  {
+    my $destpath = $cur_dest.$rel_path;
+
+    mkpath(dirname($destpath), 0, 0777);    # ensure dest dir exists
+    if (!-d $src_path)
+    {
+      if ($src_path eq $destpath) { die "Copying a file over itself will truncate it\n"; }
+
+      my($src_st) = stat($src_path) or die "Failed to stat $src_path: $!\n";
+      
+      # compare date and size to see if we need to copy the file
+      if (-f $destpath)
+      {
+        my($dst_st) = stat($destpath) or die "Failed to stat $destpath: $!\n";
+
+        if (($src_st->mtime == $dst_st->mtime) && ($src_st->size == $dst_st->size)) {
+          if ($noisy) { print "copyfiles: skipping $src_path: file unchanged\n"; }
+          return;
+        }
+      }
+
+      print "copyfiles: copying file $src_path to $destpath\n";
+      
+      copy($src_path, $destpath) || die "Failed to copy $src_path to $destpath: $!\n";
+      # copy the timestamp over, because copy doesn't (suckage)
+      utime(time(), $src_st->mtime, $destpath);
+    }
+  }
+}
+
+1;

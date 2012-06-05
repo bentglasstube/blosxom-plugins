@@ -1,0 +1,332 @@
+# Blosxom Plugin: multicat
+# Author: Rus Berrett <blosxom@berrett.org> 
+# $Id: multicat,v 1.1 2006/03/04 20:10:21 rus Exp $
+# Documentation: See the bottom of this file or type 'perldoc multicat'
+
+package multicat;
+
+use Cwd qw(abs_path cwd);
+
+########################################################################
+##### Configurable variables ###########################################
+########################################################################
+
+my $delimiter = ', ';
+
+# make sure the following variables match those that are defined in 
+# their respective plug-ins (comments and writeback), if the var defs
+# don't match then symlinking of comments and writebacks will not work
+my $comments_dir = $blosxom::plugin_state_dir . "/comments";
+my $comments_file_ext = "comments";
+my $writeback_dir = $blosxom::plugin_state_dir . "/writeback";
+my $writeback_file_ext = "wb";
+
+########################################################################
+##### Exported variables ###############################################
+########################################################################
+
+# category paths for a story, includes hrefs inline
+$paths;
+
+# category paths for a story, no URLs included
+$paths_plain;
+
+########################################################################
+########################################################################
+########################################################################
+
+my %symlinks = ();
+my %sources = ();
+
+sub mkdir_minus_p {
+  my ($path) = @_;
+
+  my $subpath = "";
+  foreach (split(/\//, $path)) {
+    $subpath .= "$_/";
+    mkdir($subpath, 0755) unless (-d "$subpath");
+  }
+}
+
+########################################################################
+
+sub start {
+  %symlinks = %sources = ();
+  return(1);
+}
+
+########################################################################
+
+sub filter {
+  my ($pkg, $files_ref) = @_;
+
+  # determine which entries (if any) are symlinks 
+  my %source_paths = ();
+  foreach my $filepath (keys %{$files_ref}) {
+    if (-l "$filepath") {
+      my $source_fullpath = $filepath;
+      while (-l "$source_fullpath") {
+        my $parentdir = $source_fullpath;
+        $parentdir =~ s#[^/]+$##g;
+        $parentdir =~ s#/+$##g;
+        my $source = readlink($filepath);
+        my $oldpath = cwd();
+        chdir($parentdir);
+        $source_fullpath = abs_path($source);
+        chdir($oldpath);
+      }	  
+      $source_paths{$source_fullpath} = "dau!";
+      push(@{$sources{$source_fullpath}}, $filepath);
+      $symlinks{$filepath} = $source_fullpath;
+    }
+  }
+
+  # loop through symlinks and do a few things:
+  #   1) set up comment symlinks to share comments between symlinked entries
+  #   1) set up writeback symlinks to share writebacks between symlinked entries
+  #   2) don't show a symlinked entry if link source is viewable
+  my $current_view = $blosxom::datadir . "/" . $blosxom::path_info;
+  $current_view =~ s/\.$blosxom::flavour$/\./;
+  foreach my $linkpath (keys(%symlinks)) {
+    # set up comment symlink to source's comment file
+    if ((grep(/^comments$/, @blosxom::plugins)) && (-e "$comments_dir")) {
+      my $sourcepath = $symlinks{$linkpath};
+      my $cspath = $sourcepath;
+      $cspath =~ s/^$blosxom::datadir//;
+      $cspath =~ s/\.$blosxom::file_extension$/\.$comments_file_ext/;
+      $cspath = $comments_dir . $cspath;
+      my $csdir = $cspath;
+      $csdir =~ s#[^/]+$##g;
+      my $clpath = $linkpath;
+      $clpath =~ s/^$blosxom::datadir//;
+      $clpath =~ s/\.$blosxom::file_extension$/\.$comments_file_ext/;
+      $clpath = $comments_dir . $clpath;
+      my $cldir = $clpath;
+      $cldir =~ s#[^/]+$##g;
+      mkdir_minus_p($cldir) unless (-d "$cldir");
+      mkdir_minus_p($csdir) unless (-d "$csdir");
+      unless (-e "$cspath") {
+        open(CFP, ">$cspath");
+        close(CFP);
+      }
+      symlink($cspath, $clpath) unless (-l "$clpath");
+    }
+    # set up writeback symlink to source's writeback file
+    if ((grep(/^writeback$/, @blosxom::plugins)) && (-e "$writeback_dir")) {
+      my $sourcepath = $symlinks{$linkpath};
+      my $cspath = $sourcepath;
+      $cspath =~ s/^$blosxom::datadir//;
+      $cspath =~ s/\.$blosxom::file_extension$/\.$writeback_file_ext/;
+      $cspath = $writeback_dir . $cspath;
+      my $csdir = $cspath;
+      $csdir =~ s#[^/]+$##g;
+      my $clpath = $linkpath;
+      $clpath =~ s/^$blosxom::datadir//;
+      $clpath =~ s/\.$blosxom::file_extension$/\.$writeback_file_ext/;
+      $clpath = $writeback_dir . $clpath;
+      my $cldir = $clpath;
+      $cldir =~ s#[^/]+$##g;
+      mkdir_minus_p($cldir) unless (-d "$cldir");
+      mkdir_minus_p($csdir) unless (-d "$csdir");
+      unless (-e "$cspath") {
+        open(CFP, ">$cspath");
+        close(CFP);
+      }
+      symlink($cspath, $clpath) unless (-l "$clpath");
+    }
+    # determine if path should be removed from files_ref 
+    # (i.e. if the display of entry should be suppressed)
+    my $link_is_viewable = ($linkpath =~ /^$current_view/);
+    my $source_is_viewable = ($symlinks{$linkpath} =~ /^$current_view/);
+    my $keep_link = $link_is_viewable && !$source_is_viewable;
+    if ($keep_link) {
+      # link is viewable, source is not viewable... are other links
+      # viewable?  If so, then only keep the top most viewable one.
+      my $linklevel = $linkpath =~ tr#/#/#;
+      foreach $filepath (@{$sources{$symlinks{$linkpath}}}) {
+        next if ($filepath eq $linkpath);
+        $fplevel =  $filepath =~ tr#/#/#;
+        if (($filepath =~ /^$current_view/) &&
+            (($fplevel < $linklevel) || 
+             (($fplevel == $linklevel) && ($filepath lt $linkpath)))) {
+          $keep_link = 0;
+	  last;
+        }
+      }
+    }
+    delete($files_ref->{$linkpath}) unless ($keep_link);
+  }
+
+  return(1);
+}
+
+########################################################################
+
+sub story {
+  my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+  my $filepath = $blosxom::datadir . "/" . $path . "/" . $filename . "." . $blosxom::file_extension;
+  $filepath =~ s#/+#/#g;
+  my $arrayref = undef;
+  if (defined($symlinks{$filepath})) {
+    $arrayref = \@{$sources{$symlinks{$filepath}}};
+    my $sourcepath = $symlinks{$filepath};
+    $sourcepath =~ s/^$blosxom::datadir//g;
+    $sourcepath =~ s#[^/]+$##g;
+    $sourcepath =~ s#/+$##g;
+    $paths = qq#<a href="$blosxom::url$sourcepath">$sourcepath</a>#;
+    $paths_plain = $sourcepath;
+  }
+  elsif (defined($sources{$filepath})) {
+    $arrayref = \@{$sources{$filepath}};
+    $paths = qq#<a href="$blosxom::url$path">$path</a>#;
+    $paths_plain = $path;
+  }
+  else {
+    $paths = qq#<a href="$blosxom::url$path">$path</a>#;
+    $paths_plain = $path;
+  }
+  if ($arrayref) {
+    foreach (sort(@{$arrayref})) {
+      my $category = $_;
+      $category =~ s/^$blosxom::datadir//;
+      $category =~ s#[^/]+$##g;
+      $category =~ s#/+$##g;
+      $paths .= qq#$delimiter<a href="$blosxom::url$category">$category</a>#;
+      $paths_plain .= $delimiter . $category;
+    }
+  }
+  return(1);
+}
+
+########################################################################
+########################################################################
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: mutlicat
+
+=head1 SYNOPSIS
+
+The multicat plug-in allows you to easily classify a single entry under
+many different categories (i.e. different directories) using symbolic 
+links.  The plug-in controls when the symlinks to the entries are 
+displayed and when they are hidden.  The display of duplicate entries 
+(which is the normal blosxom behavior when symlinks to files are 
+encountered) is suppressed.  
+
+Support for the comments plug-in and the writeback plug-in is built-in.
+Comments (or writebacks) that are added to or appear on a source entry
+will show up in the symlinked entry and vice versa.
+
+=head1 QUICK START
+
+Drop this multicat plug-in file into your plug-ins directory (whatever
+you set as $plugin_dir in blosxom.cgi).  You can then create symlinks 
+to existing entries in other parts of your blosxom $datadir.  The new
+symlinked entry will not be displayed by blosxom unless it is accessed
+from a view that does not also contain the corresponding source entry.
+
+For example, if you had a blog entry file named "story.txt" located in
+your $blosxom::datadir in a "category1/foo/bar" directory.  You could
+associate the story with a secondary category (e.g. "category2/foo/baz")
+by performing the following steps:
+
+  % cd $blosxom::datadir
+  % mkdir -p category2/foo/baz
+  % cd category2/foo/baz
+  % ln -s ../../../category1/foo/bar/story.txt .
+
+In the story flavour file, you can then use either the
+B<$multicat::paths> or the B<$multicat::paths_plain> variable to show
+the different category paths to which the story is associated.  Consider
+the following example:
+
+  <p>
+  <a name="$fn"><b>$title</b></a><br/>
+  $body
+  </p>
+  <p>
+  Posted on $dw, $da $mo $yr $hr12:$min $ampm<br/>
+  Filed under $multicat::paths<br/>
+  </p>
+
+=head1 FLAVOUR TEMPLATE VARIABLES
+
+There are only a couple of variables that are exported.  These 
+variables are specifically for use in 'story' flavour templates.
+
+=head2 $multicat::paths   
+
+=over 4
+
+The 'paths' variable is the delimited list of all of the categories 
+for a story entry (the delimiter by default is a comma, but this is
+configurable).  The 'paths' variable includes hypertext reference 
+links (hrefs) embedded within the definition for each of the 
+respective categories to which the story entry belongs.
+
+For example, if a story was filed under "category1/foo/bar" and
+"category2/foo/baz", then the B<$multicat::paths> would be defined as
+follows (presuming a comma is defined as the delimiter):
+
+  <a href="$blosxom::url/category1/foo/bar">/category1/foo/bar</a>, <a href="$blosxom::url/category2/foo/baz">/category2/foo/baz</a>
+
+=back
+
+=head2 $multicat::paths_plain
+
+=over 4
+
+The 'paths_plain' variable is the delimited list of all of the
+categories for a story entry (the delimiter is configurable).  The
+difference between 'paths_plain' and 'paths' is that 'paths_plain' does
+not include hypertext references to the categories as part of the
+definition.
+
+For example, if a story was filed under "category1/foo/bar" and
+"category2/foo/baz", then the B<$multicat::paths_plain> would be defined
+as follows (presuming a comma is defined as the delimiter):
+
+  /category1/foo/bar, /category2/foo/baz
+
+=back
+
+=head1 NOTES
+
+Because the multicat plug-in modifies the files loaded by blosxom during
+the I<filter> subroutine, you will want to order the multicat plugin in
+the plug-in directory before any plug-ins that may require the full (and
+unmodified) file listing.  Plug-ins such as F<categorytree> should
+definitely be ordered (and thus executed) before the multicat plugin.
+However, plug-ins that build archive counts (such as the F<flatarchives>
+plug-in) should probably be called after multicat has modified the file
+reference hash.
+
+=head1 COMPATIBILITY
+
+This plugin was written for use with version 2.0 of blosxom.
+
+=head1 SEE ALSO
+
+ln(1)
+
+=head1 AUTHOR
+
+Rus Berrett  E<lt>blosxom@berrett.orgE<gt>, http://rus.berrett.org/blog/
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright (c) 2006, Rus Berrett
+
+This is free software; you can redistribute it and/or modify it
+under the terms of the perl "Artistic License".
+
+=cut
+
+########################################################################
+# eof

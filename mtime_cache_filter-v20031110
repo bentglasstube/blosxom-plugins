@@ -1,0 +1,127 @@
+# Blosxom Plugin: mtime_cache_filter
+# Author(s): Lars Kellogg-Stedman <lars at oddbit dot com>
+# Version: 2003-Nov-10
+# Documentation: See the bottom of this file or type:
+# perldoc mtime_cache_filter
+
+package mtime_cache_filter;
+
+use File::stat;
+use File::Find;
+use Data::Dumper;
+use CGI qw/:standard/;
+
+# --- Configurable variables -----
+
+our $cachefile = "$blosxom::plugin_state_dir/entries_index.cache";
+our $allow_cache_refresh = 0;
+
+# --------------------------------
+
+sub start {
+	refresh() if $allow_cache_refresh
+		&& param('plugin') eq 'entries_index'
+		&& param('refresh');
+	1;
+}
+
+sub filter {
+	my($pkg, $files_ref) = @_;
+
+	my $cache = {};
+	my $store = 0;
+
+	if ( open CACHE, $cachefile ) {
+		my $index = join undef, <CACHE>;
+		close CACHE;
+		$index =~ /\$VAR1 = \{/ and eval($index);
+
+		$cache = $VAR1;
+	}
+
+	while (my ($fname, $ftime) = each %$files_ref) {
+		if ($cache->{$fname}) {
+			$files_ref->{$fname} = $cache->{$fname};
+		} else {
+			$cache->{$fname} = $ftime;
+			$store = 1;
+		}
+	}
+
+	if ($store) {
+		open CACHE, ">$cachefile";
+		print CACHE Dumper($cache);
+		close CACHE;
+	}
+}
+
+sub refresh {
+	return unless defined $blosxom::datadir && -d $blosxom::datadir;
+
+	my $cache = {};
+
+	find(
+		sub {
+			my $d; 
+			my $curr_depth = $File::Find::dir =~ tr[/][]; 
+			if ( $blosxom::depth and $curr_depth > $blosxom::depth ) {
+				$files{$File::Find::name} and delete $files{$File::Find::name};
+				return;
+			}
+
+			$File::Find::name =~ m!^$blosxom::datadir/(?:(.*)/)?(.+)\.$blosxom::file_extension$!
+				and $2 ne 'index' and $2 !~ /^\./ and (-r $File::Find::name)
+				and ( $cache->{$File::Find::name} = stat($File::Find::name)->mtime );
+		}, $blosxom::datadir
+	);
+
+	open CACHE, ">$cachefile";
+	print CACHE Dumper($cache);
+	close CACHE;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+mtime_cache_filter
+
+=head1 DESCRIPTION
+
+This is the I<entries_index> plugin, implemented using the C<filter>
+hook instead of C<entries>.  This allows us to coexist peacefully with
+other plugins that want to modify the list of files (for instance,
+search plugins, which generally use the C<entries> hook).
+
+=head1 CONFIGURATION
+
+This plugin has two configuration variables:
+
+=over 4
+
+=item C<$cachefile>
+
+This is the full path to the modification time cache file.
+
+=item C<$allow_cache_refresh>
+
+If this is true (1), then you can force a cache refresh from the web browser.
+It may be easier to force a cache refresh by simply deleting the cache file.
+
+=back 4
+
+=head1 MAINTENANCE
+
+To force a cache refresh, load a page with the following parameters:
+
+  plugin=entries_index&refresh=1
+
+This will only work if C<allow_cache_refresh> has been set in the
+configuration section.
+
+=head1 AUTHOR
+
+  Lars Kellogg-Stedman <lars at oddbit dot com>
+

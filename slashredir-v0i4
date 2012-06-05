@@ -1,0 +1,224 @@
+# Blosxom Plugin: slashredir
+# Author(s): Frank Hecker <hecker@hecker.org>
+# Version: 0.4
+# Documentation: See the bottom of this file or type: perldoc slashredir
+
+package slashredir;
+
+use strict;
+
+use CGI qw/:standard :netscape/; 
+
+
+# --- Configurable variables -----
+
+my $debug = 1;                          # set to 1 to print debug messages
+
+# --------------------------------
+
+
+use vars qw!$redirecting!;              # 1 if we are redirecting, 0 if not
+
+
+sub start {
+    warn "slashredir: start\n" if $debug > 1;
+
+    $redirecting = 0;
+
+    # Activate this plugin only when doing dynamic page generation.
+    return $blosxom::static_or_dynamic eq 'dynamic' ? 1 : 0;
+}
+
+
+sub filter {
+    my ($pkg, $files_ref) = @_;
+
+    warn "slashredir: filter\n" if $debug > 1;
+
+    warn "slashredir: \$path_info: '" . $blosxom::path_info . "'\n"
+        if $debug > 0;
+    warn "slashredir: path_info(): '" . path_info() . "'\n"
+        if $debug > 0;
+
+    # We need a copy of the original PATH_INFO, prior to Blosxom having
+    # parsed it, because we need to see the trailing slashes stripped by
+    # Blosxom and also want the full path including date information.
+
+    my $path = path_info();
+
+    # We check to see if the URI is for an entry page and redirect if the URI
+    # has a trailing slash. Otherwise we check to see if a trailing slash
+    #  needs to be added or removed and redirect if needed.
+    #
+    # Note: We use $blosxom::path_info to check for the presence of a
+    # file extension because the extension may not have been present in the
+    # original URI but might have been added by the extensionless plugin.
+    # (That also implies that this plugin must run after extensionless runs.)
+
+    if ($blosxom::path_info =~ m!\.!) {
+	if ($path =~ m!/$!) {
+	    $path =~ s!/+$!!;           # strip *all* trailing slashes
+	    redirect($path, "Trailing slash(es) not needed");
+	}
+    } elsif ($path !~ m!/$!) {
+	$path .= '/';                   # add one trailing slash
+	redirect($path, "Adding trailing slash");
+    } elsif ($path =~ m!//+$!) {
+	$path =~ s!//+$!/!;             # remove redundant slash(es)
+	redirect($path, "Removing redundant trailing slash(es)");
+    }
+    1;
+}
+
+
+sub skip {
+    warn "slashredir: skip\n" if $debug > 1;
+
+    return $redirecting;                # skip story generation if redirecting
+}
+
+
+sub redirect {
+    my ($path, $error_msg) = @_;
+
+    my $uri = "$blosxom::url$path";
+    $uri .= "?" . $ENV{QUERY_STRING} if $ENV{QUERY_STRING};
+
+    warn "slashredir: redirecting to '$uri', '$error_msg'\n"
+	if $debug > 0;
+
+    my $redir_msg = qq!, redirecting to <a href="$uri">$uri</a>.\n!;
+    $blosxom::output = $error_msg . $redir_msg;
+    print "Status: 301\n";
+    print "Location: $uri\n";
+    $redirecting = 1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom plugin: slashredir
+
+=head1 SYNOPSIS
+
+Have Blosxom force a redirect if a URI is not in canonical form with respect
+to trailing slashes.
+
+=head1 VERSION
+
+0.4
+
+=head1 AUTHOR
+
+Frank Hecker <hecker@hecker.org>, http://www.hecker.org/
+
+=head1 DESCRIPTION
+
+This plugin checks to see whether the requested URI has one or more
+trailing slashes and if necessary does a browser redirect to the
+canonical form of the URI. More specifically, URIs for the blog root,
+categories, and date-based archives should have one (and only one)
+trailing slash, while URIs for individual entry pages should not have
+a trailing slash.
+
+For example, if you request the URI
+
+  http://www.example.com/blog/foo
+
+where "foo" is a category, this plugin will force a redirect to the
+URI
+
+  http://www.example.com/blog/foo/
+
+This plugin essentially causes Blosxom to emulate the default behavior
+of the Apache web server. The underlying idea is that URIs for Blosxom
+pages should have trailing slashes if and only if there are (or could
+be) other URIs for other pages "underneath" the URI in question.
+
+Thus an individual entry page with a URI of the form
+".../entry.flavour" (or ".../entry" if using the extensionless plugin)
+should not have a trailing slash, because URIs of the form
+".../entry.html/foo" (or ".../entry/foo" with extensionless) don't and
+won't return anything meaningful. However a category page with a URI
+of the form ".../category" could refer to additional pages with URIs
+of the form ".../category/foo.html (or ".../category/foo/entry"), and
+hence the canocical form of the category's URI should be
+".../category/".
+
+Similarly, date-based archive pages with URIs like ".../2004" or
+".../2004/10" could have subsidiary URIs for months or days
+respectively; while days are not subdivided further, per-day archive
+pages could be requested in non-default flavours, e.g.,
+".../2004/10/14/index.rss" (as could per-year and per-month pages as
+well, of course). Hence for date-based archive pages the canonical
+form of the URI should also include a trailing slash if the default
+flavour is being requested.
+
+Note that using this plugin makes most sense if you are also using URI
+rewriting rules to hide use of "/cgi-bin/blosxom.cgi" and support URIs
+similar to those traditionally used to access normal directories and
+files. This plugin can be used in conjunction with the extensionless
+plugin, but does not assume or require its use. (See also below.)
+
+This plugin was inspired by the redirect plugin by Fletcher T. Penny
+http://www.blosxom.com/plugins/general/redirect.htm and adapts a bit
+of its code.
+
+=head1 INSTALLATION AND CONFIGURATION
+
+Copy this plugin into your Blosxom plugin directory. You do not
+normally need to rename the plugin; however see the discussion below.
+
+You can change the value of the variable C<$debug> to 1 if you need to
+debug the plugin's operation; the plugin will print to the web
+server's error log the original path component of the URI and the new
+URI if redirection is to be done.
+
+This plugin supplies a filter and skip subroutine and can normally
+coexist with other plugins with filter subroutines. However this
+plugin needs to be run after the extensionless plugin, since it needs
+the file extension (provided by extensionless if not already present)
+to distinguish between individual entry pages and other pages.
+
+Finally, note that this plugin is sensitive to the exact URI rewriting
+rules you might have configured (e.g., in an Apache configuration file
+or in a .htaccess file). In particular, when rewriting URIs to add the
+name of the Blosxom CGI script (e.g., "/cgi-bin/blosxom.cgi") you need
+to ensure that such rules preserve any trailing slash on the end of
+the URI and pass it on to Blosxom.
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+Blosxom Plugin Docs: http://www.blosxom.com/documentation/users/plugins.html
+
+=head1 BUGS
+
+Address other bug reports and comments to the Blosxom mailing list:
+http://www.yahoogroups.com/group/blosxom
+
+=head1 LICENSE
+
+slashredir Blosxom plugin Copyright 2004 Frank Hecker
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

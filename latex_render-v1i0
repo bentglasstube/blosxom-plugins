@@ -1,0 +1,346 @@
+# Blosxom Plugin: latex_render
+# Author(s): Carlos Falquez <1.054572@gmail.com>
+# Based on code from the latexrender Perl Package by Benjamin Zeiss, Steve Mayer and Alex Gittens
+# Version: 1.0
+# Documentation: See the bottom of this file or type: perldoc latex_render
+
+package latex_render;
+
+## Configurable Variables ##
+
+# IMPORTANT: You MUST set this variables right in order for the plugin to work correctly ------
+# prepend this to the returned img url
+my $url_picture_path    = 'http://www.myserver.net/user/blog/img/latex';
+# where to store the pictures
+my $picture_path = '/path/to/www/dir/user/blog/img/latex';
+# Change this according to your server paths
+my $tmp_dir             = '/tmp';               # tmp dir
+my $latex_path          = '/usr/bin/latex';     # path to latex
+my $dvips_path          = '/usr/bin/dvips';     # path to dvips
+my $convert_path        = '/usr/bin/convert';   # path to convert
+my $identify_path       = '/usr/bin/identify';  # path to identify
+# you only need to set and uncomment this if your webserver has funny non-standard
+# paths and it is causing you trouble, or if you would like to use your own binaries
+#$ENV{"PATH"} = '/path/to/my/bindir:'.$ENV{"PATH"};
+# Not so important: You can tinker with this if you like --------------------------------------
+# define your tex markup, default is <math density=120> some formulae </math>
+my $math_tag = 'math';
+# convert arguments, use to tweak your image output
+my %def_math_args = ();
+$def_math_args{'density'} = 200;
+$def_math_args{'trim'} = '';
+$def_math_args{'negate'} = '';
+# install extarticle class if you wish to have smaller font sizes
+my $latexclass          = 'article';
+# some more parameters for good measure
+my $image_format        = 'png';			# change to gif if you prefer
+my $font_size           = 24;				# font size
+my $xsize_limit         = 800;				# img x size limit
+my $ysize_limit         = 600;				# img y size limit
+my $string_length_limit = 800;				# text limit
+# Customize this if you want other fonts or whatever
+my $latex_head = "\\documentclass[$font_size" . "pt]{$latexclass}\n"
+               . "\\usepackage[latin1]{inputenc}\n"
+               . "\\usepackage{amsmath}\n"
+               . "\\usepackage{amsfonts}\n"
+               . "\\usepackage{amssymb}\n"
+               . "\\pagestyle{empty}\n";
+# ---------------------------------------------------------------------------------------------
+
+## Plugin Code ##
+
+use Cwd;
+use HTML::Entities;
+use File::Copy;
+use Digest::MD5 qw(md5_hex);
+
+my $RANDMAX = 1000;
+
+# this most certainly needs to be extended. in the long term it is planned to use
+# a positive list for more security. this is hopefully enough for now. i'd be glad
+# to receive more bad tags !
+my @latex_tags_blacklist = (
+    "include",           "def",
+    "command",           "loop",
+    "repeat",            "open",
+    "toks",              "output",
+    "input",             "catcode",
+    "\\^\\^",            #" name",
+    "\\every",           "\\errhelp",
+    "\\errorstopmode",   "\\scrollmode",
+    "\\nonstopmode",     "\\batchmode",
+    "\\read",            "\\write",
+    "csname",            "\\newhelp",
+    "\\uppercase",       "\\lowercase",
+    "\\relax",           "\\aftergroup",
+    "\\afterassignment", "\\expandafter",
+    "\\noexpand",        "\\special"
+);
+
+# Tries to match the LaTeX Formula given as argument against the
+# formula cache. If the picture has not been rendered before, it'll
+# renderLatex to try and render it after the security filters are passed
+# @param string formula in LaTeX format and a reference to a hash of convert arguments
+# @returns an html <img /> tag that points to a picture which contains the requested
+# LaTeX formula, or an error message in the format '[ Error : $errorStr ]'
+sub getFormulaURL {
+	my ($latex_formula,$math_args) = @_;
+	my $convert_args  = '';
+	my $errorStr      = '';
+	for my $k ( keys %def_math_args ) {
+		$$math_args{$k} and $convert_args .= " -$k $$math_args{$k}"
+		                 or $convert_args .= " -$k $def_math_args{$k}";
+	}
+	my $formula_hash = md5_hex($latex_formula.$convert_args);
+	my $filename     = $formula_hash.'.'.$image_format;
+	if ( -f $picture_path .'/'. $filename ) {
+		my $alt_latex_formula = encode_entities($latex_formula);
+		#$alt_latex_formula =~ s/\r/&#13;/g; $alt_latex_formula =~ s/\n/&#10;/g;
+		return "<img src='$url_picture_path/$filename' title='$alt_latex_formula'"
+			. " class='formula' alt='$alt_latex_formula'/>";
+	} else {
+		$errorStr = checkLatexFormula($latex_formula) and return '[ Error : '.$errorStr.' ]';
+		# security checks assume correct formula, let's render it
+		unless ( $errorStr = renderLatex($latex_formula,$convert_args) ) {
+			my $alt_latex_formula = encode_entities($latex_formula);
+			#$alt_latex_formula =~ s/\r/&#13;/g; $alt_latex_formula =~ s/\n/&#10;/g;
+			return "<img src='$url_picture_path/$filename' title='$alt_latex_formula'"
+				. " class='formula' alt='$alt_latex_formula' />"; #align='middle'>";
+		}
+		return '[ Error : '.$errorStr.' ]';
+	}
+}
+
+# wraps a minimalistic LaTeX document around the formula and returns a string
+# containing the whole document as string.
+# @param string formula in LaTeX format
+# @returns minimalistic LaTeX document containing the given formula
+sub wrap_formula {
+    my $latex_formula = shift;
+
+    my $string = $latex_head;
+    $string .= "\\begin{document}\n";
+    $string .= "\$" . $latex_formula . "\$\n";
+    $string .= "\\end{document}\n";
+
+    return $string;
+}
+
+# returns the dimensions of a picture file using 'identify' of the
+# imagemagick tools.
+# @param string path to a picture
+# @returns array containing the picture dimensions
+sub getDimensions {
+    my $filename = shift;
+    my $output   = `$identify_path $filename`;
+    my @result   = split / /, $output;
+    my @dim      = split /x/, $result[2];
+    $dim[1] = int( $dim[1] );
+    return @dim;
+}
+
+# perform various checks to the LaTeX formula before rendering it
+# @param string formula in LaTeX format
+# @returns '' when all tests where passed, else returns an error string
+sub checkLatexFormula {
+	my $latex_formula = shift;
+	my $errorStr = '';
+	# security filter: reject too long formulas
+	length($latex_formula) > $string_length_limit and return 'This formula is too long';
+	# security filter: try to match against LaTeX-Tags Blacklist
+	foreach (@latex_tags_blacklist) {
+		$latex_formula =~ m/$_/ and $errorStr .= ' '.$_;
+	}
+	$errorStr and return 'Includes blacklisted tag(s)'.$errorStr;
+	return '';
+}
+
+# Renders a LaTeX formula by the using the following method:
+#  - write the formula into a wrapped tex-file in a temporary directory
+#    and change to it
+#  - Create a DVI file using latex (tetex)
+#  - Convert DVI file to Postscript (PS) using dvips (tetex)
+#  - convert, trim and add transparancy by using 'convert' from the
+#    imagemagick package.
+#  - Save the resulting image to the picture cache directory using an
+#    md5 hash of the formula plus arguments as filename. Already rendered
+#    formulas can be found directly this way.
+# @param string LaTeX formula and arguments for convert
+# @returns '' if the picture has been successfully saved to
+# the picture cache directory, else returns an error string 
+sub renderLatex {
+	my ($latex_formula,$convert_args) = @_;
+	my $current_dir  = getcwd();
+	my $tmp_filename = md5_hex( int( rand $RANDMAX ) );
+	chdir $tmp_dir;
+	open( my $fp, ">$tmp_filename.tex" );
+	print $fp (wrap_formula($latex_formula));
+	close $fp;
+	# create temporary dvi file
+	my $command = "$latex_path --interaction=nonstopmode $tmp_filename.tex";
+	my $status_code = system("$command > /dev/null 2>&1");
+	if ($status_code) {
+		cleanTemporaryDirectory($tmp_filename,$current_dir);
+		return 'Problem running latex (syntax error? file permisions?), so dvi file not created';
+	}
+	# convert dvi file to postscript using dvips
+	$command     = "$dvips_path -E $tmp_filename.dvi -o $tmp_filename.ps";
+	$status_code = system("$command > /dev/null 2>&1");
+	# imagemagick convert ps to image and trim picture " -transparent \"#FFFFFF\" "
+	$command = "$convert_path ".$convert_args." $tmp_filename.ps $tmp_filename.$image_format";
+	$status_code = system("$command > /dev/null 2>&1");
+	# test picture for correct dimensions
+	my @dim = getDimensions("$tmp_filename.$image_format");
+	if ( ( $dim[0] > $xsize_limit ) or ( $dim[1] > $ysize_limit ) ) {
+		cleanTemporaryDirectory($tmp_filename,$current_dir);
+		return 'resulting image too large : ' . $dim[0] . 'x' . $dim[1];
+	}
+	# copy temporary formula file to cahed formula directory
+	my $latex_hash = md5_hex($latex_formula.$convert_args);
+	my $filename   = $picture_path . "/$latex_hash.$image_format";
+	$status_code = copy( "$tmp_filename.$image_format", $filename );
+	cleanTemporaryDirectory($tmp_filename,$current_dir);
+	!$status_code and return 'Cannot copy image to pictures directory';
+	return '';
+}
+
+# Cleans the temporary directory
+# @param the name of the temporary file and the original working directory
+# @returns nothing
+sub cleanTemporaryDirectory {
+	my ($tmp_filename,$dir) = @_;
+	chdir($tmp_dir);
+	unlink($tmp_dir.'/'.$tmp_filename.'.tex');
+	unlink($tmp_dir.'/'.$tmp_filename.'.aux');
+	unlink($tmp_dir.'/'.$tmp_filename.'.log');
+	unlink($tmp_dir.'/'.$tmp_filename.'.dvi');
+	unlink($tmp_dir.'/'.$tmp_filename.'.ps');
+	unlink($tmp_dir.'/'.$tmp_filename.'.'.$image_format);
+	chdir($dir);
+}
+
+sub replace_tex
+{
+	my $text = shift;
+	my %math_formula;
+	study $text;
+
+	$text =~  s{ ( <$math_tag\b(.*?)>               # save args in $2
+		      \s*((?:.+?\n?)+?)\s*</$math_tag> ) # save formula in $3
+		   }{	my $key = md5_hex($1);
+			my %math_args = ();
+			if ( my $args = $2 ) {
+				for my $k ( keys %def_math_args ) {
+					$args =~ /$k=(\w+)/ and $math_args{$k} = $1;
+				}
+			}
+			$math_formula{$key} = getFormulaURL($3,\%math_args);
+			$key;
+		  }egmx;
+	while ( my ($key, $value) = each(%math_formula) ) {
+		$text =~ s|$key|$value|g;
+	}
+
+	return $text;
+}
+
+sub start {
+	return 1;
+}
+
+sub story {
+	my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+	$$body_ref = &replace_tex($$body_ref);
+	return 1;
+}
+
+return 1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: latex_render
+
+=head1 SYNOPSIS
+
+Make Blosxom output image files from LaTeX code inside <math> tags
+
+=head1 REQUIRES
+
+ teTeX [http://www.tug.org/tetex]
+ ImageMagick [http://www.imagemagick.org]
+
+=head1 DESCRIPTION
+
+After you put this plugin on your $blosxom::plugin_dir and configure it according to your system,
+you can start putting LaTeX code on your posts like this:
+
+	<math density=300>
+		\frac{d}{dx}\left( \int_{0}^{x} f(u)\,du\right)=f(x)
+	</math>
+
+Then, for each pair of <math> tags (or whatever you defined $math_tag to be) you have on
+your posts, the plugin reads the LaTeX formula inside such a tag and takes the md5sum
+of the formula plus the convert arguments you gave in your tag (or the default ones,
+if you gave none), then checks the $picture_path folder for an image with such an
+md5sum as a filename. If there is none, then - after some tests are passed - such an
+image is generated and saved in $picture_path. Finally the plugin replaces your <math>
+markup with an HTML <img /> link to the generated image, of the form
+
+	<img src='$url_picture_path/$filename' title='$alt_latex_formula' class='formula' alt='$alt_latex_formula' />
+
+That is, $picture_path is the filesystem path where the script should save the images,
+and $url_picture_path is the path URL as seen from your web browser.
+
+Note that you can specify the value of arguments that are passed to convert by writing them in your tag.
+For this to work the argument name must be a key in %def_math_args. You can also change the default arguments
+passed to convert by changing %def_math_args directly.
+
+=head1 TODO
+
+Make latex_render capable to interact with the comments plugin so as to allow visitors
+to render LaTeX too. This should not be too difficult to implement.
+
+=head1 VERSION
+
+ 1.0
+
+=head1 AUTHORS
+
+ Carlos Falquez <1.054572@gmail.com>
+ http://www.stud.uni-karlsruhe.de/~ucarg/11tesis
+
+ Based on code from the latexrender Perl Package by Benjamin Zeiss, Steve Mayer and Alex Gittens
+
+=head1 SEE ALSO
+
+ Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+ The Unofficial Blosxom User Group: http://blosxom.ookee.com/blog/
+
+=head1 BUGS
+
+ Address bug reports and comments to the Blosxom mailing list
+ [http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+latex_render Blosxom plugin
+
+Copyright 2006, Carlos Falquez
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+

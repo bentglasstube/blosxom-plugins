@@ -1,0 +1,158 @@
+# Blosxom Plugin: cache_timestamps
+# Author(s): Steven Hanley <sjh@svana.org>
+# Version: 2004-10-27
+# Documentation: some comments
+
+# 2004-11-18 * bug fix, no longer keeps files that have moved or been deleted 
+#              in the cache
+
+# similar idea to entries_index by Rael Dornfest
+# differences are
+# looks for time stamp near the top of each file in a defined pattern
+# can write the time stamp into that position in the file if it does not exist
+# otherwise keeps the cache in the data drectory, creates the cache if not found
+# defaults to using the cache times for files already in the cache
+
+package cache_timestamps;
+
+# --- Configurable variables -----
+
+# adds timestamps to files found without one,
+# uses the filesystem time for the file
+# this requires the web server user to be able to write to the blosxom entries
+$insert_ts = 0;
+
+# --------------------------------
+
+use File::stat;
+use File::Find;
+use Data::Dumper;
+use POSIX qw(strftime);
+use Time::Local;
+
+# using strftime
+# $now_string = strftime "%a %b %e %H:%M:%S %Y", localtime;
+# $stat->mtime can be passed to localtime to get the appropriate values
+# use the perl utime function to keep the time the same on the file when
+# inserting timestamps
+
+# if I decide to modify the timestamp on the filesystem for files also (or
+# have that as an option) I should use the perl utime function to do what
+# touch -d does
+
+sub start {
+  1;
+}
+
+# the regex pattern used to recognise a time stamp in a file
+# defaults to html comment with time stamp in it such as
+# <!-- 2004-10-27 12:01:12 --> capturing it to $1
+$tspattern = '<\!--\s(\d\d\d\d)-(\d\d)-(\d\d)\s(\d\d):(\d\d):(\d\d)\s-->';
+
+# format for time output to be passed to strftime, should match $tspattern
+$tsoutfmt = "<!-- %F %T -->";
+
+sub extract_date ($) {
+   my $filename = shift;
+
+   my $mtime = "";
+
+   if (open ENTRY, "<$filename") {
+      my $contents = join '', <ENTRY>;
+      close ENTRY;
+      # multi line match, looking for an occurance of the timestamp pattern
+      if ($contents =~ m/$tspattern/m) {
+         my ($y,$m,$d,$h,$mi,$s) = ($1,$2,$3,$4,$5,$6);
+         $m--;
+         $mtime = timelocal ($s,$mi,$h,$d,$m,$y);
+      }
+   }
+
+   return $mtime;
+}
+
+sub add_datestamp ($$) {
+   my ($filename,$mtime) = @_;
+
+   my $timestring = strftime $tsoutfmt, localtime $mtime;
+
+   if (open ENTRY, "<$filename") {
+      my @filecon = <ENTRY>;
+      close ENTRY;
+      if (open ENTRY, ">$filename") {
+         print ENTRY $filecon[0];
+         print ENTRY $timestring, "\n";
+         print ENTRY join '', @filecon[1 .. $#filecon];
+         close ENTRY;
+
+         # change the atime and mtime of the file back to what it was
+         # commented out for now as it does not work unless you are the owner of the file, even if a+w
+         # print STDERR "utime $mtime on $filename failed $!\n" if not utime $mtime, $mtime, $filename;
+      } else {
+         warn "couldn't > $filename $!\n";
+      }
+   }
+}
+
+sub entries {
+   return sub {
+      my(%files, %newfiles, %indexes);
+      my $cachefile = "$blosxom::plugin_state_dir/.cache_timestamps.index";
+      my $writecache = 0;
+
+      # next 5 lines copied from entries_index
+      if (open ENTRIES, "< $cachefile") {
+         my $index = join '', <ENTRIES>;
+         close ENTRIES;
+         $index =~ /\$VAR1 = \{/ and eval($index) and !$@ and %files = %$VAR1;
+      }
+
+      sub wanted {
+         # need this to obey the blosxom config thing about directory traversal depth
+         my $curr_depth = $File::Find::dir =~ tr[/][];
+         if ( $blosxom::depth and $curr_depth > $blosxom::depth ) {
+            $files{$File::Find::name} and delete $files{$File::Find::name};
+            return;
+         }
+
+         if ($File::Find::name =~ m!^$blosxom::datadir/(?:(.*)/)?(.+)\.$blosxom::file_extension$!) {
+            # $1 is path (optional) $2 is filename without extension
+            # file is not index.something, isnt hidden and is readable
+            return if not ($2 ne 'index' and $2 !~ /^\./ and (-r $File::Find::name));
+
+            if (not $files{$File::Find::name}) {
+               my $ftime = extract_date ($File::Find::name);
+               my $stattime = stat($File::Find::name)->mtime;
+
+               # adds a timestamp to the second line of the entry file needed
+               add_datestamp ($File::Find::name, $stattime) if $insert_ts and $ftime eq "";
+
+               $ftime = $stattime if $ftime eq "";
+
+               return if (not $blosxom::show_future_entries and ($ftime > time));
+
+               $writecache = 1;
+               $newfiles{$File::Find::name} = $ftime;
+            } else { # found file already in the cache
+               $newfiles{$File::Find::name} = $files{$File::Find::name};
+            }
+         }
+      }
+
+      find (\&wanted, $blosxom::datadir);
+
+      # next 8 lines copied from entries_index
+      if ($writecache) {
+         if (open ENTRIES, "> $cachefile") {
+            print ENTRIES Dumper \%newfiles;
+            close ENTRIES;
+         } else {
+            warn "couldn't > $cachefile: $!\n";
+         }
+      }
+
+      return (\%newfiles, \%indexes);
+   };
+}
+
+1;

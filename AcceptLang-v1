@@ -1,0 +1,50 @@
+package AcceptLang;     # vim:ft=perl:
+
+# available languages and order
+my @langs = ('de', 'en');
+
+# default lang if no requested language is available
+my $defaultlang = 'en';
+
+
+sub start {
+    1;
+}
+
+sub filter {
+    my $self = shift;
+    my ($files, $others) = @_;
+    my $acceptlang = $ENV{'HTTP_ACCEPT_LANGUAGE'} ? $ENV{'HTTP_ACCEPT_LANGUAGE'} : $defaultlang;
+
+    my @order = parse($acceptlang, @langs);
+    $blosxom::blog_language = $order[0];
+    foreach (keys %$files) {
+        delete $files->{$_} unless (
+            /^[^.]+\.$order[0]\.$blosxom::file_extension$/ or
+            /^[^.]+\.$blosxom::file_extension$/
+        );
+    }
+};
+
+sub parse {
+    my ($acceptlang, @langs) = @_;
+
+    # dumb parsing, good enough for a first start
+    #my (@order) = $acceptlang =~ /^(?:\s*([^,;]+)[^,]*,)*\s*([^,;]+)[^,]*$/;
+    # doesn't work -- for now only take the first entry
+    my (@order) = $acceptlang =~ /^\s*([^,;]+)/;
+
+    my $langs = join('|', @langs);
+
+    return grep { /^$langs$/ } @order;
+}
+
+1;
+
+__END__
+
+    use Data::Dumper;
+    open FOO, ">/tmp/blaaah" or die "$0: can't write to /tmp/blaaah: $!";
+    print FOO Dumper(\@_, \@order);
+    close FOO;
+

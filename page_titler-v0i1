@@ -1,0 +1,121 @@
+# Blosxom Plugin: page_titler
+# Author: Dave Slusher <dave_slusher@sff.net>
+# Version: 0.1, 20030810
+# http://www.evilgeniuschronicles.org/
+# See the perldoc info at the bottom for more details
+
+package page_titler;
+
+# --- Configurable variables -----
+my $separator = " - ";
+$debug_level = 1 unless defined $debug_level;
+
+my $DataFile = $blosxom::plugin_state_dir.'/'."page_titler.dat";
+
+# --- End Configurable variables -----
+# ------------------------------------
+
+my $read_title = 0; 
+my $cached_title;
+
+sub debug {
+    my ($level, @msg) = @_;
+    if ($debug_level >= $level) {
+	print STDERR "$package debug $level: @msg\n";
+    }
+    1;
+}
+
+
+sub start {
+    # this is to determine if we are at the unqualified main page
+    if ( !$blosxom::path_info_yr and !$blosxom::path_info and scalar(CGI::param) <=  1 ) {
+	#open data file
+	local *FH;
+	if( -e "$DataFile") {
+	    open FH, "$DataFile" or (return 0);
+	}
+	flock(FH, 2);
+	$cached_title = <FH>;
+	chomp ($cached_title);
+	close (FH);
+	if ($cached_title) {
+	    $title = $separator . $cached_title;
+	}
+    } else {
+	$title = '';
+    }
+
+
+
+    1;
+}	
+
+sub story {
+    my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+  if (!$read_title) {
+
+      # deciding if we need to write this title into the cache file
+      # is it different? Are we at the unqualified front page?
+      if ($cached_title ne $$title_ref and !$blosxom::path_info_yr and !$blosxom::path_info) {
+	    debug(1, $cached_title." ".$$title_ref); 
+	    local *FH;
+	    open FH, ">$DataFile" or return 0;
+	    flock(FH, 2);
+	    print FH $$title_ref."\n"; 
+	    close FH;
+	}
+	$read_title = 1;
+    }		
+
+    1;
+}
+
+1;
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: page_titler
+
+=head1 SYNOPSIS
+
+This allows for the title of the most recent story to be used in flavours, available with $page_titler::title . In this current version, the first page view after a story has changed will be the second newest title. While loading, the cache file will be overwritten with the new title and all subsequent uses will have the current title. 
+
+=head1 AUTHOR
+
+Dave Slusher <dave_slusher@sff.net>
+
+=head1 SEE ALSO
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+storytitle: http://exo.org.uk/code/storytitle/
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Copyright 2003, Dave Slusher
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+

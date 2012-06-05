@@ -1,0 +1,183 @@
+# Blosxom Plugin: pages
+# Author(s): Carlos Falquez <1.054572@gmail.com>
+# Version: 1.0
+# Documentation: See the bottom of this file or type: perldoc pages
+
+package pages;
+
+## Configurable Variables ##
+
+# --------------------------------------
+my $prev_str = 'anteriores';     # Text for previous entries/post link
+my $next_str = 'siguientes';     # Text for next entries/post link
+my $pages_url   = '/page/';      # change this to '?page=' if you dont want to touch your .htaccess rewrite rules
+# --------------------------------------
+
+## Exports ##
+
+# This variables are exported. If you wish you can change the
+# default '' value to something like 'no more posts this way'
+$location = '';
+$nextPage = '';
+$prevPage = '';
+$nextPost = '';
+$prevPost = '';
+# --------------------------------------
+
+## Plugin Code ##
+
+use POSIX qw/ceil/;
+use CGI qw/:standard/;
+
+# I guess these could also be exported
+my $currentpage = 1;
+my $totalpages  = 1;
+
+sub start {
+	#TODO: Check for compatibility with static rendering
+	$blosxom::static_or_dynamic eq 'dynamic' and return 1;
+	return 0;
+}
+
+sub select {
+	return sub {
+		$#_ < 1 and return @_;
+		my $id = 0;
+		my $filter_tags = param('-tags');
+		my $path = '';
+		
+		$filter_tags = '/tags/'.$filter_tags if $filter_tags;
+		$path = '/'.$blosxom::path_info.$filter_tags;
+		$path =~ s/\/$//;
+		$totalpages = ceil ($#_ / $blosxom::num_entries);
+		$currentpage = param('page') || 1;
+		$currentpage < 1 and $currentpage = 1;
+		$nextPage = ($id = $currentpage - 1)?
+				'<a href="'.$blosxom::url.$path.$pages_url.$id.'">'.$next_str.'</a>' : $nextPage;
+		$prevPage = ($id = $currentpage + 1) <= $totalpages ? 
+				'<a href="'.$blosxom::url.$path.$pages_url.$id.'">'.$prev_str.'</a>' : $prevPage;
+		$location = ($totalpages != 1)?$currentpage.' / '.$totalpages : $location;
+		
+		$path = $blosxom::datadir.'/'.$blosxom::path_info;
+		$path =~ s/.\w+$/.$blosxom::file_extension/;
+		for ($id=0; $id <= $#_ and not $_[$id] eq $path; $id++) {
+			;
+		}
+		if ($id > 0) {
+			$nextPost = $_[$id-1];
+			$nextPost =~ s/^$blosxom::datadir\/(.*?).$blosxom::file_extension/$1.$blosxom::flavour/;
+			$nextPost = '<a href="'.$blosxom::url.'/'.$nextPost.'">'.$next_str.'</a>';
+		}
+		if ($id < $#_) {
+			$prevPost = $_[$id+1];
+			$prevPost =~ s/^$blosxom::datadir\/(.*?).$blosxom::file_extension/$1.$blosxom::flavour/;
+			$prevPost = '<a href="'.$blosxom::url.'/'.$prevPost.'">'.$prev_str.'</a>';
+		}
+
+		my $start_entry = ($currentpage - 1) * $blosxom::num_entries;
+		$start_entry > $#_ and $start_entry = $#_ ;
+		return @_[$start_entry..$#_];
+	};
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: pages
+
+=head1 SYNOPSIS
+
+Blosxom plugin to select which entries are shown, based on the value of CGI::param("page").
+
+=head1 Description
+
+Selects which entries are shown, based on the value of CGI::param("page").
+As a bonus you get C<$pages::location>, C<$pages::nextPage>, C<$pages::prevPage>,
+C<$pages::nextPost> and C<$pages::prevPost> filled and ready to use in your templates.
+The page order is taken from the output of the sort subroutine. The nextPost and prevPost
+are links that point to the next and previous post on the same category, based also on
+the output of the sort subroutine. You still control hoy many posts per page are
+shown by setting C<$blosxom::num_entries> to your prefered value.
+This plugin needs your blosxom.cgi to have this patch applied, taken from this post
+http://web.archive.org/web/20040710210148/http://blog.oddbit.com/tech/blosxom/paging.html
+which adds an entry selection subroutine: 
+
+ 
+ @@ -331,13 +342,23 @@
+        my($files_ref) = @_;
+        return sort { $files_ref->{$b} <=> $files_ref->{$a} } keys %$files_ref;
+      };
+ +
+ +    # Define a default select subroutine
+ +    my $select = sub {
+ +      return @_;
+ +    };
+ 
+      # Plugins: Sort
+      # Allow for the first encountered plugin::sort subroutine to override the
+      # default built-in sort subroutine
+      my $tmp; foreach my $plugin ( @plugins ) { $plugins{$plugin} > 0 and $plugin->can('sort') and defined($tmp = $plugin->sort()) and $sort = $tmp and last; }
+ -
+ -    foreach my $path_file ( &$sort(\%f, \%others) ) {
+ +
+ +    # Plugins: Select
+ +    # Allow for the first encountered plugin::select subroutine to override the
+ +    # default built-in select subroutine
+ +    my $tmp; foreach my $plugin ( @plugins ) { $plugins{$plugin} > 0 and $plugin->can('select') and defined($tmp = $plugin->select()) and $select = $tmp and last; }
+ +
+ +    foreach my $path_file ( &$select(&$sort(\%f, \%others)) ) {
+        last if $ne <= 0 && $date !~ /\d/;
+        use vars qw/ $path $fn /;
+        ($path,$fn) = $path_file =~ m!^$datadir/(?:(.*)/)?(.*)\.$file_extension!;
+ 
+
+For an url like http://myserver.net/blosxom.cgi/page/3 to work you should have
+something like this on your .htaccess
+
+	RewriteEngine On
+	RewriteRule ^blosxom.cgi/((.*?/)*?)page/?([0-9]*?)/?$ /blosxom.cgi/$1?page=$3 [L,QSA]
+
+For more such info, type in "apache mod rewrite" on your favorite search engine.
+
+=head1 VERSION
+
+ 1.0 Initial implementation
+
+=head1 AUTHOR
+
+ Carlos Falquez <1.054572@gmail.com>
+ http://www.stud.uni-karlsruhe.de/~ucarg/11tesis
+
+=head1 SEE ALSO
+
+ Blosxom Home/Docs/Licensing: http://www.blosxom.com
+
+ The Unofficial Blosxom User Group: http://blosxom.ookee.com/blog/
+
+=head1 BUGS
+
+ Address bug reports and comments to the Blosxom mailing list 
+ [http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+pages Blosxom plugin
+
+Copyright 2006, Carlos Falquez
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.

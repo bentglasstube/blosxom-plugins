@@ -1,0 +1,82 @@
+#!/usr/bin/perl
+# Blosxom Plugin: list_archives
+# Author: Lukasz Grabun, www.grabun.com
+# Version: 0.1
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/blosxom
+# Plugin populates $list_archives::archives variable with list consisting of titles of your entries
+# in a month-year order.
+
+package list_archives;
+
+# --- Configurable Variables ---
+# Do you want the list sorted in reverse chronological order?
+my $reversechron=1;
+
+# Set to whatever you want your HTML to be indented with. Leave blank for nothing.
+my $indent="\t";
+
+# Customize your month names here if you want to.
+my @monthname=('January', 'February', 'March', 'April', 'May', 'June', 'July',
+               'August', 'September', 'October', 'November', 'December');
+               
+# Set to whatever you want to have day separated from month with.
+
+my $sep = "/";
+
+# ------------------------------
+
+$archives = '';
+
+sub start {
+    return 1;
+}
+
+sub filter {
+    my ($pkg, $files) = @_;
+    my %archive;
+    
+    foreach (keys %{$files})
+    {
+	  open(FH, "<$_");
+	  chomp(my $title = <FH>);
+	  close(FH);
+    	  my @date = localtime($files->{$_});
+          my $month = $date[4];
+          my $year  = $date[5] + 1900;
+          my $day   = $date[3];
+          my $hour  = $date[2];
+          my $min   = $date[1];
+	  my $m = $month + 1; if ($m<10) { $m = "0" . "$m"; }
+	  my $d = $day; if ($d<10) { $d = "0" . "$d"; }
+          s/$blosxom::datadir/$blosxom::url/;
+	  s/$blosxom::file_extension$/$blosxom::flavour/;
+          $archive{$year}{$month}{$day}{$hour}{$min} = qq{$indent$indent<li>$m$sep$d - <a href="$_">$title</a></li>\n};
+    }
+
+    my $results = qq{<div id="archives"><ul>\n};
+
+	  foreach my $year(sort {$reversechron?$b<=>$a:$a<=>$b} keys(%archive)) 
+	  {
+	    # loop for each month found; one LI per month.
+            foreach my $month(sort {$reversechron?$b<=>$a:$a<=>$b} keys(%{$archive{$year}})) 
+	    {
+	      my $mnum = sprintf("%02d", $month+1);
+              $results .= qq{$indent<li><a href="$blosxom::url/$year/$mnum/index.$blosxom::flavour">$monthname[$month] $year</a><ul>\n};
+              foreach my $day(sort {$reversechron?$b<=>$a:$a<=>$b} keys(%{$archive{$year}{$month}}))
+              {
+		foreach my $hour(sort {$reversechron?$b<=>$a:$a<=>$b} keys(%{$archive{$year}{$month}{$day}}))
+		{
+		  foreach my $min(sort {$reversechron?$b<=>$a:$a<=>$b} keys(%{$archive{$year}{$month}{$day}{$hour}}))
+		  {
+		    $results .= $archive{$year}{$month}{$day}{$hour}{$min};
+	          }
+	        }
+	      }
+	      $results .="</ul></li>";
+            }
+          }
+    $results .= "</ul></div>";
+    $archives = $results;
+}
+
+1;

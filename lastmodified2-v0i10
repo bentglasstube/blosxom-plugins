@@ -1,0 +1,611 @@
+# Blosxom Plugin: lastmodified2
+# Author(s): Frank Hecker <hecker@hecker.org>
+# (based on work by Bob Schumaker <cobblers@pobox.com>)
+# Version: 0.10
+# Documentation: See the bottom of this file or type: perldoc lastmodified2
+
+package lastmodified2;
+
+use strict;
+
+use HTTP::Date;
+use Data::Dumper;
+use POSIX qw! strftime !;
+
+# Use the Digest:MD5 module if available, the older MD5 module if not.
+
+my $use_digest;
+my $use_just_md5;
+
+BEGIN {
+    if (eval "require Digest::MD5") {
+	Digest::MD5->import();
+	$use_digest = 1;
+    }
+    elsif (eval "require MD5") {
+	MD5->import();
+	$use_just_md5 = 1;
+    }
+}
+
+# --- Package variables -----
+
+my $current_time = time();              # Use consistent value of current time.
+my $last_modified_time = 0;
+my $etag = "";
+my $md5_digest = "";
+my %validator;
+
+# --- Output variables -----
+
+our $latest_rfc822 = '';
+our $latest_iso8601 = '';
+
+our $others_rfc822 = '';
+our $others_iso8601 = '';
+
+our $now_rfc822 = '';
+our $now_iso8601 = '';
+
+our $story_rfc822 = '';
+our $story_iso8601 = '';
+
+# --- Configurable variables -----
+
+my $generate_etag = 1;                  # generate ETag header?
+
+my $generate_mod = 1;                   # generate Last-modified header?
+
+my $strong = 0;                         # do strong validation?
+
+my $val_cache = "validator.cache";      # where to cache last-modified values
+					# and MD5 digests (in state directory)
+
+my $generate_expires = 0;               # generate Expires header?
+
+my $generate_cache = 0;                 # generate Cache-control header?
+
+my $freshness_time = 3000;              # number of seconds pages are fresh
+                                        # (0 = do not cache, max is 1 year)
+
+my $generate_length = 1;                # generate Content-length header?
+
+my $use_others = 0;                     # consult %others for weak validation
+                                        # (DEPRECATED)
+
+my $export_dates = 1;                   # set $latest_rfc822, etc., for
+                                        # compatibility with lastmodified
+
+my $debug = 0;                          # set > 0 for debug output
+
+# --------------------------------
+
+
+# Do any initial processing, and decide whether to activate the plugin.
+
+sub start {
+    warn "lastmodified2: start\n" if $debug > 1;
+
+    # Don't activate this plugin if we are doing static page generation.
+
+    return 0 if $blosxom::static_or_dynamic eq 'static';
+
+    # If we can't do MD5 then we don't do strong validation.
+
+    if ($strong && !($use_digest || $use_just_md5)) {
+	$strong = 0;
+
+	warn "lastmodified2: MD5 not available, forcing weak validation\n"
+	    if $debug > 0;
+    }
+
+    # Limit freshness time to maximum of one year, must be non-negative.
+
+    $freshness_time > 365*24*3600 and $freshness_time = 365*24*3600;
+    $freshness_time < 0 and $freshness_time = 0;
+
+    if ($debug > 1) {
+	warn "lastmodified2: \$generate_etag = $generate_etag\n"; 
+	warn "lastmodified2: \$generate_mod = $generate_mod\n"; 
+	warn "lastmodified2: \$strong = $strong\n"; 
+	warn "lastmodified2: \$generate_cache = $generate_cache\n"; 
+	warn "lastmodified2: \$generate_expires = $generate_expires\n"; 
+	warn "lastmodified2: \$freshness_time = $freshness_time\n"; 
+	warn "lastmodified2: \$generate_length = $generate_length\n"; 
+    }
+
+    # If we are using Last-modified as a strong validator then read
+    # in the cached last-modified values and MD5 digests.
+
+    if ($generate_mod && $strong &&
+	open CACHE, "<$blosxom::plugin_state_dir/$val_cache" ) {
+
+	warn "lastmodified2: loading cached validators\n" if $debug > 0;
+
+	my $index = join '', <CACHE>;
+	close CACHE;
+
+	my $VAR1;
+	$index =~ m!\$VAR1 = \{!
+	    and eval($index) and !$@ and %validator = %$VAR1;
+    }
+
+    # Convert current time to RFC 822 and ISO 8601 formats for others' use.
+
+    if ($export_dates && $current_time) {
+	$now_rfc822 = HTTP::Date::time2str($current_time);
+	$now_iso8601 = iso8601($current_time);
+    }
+
+    return 1;
+}
+
+
+# We check the list of entries to be displayed and determine the modification
+# time of the most recent entry.
+
+sub filter {
+    my ($pkg, $files, $others) = @_;
+
+    warn "lastmodified2: filter\n" if $debug > 1;
+
+    # We can skip all this unless we're doing weak validation and/or we're
+    # setting the *_rfc822 and *_iso8601 variables for others to use.
+
+    return 1 unless $export_dates ||
+	(($generate_etag || $generate_mod) && !$strong);
+
+    # Find the latest date/time modified for the entries to be displayed.
+
+    $last_modified_time = 0;
+    for (values %$files) {
+	$_ > $last_modified_time and $last_modified_time = $_;
+    }
+
+    warn "lastmodified2: \$last_modified_time = " .
+	$last_modified_time . " (entries)\n" if $debug > 0;
+
+    # Convert last modified time to RFC 822 and ISO 8601 formats for others.
+
+    if ($export_dates && $last_modified_time) {
+	$latest_rfc822 = HTTP::Date::time2str($last_modified_time);
+	$latest_iso8601 = iso8601($last_modified_time);
+    }
+
+    # Optionally look at other files as well (DEPRECATED).
+
+    if ($use_others) {
+	my $others_last_modified_time = 0;
+	for (values %$others) {
+	    $_ > $others_last_modified_time
+		and $others_last_modified_time = $_;
+	}
+
+	if ($export_dates && $others_last_modified_time) {
+	    $others_rfc822 = HTTP::Date::time2str($others_last_modified_time);
+	    $others_iso8601 = iso8601($others_last_modified_time);
+	}
+
+	warn "lastmodified2: \$others_last_modified_time = " .
+	    $others_last_modified_time . " (others)\n" if $debug > 0;
+
+	$others_last_modified_time > $last_modified_time
+	    and $last_modified_time = $others_last_modified_time;
+    }
+
+    # If we're doing weak validation then create an etag based on the latest
+    # date/time modified and mark it as weak (i.e., by prefixing it with 'W/').
+
+    if ($generate_etag && !$strong) {
+	$etag = 'W/"' . $last_modified_time . '"';
+
+	warn "lastmodified2: \$etag = $etag\n" if $debug > 0;
+    }
+
+    return 1;
+}
+
+
+# Skip story processing and generate configured headers now on a conditional
+# GET request for which we don't need to return a full response.
+
+sub skip {
+    warn "lastmodified2: skip\n" if $debug > 1;
+
+    # If we are doing strong validation then we can't skip story processing
+    # because we need all output in order to generate the proper etag and/or
+    # last-modified value.
+
+    return 0 unless ($generate_etag || $generate_mod) && !$strong;
+
+    # Otherwise we can check here whether we can send a 304 or not.
+
+    my $send_304 = check_for_304();
+
+    # If we don't need to return a full response on a conditional GET then
+    # set the HTTP status to 304 and generate headers as configured.
+    # (We have to do this here because the last subroutine won't be executed
+    # if we skip story processing.)
+
+    add_headers($send_304) if $send_304;
+
+    return $send_304;
+}
+
+
+# Set variables with story date/time in RFC 822 and ISO 8601 formats.
+
+sub story {
+    my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+    warn "lastmodified2: story (\$path = $path, \$filename = $filename)\n"
+	if $debug > 1;
+
+    if ($export_dates) {
+	$path ||= "";
+
+	my $timestamp =
+	    $blosxom::files{"$blosxom::datadir$path/$filename.$blosxom::file_extension"};
+
+	warn "lastmodified2: \$timestamp = $timestamp\n" if $debug > 0;
+
+	$story_rfc822 = $timestamp ? HTTP::Date::time2str($timestamp) : '';
+	$story_iso8601 = $timestamp ? iso8601($timestamp) : '';
+    }
+
+    return 1;
+}
+
+
+# Do conditional GET checks if we couldn't do them before (i.e., we are
+# doing strong validation and couldn't skip story processing) and output
+# any configured headers plus a 304 status if appropriate.
+
+sub last {
+    warn "lastmodified2: last\n" if $debug > 1;
+
+    # If some other plugin has set the HTTP status to a non-OK value then we
+    # don't attempt to do anything here, since it would probably be wrong.
+
+    return 1 if $blosxom::header->{'Status'} &&
+	$blosxom::header->{'Status'} !~ m!^200 !;
+
+    # If we are using ETag and/or Last-modified as a strong validator then
+    # we generate an entity tag from the MD5 message digest of the complete
+    # output. (We use the base-64 representation if possible because it is
+    # more compact than hex and hence saves a few bytes of bandwidth.)
+
+    if (($generate_etag || $generate_mod) && $strong) {
+	$md5_digest =
+	    $use_digest ? Digest::MD5::md5_base64($blosxom::output)
+	                : MD5->hex_hash($blosxom::output);
+	$etag = '"' . $md5_digest . '"';
+
+	warn "lastmodified2: \$etag = $etag\n" if $debug > 0;
+    }
+
+    # If we are using Last-modified as a strong validator then we look up
+    # the cached MD5 digest for this URI, compare it to the current digest,
+    # and use the cached last-modified value if they match. Otherwise we set
+    # the last-modified value to just prior to the current time.
+
+    my $cache_tag = cache_tag();
+    my $update_cache = 0;
+
+    if ($generate_mod && $strong) {
+	if ($validator{$cache_tag} &&
+	    $md5_digest eq $validator{$cache_tag}{'md5'}) {
+	    $last_modified_time = $validator{$cache_tag}{'last-modified'};
+	} else {
+	    $last_modified_time = $current_time - 5;
+	    $validator{$cache_tag}{'last-modified'} = $last_modified_time;
+	    $validator{$cache_tag}{'md5'} = $md5_digest;
+	    $update_cache = 1;
+	}
+
+	warn "lastmodified2: \$last_modified_time = $last_modified_time\n"
+	    if $debug > 0;
+
+    }
+
+    # Do conditional GET checks and output configured headers plus status.
+
+    my $send_304 = check_for_304();
+    add_headers($send_304);
+
+    # Update the validator cache if we need to. To minimize race conditions
+    # we write the cache as a temporary file and then rename it.
+
+    if ($update_cache) {
+	warn "lastmodified2: updating validator cache\n" if $debug > 0;
+
+	my $tmp_cache = "$val_cache-$$-$current_time";
+
+	if (open CACHE, ">$blosxom::plugin_state_dir/$tmp_cache") {
+	    print CACHE Dumper \%validator;
+	    close CACHE;
+
+	    warn "lastmodified2: renaming $tmp_cache to $val_cache\n"
+		if $debug > 1;
+
+	    rename("$blosxom::plugin_state_dir/$tmp_cache",
+	           "$blosxom::plugin_state_dir/$val_cache")
+		or warn "couldn't rename $blosxom::plugin_state_dir/$tmp_cache: $!\n";
+	} else {
+	    warn "couldn't > $blosxom::plugin_state_dir/$tmp_cache: $!\n";
+	}
+    }
+
+    1;
+}
+
+
+# Check If-none-match and/or If-modified-since headers and return true if
+# we can send a 304 (not modified) response instead of a normal response.
+
+sub check_for_304 {
+    my $etag_send_304 = 0;
+    my $mod_send_304 = 0;
+    my $etag_request = 0;
+    my $mod_request = 0;
+    my $send_304 = 0;
+
+    warn "lastmodified2: check_for_304\n" if $debug > 1;
+
+    # For a conditional GET using the If-none-match header, compare the
+    # ETag value(s) in the header with the ETag value generated for the page,
+    # set $etag_send_304 true if we don't need to send a full response,
+    # and note that an etag value was included in the request.
+
+    if ($ENV{'HTTP_IF_NONE_MATCH'}) {
+	$etag_request = 1;
+	if ($generate_etag) {
+	    my @inm_etags = split '\s*,\s*', $ENV{'HTTP_IF_NONE_MATCH'};
+
+	    if ($debug > 0) {
+		for (@inm_etags) {
+		    warn "lastmodified2: \$inm_etag = |" . $_ . "|\n";
+		}
+	    }
+
+	    for (@inm_etags) {
+		$etag eq $_ and $etag_send_304 = 1 and last;
+	    }
+	}
+    }
+
+    # For a conditional GET using the If-modified-since header, compare the
+    # time in the header with the time any entry on the page was last modified,
+    # set $mod_send_304 true if we don't need to send a full response, and
+    # also note that a last-modified value was included in the request.
+
+    if ($ENV{'HTTP_IF_MODIFIED_SINCE'}) {
+	$mod_request = 1;
+	if ($generate_mod) {
+	    my $ims_time =
+		HTTP::Date::str2time($ENV{'HTTP_IF_MODIFIED_SINCE'});
+
+	    warn "lastmodified2: \$ims_time = " . $ims_time . "\n"
+		if $debug > 0;
+
+	    $mod_send_304 = 1 if $last_modified_time <= $ims_time;
+	}
+    }
+
+    # If the request includes both If-none-match and If-modified-since then
+    # we don't send a 304 response unless both tests agree it should be sent,
+    # per section 13.3.4 of the HTTP 1.1 specification.
+
+    if ($etag_request && $mod_request) {
+	$send_304 = $etag_send_304 && $mod_send_304;
+    } else {
+	$send_304 = $etag_send_304 || $mod_send_304;
+    }
+
+    warn "lastmodified2: \$send_304 = " . $send_304 .
+	    " \$etag_send_304 = " . $etag_send_304 .
+	    " \$mod_send_304 = " . $mod_send_304 . "\n"
+	if $debug > 0;
+
+    return $send_304;
+}
+
+
+# Set status and add additional header(s) depending on the type of response.
+
+sub add_headers {
+    my ($send_304) = @_;
+
+    warn "lastmodified2: add_headers (\$send_304 = $send_304)\n"
+	if $debug > 1;
+
+    # Set HTTP status and truncate output if we are sending a 304 response.
+
+    if ($send_304) {
+	$blosxom::header->{'Status'} = "304 Not Modified";
+	$blosxom::output = "";
+
+	warn "lastmodified2: Status: " .
+	    $blosxom::header->{'Status'} . "\n" if $debug > 0;
+    }
+
+    # For the rules on what headers to generate for a 304 response, see
+    # section 10.3.5 of the HTTP 1.1 protocol specification.
+
+    # Last-modified is not returned on a 304 response.
+
+    if ($generate_mod && !$send_304) {
+	$blosxom::header->{'Last-modified'} =
+	    HTTP::Date::time2str($last_modified_time);
+
+	warn "lastmodified2: Last-modified: " .
+	    $blosxom::header->{'Last-modified'} . "\n" if $debug > 0;
+    }
+
+    # If we send ETag on a 200 response then we send it on a 304 as well.
+
+    if ($generate_etag) {
+	$blosxom::header->{'ETag'} = $etag;
+
+	warn "lastmodified2: ETag: " .
+	    $blosxom::header->{'ETag'} . "\n" if $debug > 0;
+    }
+
+    # We send Expires for a 304 since its value is updated for each request.
+
+    if ($generate_expires) {
+	$blosxom::header->{'Expires'} = $freshness_time ?
+	    HTTP::Date::time2str($current_time + $freshness_time) :
+	    HTTP::Date::time2str($current_time - 60);
+
+	warn "lastmodified2: Expires: " .
+	    $blosxom::header->{'Expires'} . "\n" if $debug > 0;
+    }
+
+    # We send Cache-control for a 304 response for consistency with Expires.
+
+    if ($generate_cache) {
+	$blosxom::header->{'Cache-control'} =
+	    $freshness_time ? "max-age=" . $freshness_time
+	                    : "no-cache";
+
+	warn "lastmodified2: Cache-control: " .
+	    $blosxom::header->{'Cache-control'} . "\n" if $debug > 0;
+    }
+
+    # Content-length is not returned on a 304 response.
+
+    if ($generate_length && !$send_304) {
+	$blosxom::header->{'Content-length'} = length($blosxom::output);
+
+	warn "lastmodified2: Content-length: " .
+	    $blosxom::header->{'Content-length'} . "\n" if $debug > 0;
+    }
+}
+
+
+# Generate a tag to look up the cached last-modified value and MD5 digest
+# for this URI.
+
+sub cache_tag {
+    # Start with the original URI from the request.
+
+    my $tag = $ENV{REQUEST_URI} || "";
+
+    # Add an "/index.flavour" for uniqueness unless it's already present.
+
+    unless ($tag =~ m!/index\.!) {
+	$tag .= '/' unless ($tag =~ m!/$!);
+	$tag .= "index.$blosxom::flavour";
+    }
+
+    return $tag;
+}
+
+
+# Convert time to ISO 8601 format (including time zone offset).
+# (Format is YYYY-MM-DDThh:mm:ssTZD per http://www.w3.org/TR/NOTE-datetime)
+
+sub iso8601 {
+    my ($timestamp) = @_;
+    my $tz_offset = strftime("%z", localtime());
+    $tz_offset = substr($tz_offset, 0, 3) . ":" . substr($tz_offset, 3, 5);
+    return strftime("%Y-%m-%dT%T", localtime($timestamp)) . $tz_offset;
+}
+
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: lastmodified2
+
+=head1 SYNOPSIS
+
+Enables caching and validation of dynamically-generated Blosxom pages
+by generating C<ETag>, C<Last-modified>, C<Cache-control>, and/or
+C<Expires> HTTP headers in the response and responding appropriately
+to an C<If-none-match> and/or C<If-modified-since> header in the
+request. Also generates a C<Content-length> header to support HTTP 1.0
+persistent connections.
+
+=head1 VERSION
+
+0.10
+
+=head1 AUTHOR
+
+Frank Hecker <hecker@hecker.org>, http://www.hecker.org/ (based on
+work by Bob Schumaker, <cobblers@pobox.com>, http://www.cobblers.net/blog/)
+
+=head1 DESCRIPTION
+
+This plugin enables caching and validation of dynamically-generated
+Blosxom pages by web browsers, web proxies, feed aggregators, and
+other clients by generating various cache-related HTTP headers in the
+response and supporting conditional GET requests, as described
+below. This can reduce excess network traffic and server load caused
+by requests for RSS or Atom feeds or for web pages for popular entries
+or categories.
+
+=head1 INSTALLATION AND CONFIGURATION
+
+Copy this plugin into your Blosxom plugin directory. You should not
+normally need to rename the plugin; however see the discussion below.
+
+Configurable variables specify how the plugin handles validation
+(C<$generate_etag>, C<$generate_mod>, and C<$strong>), caching
+(C<$generate_cache>, C<$generate_expires>, and C<$freshness_time>) and
+whether or not to generate any other recommended headers
+(C<$generate_length>). The plugin supports the variable C<$use_others>
+as used in the lastmodified plugin; however use of this is deprecated
+(use strong validation instead). The variable C<$export_dates>
+specifies whether to export date/time variables C<$latest_rfc822>,
+etc., for compatibility with the lastmodified plugin.
+
+You can set the variable C<$debug> to 1 or greater to produce
+additional information useful in debugging the operation of the
+plugin; the debug output is sent to your web server's error log.
+
+This plugin supplies C<filter>, C<skip>, and C<last> subroutines. It
+needs to run after any other plugin whose C<filter> subroutine changes
+the list of entries included in the response; otherwise the
+C<Last-modified> date may be computed incorrectly. It needs to run
+after any other plugin whose C<skip> subroutine does redirection
+(e.g., the canonicaluri plugin) or otherwise conditionally sets the
+HTTP status to any value other than 200. Finally, this plugin needs to
+run after any other plugin whose C<last> subroutine changes the output
+for the page; otherwise the C<Content-length> value (and the C<ETag>
+and C<Last-modified> values, if you are using strong validation) may
+be computed incorrectly. If you are encountering problems in any of
+these regards then you can force the plugin to run after other plugins
+by renaming it to, e.g., 99lastmodified2.
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+Blosxom Plugin Docs: http://www.blosxom.com/documentation/users/plugins.html
+
+lastmodified plugin: http://www.cobblers.net/blog/dev/blosxom/
+
+more on the lastmodified2 plugin: http://www.hecker.org/blosxom/lastmodified2
+
+=head1 AUTHOR
+
+Frank Hecker <hecker@hecker.org> http://www.hecker.org/
+
+Based on the original lastmodified plugin by Bob Schumaker
+<cobblers@pobox.com> http://www.cobblers.net/blog
+
+=head1 LICENSE
+
+This source code is submitted to the public domain.  Feel free to use
+and modify it.  If you like, a comment in your modified source
+attributing credit to myself, Bob Schumaker, and any other
+contributors for our work would be appreciated.
+
+THIS SOFTWARE IS PROVIDED AS IS AND WITHOUT ANY WARRANTY OF ANY KIND.
+USE AT YOUR OWN RISK!

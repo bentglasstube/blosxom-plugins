@@ -1,0 +1,191 @@
+# Blosxom Plugin: num_dayz
+# Author: Stu MacKenzie <http://groups.yahoo.com/group/blosxom/messages>
+# Version: v0.6 2005-01-14
+# License: MIT/Public Domain
+# num_dayz home: http://www.enilnomi.net/download.html
+# Documentation at the bottom of this file or type: perldoc blox
+
+#
+#  Blosxom normally displays the most recent $num_entries 
+#  posts (5, 10, 100); num_dayz displays posts from the 
+#  most recent $num_days days (3 days, 7 days, 30 days). 
+#  The maximum number of posts that will be displayed is 
+#  still set by $num_entries. The plugin can detect whether 
+#  you're sorting by ascending or descending date.
+#
+#  num_dayz takes a real slash-and-burn approach when limiting
+#  entries to the specified time range: blosxom still composes 
+#  $num_entries stories for the page; num_dayz just doesn't 
+#  allow the "later" ones to display. This behavior won't win  
+#  any efficiency contests, but it lets num_dayz work without 
+#  changing blosxom's list of %files, and that (should) mean that 
+#  other plugins won't break. To save processor time, load num_dayz 
+#  fairly early among plugins that use the story() routine; I can 
+#  name it 00num_dayz and everything works fine.
+#
+
+package num_dayz;
+
+# = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
+#
+#  Configuration Section
+#
+# = = = = = = = = = = = = = = = =
+#
+# How many days' posts should be displayed?
+ $num_days = 5;
+#
+# Count days from most-recent entry (0), or from right now (1)?
+#   (normal is 0)
+ $now_mode = 0;
+#
+# = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
+
+use vars qw! $num_days $now_mode !;
+
+use strict;
+
+sub start {
+  1;
+}
+
+my $desc_sort = 0;
+my $stage = 0;
+my ($num_secs, $t, $origin, $secs, $valid_secs, $story_flag);
+
+sub filter {
+  $num_secs = $num_days * 60 * 60 * 24;
+  $valid_secs = 0;
+  1;
+}
+
+sub date {
+  my ($pkg, undef, $date_ref, $cur_file_mtime, undef) = @_;
+  
+  if ($stage == 0) {
+    $t = $cur_file_mtime;
+    $origin = $now_mode ? time : $t;
+    $secs = (($origin % (24*60*60)) + $num_secs);    
+    $valid_secs = $origin;
+    $stage++;
+  } elsif ($stage == 1) {
+    $desc_sort = $t > $cur_file_mtime;
+    if ($desc_sort) {
+      $valid_secs -= $secs;
+    } else {
+      $now_mode and ($valid_secs -= ($origin - $t));
+      $valid_secs += $secs;
+    }
+    $stage++;
+  }
+  if ($desc_sort) {($cur_file_mtime < $valid_secs) and $story_flag = 1;}
+  else {($cur_file_mtime > $valid_secs) and $story_flag = 1;}
+  $story_flag and $$date_ref = '';
+  1;
+}
+
+sub story {
+  my ($pkg, undef, undef, $story_ref, undef) = @_;
+  
+  $story_flag and $$story_ref = '';
+  1;
+}
+
+1;
+
+__END__
+
+
+=head1 NAME
+
+Blosxom Plug-in: num_dayz
+
+
+=head1 SYNOPSIS
+
+* Entries from the most-recent $num_days are displayed, instead of 
+  the normal $num_entries posts. (However, $num_entries still sets 
+  the limit on how many posts from the most-recent $num_days days 
+  will be displayed.)
+
+* If the blog is sorted by descending date (normal), num_dayz counts 
+  backward from the newest entry; if the sort is by ascending date, 
+  num_dayz counts forward from the oldest entry.
+
+* num_dayz can be set to start counting days from the most recent 
+  entry date, or from the current date.
+
+* No matter what settings are used, at least one entry will always 
+  be displayed.
+
+
+=head1 INSTALLATION
+
+Locate the num_dayz plugin you downloaded; open the file and enter 
+the two CONFIGURATION values; save the file with unix line ends. 
+Upload or drop the num_dayz file into your blosxom plugins folder. 
+Blog on.
+
+
+=head1 CONFIGURATION
+
+With any luck, the instructions in the "Configuration Section" 
+at the top of this file are sufficient; if more information is 
+needed, see the documentation at:
+  http://www.enilnomi.net/dltext/num_dayz.dl
+
+
+=head1 USAGE NOTES
+
+num_dayz normally counts days from the newest post: e.g. if today is 
+the 20th, and you tell num_dayz to count 5 days, and the most-recent 
+entries in the blog are from the 18th and 12th, num_dayz will display 
+entries for the 5 days from the 18th to the 13th. (That is, both posts 
+mentioned above will display.)
+
+When $now_mode is set to 1, num_dayz counts days from right now: e.g. 
+if today is the 20th, and you tell num_dayz to count 5 days from now, 
+and the most-recent entries in the blog are from the 18th and 12th, 
+num_dayz will display entries for the 5 days from now (the 20th) to 
+the 15th. (That is, only one of the posts mentioned above will display.)
+
+If no posts meet the requirements of the $num_days and $now_mode 
+settings, the plugin will display at least one entry.
+
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list:
+http://www.yahoogroups.com/group/blosxom
+
+
+=head1 VERSION
+
+2005-01-14 (v0.6)   - move the main action to date() sub
+2005-01-12 (v0.55)  - wups, forgot to delete out-of-range date info;
+                    - thanx to Julian Herten-Greaven
+2004-11-18 (v0.5)   - now_mode, ascending sort
+2004-11-16 (v0.4)   - it's alive
+
+=head1 LICENSE
+
+this Blosxom Plug-in
+Copyright 2004, Stu MacKenzie
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

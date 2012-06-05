@@ -1,0 +1,256 @@
+#!/usr/bin/perl        -*- perl -*-
+#
+# reading_room -- Reads a give file and creates an HTML table.
+# See the PerlDoc at the bottom of this file for more details.
+
+package reading_room;
+
+my $delimiter = "\\|";
+my $package = "reading_room";
+my $directory = "$blosxom::plugin_state_dir/$package";
+my $star = "/images/star.gif";
+my $star_alt = "*";
+my $star_height = "";
+my $star_width = "";
+my $no_star_rating = qq|<font size="-1">Rating Pending</font>|;
+my $stinks_rating = qq|<font size="-1">Stinks!</font>|;
+
+# -----------------------------------------------
+use strict vars;
+use File::Basename;
+
+use vars qw|%lists|;
+	
+sub start
+{
+	1;
+}
+
+sub head
+{
+	if (! -d $directory)
+	{
+		mkdir $directory, 0755;
+	} else
+	{
+		for my $file (<$directory/*.dat>)
+		{
+			&load($file);
+		}
+	}
+}
+
+sub load
+{
+	my $filename = $_[0];
+	my $list_title = 0;
+	my @columns = 0;
+	my $line;
+	my $template_name;
+	
+	if (open FILE, $filename)
+	{
+		my @lines = <FILE>;
+		chomp($template_name = shift @lines);
+		chomp($line = shift @lines);
+		
+		@columns = split(/$delimiter/, $line);
+		
+		my ($name, $path, $ext) = fileparse($filename, ".dat");
+		$list_title = $name;
+		
+		my $tpl;
+		
+		if (! (open TPL, "$path/$template_name.tpl"))
+		{
+			# no template file, use default
+			$tpl = <DATA>;
+		} else
+		{
+			while (<TPL>)
+			{
+				$tpl .= $_;
+			}
+			
+			close TPL;
+		}
+
+		my $complete_string;
+		
+		for my $line (@lines)
+		{
+			chomp $line;
+			
+			next if $line eq "";
+			
+			my @values = split /$delimiter/, $line;
+			
+			for my $i (0..$#columns)
+			{
+				if ($columns[$i] =~ /[Rr]ank/)
+				{
+					my $count = $values[$i];
+					my $output;
+					
+					if ($count == -1)
+					{
+						$output = $no_star_rating;
+					} elsif ($count == 0)
+					{
+						$output = $stinks_rating;
+					} else
+					{
+						for my $j (0..($count - 1))
+						{
+							$output .= "<img src=\"${star}\" alt=\"$star_alt\"" .
+								($star_width ne "" ? " width=\"$star_width\"" : "") .
+								($star_height ne "" ? " height=\"$star_height\"" : "") .
+								"/>";
+						}
+					}
+					
+					${$columns[$i]} = $output;
+				} else
+				{
+					${$columns[$i]} = $values[$i];
+				}
+			}
+			
+			$complete_string .= &interp($tpl);
+		}
+
+		${$list_title} = $complete_string;
+	}
+}
+
+sub interp
+{
+	package reading_room;
+	my $template = shift;
+
+	$template =~ 
+		s/(\$\w+(?:::)?\w*)/"defined $1 ? $1 : ''"/gee;
+	
+	return $template;
+}
+
+
+sub end
+{
+	1;
+}
+
+1;
+
+__DATA__
+Author: $reading_room::Author<br/>Title: $reading_room::Title<br/>ISBN: $reading_room::ISBN<br/>Rating: $reading_room::Rank<br/>
+_END__
+
+=head1 NAME
+
+reading_room: Creates a "reading room" area on a blog to show what
+you are reading and what you think of it.
+	
+=head1 SYNOPSIS
+
+Purpose: reading_room uses a work directory under $blosxom::plugin_state_dir
+called "reading_room" unless you override this. This directory will be
+created the first time the plugin is run if it isn't there already. In this
+directory you should put some number of .dat files. The first two lines of
+these files are significant. The first line gives the name of the template
+file (.tpl) that you want this data file processed with and the second contains
+the names of the columns for subsequent rows. The .tpl files should contain
+some sort of appropriate markup to display the items however you want.
+
+=head1 VERSION
+
+0.1
+
+=head1 USAGE
+
+If you have a file called "reading.dat" in the reading_room work directory
+that looks like this:
+
+reading
+Author|Title|ISBN|Rank
+J.R.R. Tolkein|The Lord of the Rings|0618260587|5
+Fred Rogers|The World According to Mr. Rogers|1401301061|4
+
+you can see that it will use a template contained in the file "reading.tpl"
+and that the columms are "Author," "Title," etc. The reading.tpl file looks
+like this:
+
+<dl>
+	<dt>$reading_room::Author</dt>
+	<dd><a href="http://www.amazon.com/exec/obidos/ASIN/$reading_room::ISBN/joeygibsostakeon?creative=125577&camp=2321&link_code=as1">$reading_room::Title</a><br/>$reading_room::Rank</dd>
+</dl>
+
+and you can see that it includes each column name, capitalization and spelling
+matching EXACTLY that of the data file. The result of this will be a string
+of HTML contained in $reading_room::reading. If we had a file called "movies.dat"
+then the HTML would be in $reading_room::movies. Get it?
+
+Different data files can share the same template file, but obviously the
+column names need to match. 
+
+This whole idea came about because I wanted an easy way to put links up to 
+books I was reading, records I was listening to and films I had seen, along
+with links to buy them and a personal rating. Whether this will make it easier
+than just writing the HTML I will leave to you, but I like it.
+
+There is only one column which, if present, must be named properly. This
+column is called "Rank" and must be spelled and capitalized just so. The
+reason for this is that if you have a Rank column it should contain a
+number from -1 to n (I chose 5, but you can have as many as will comfortably
+fit in your space). If you give a -1, then the value of the $no_star_rating
+will be used. I chose to set that to "Rating Pending" in a slightly smaller
+font. If you set this to 0, then the value of $stinks_rating will be use. 
+Again, my choise was for "Stinks!" in a slightly smaller font, but you can
+use anything, such as a big zero, a "thumbs down" graphic, or whatever
+else conveys your dislike of the item in question. 
+
+I think most of the user-settable variables at the top of the file are 
+self explanatory, but a coupld need exposition. The $delimiter variable
+contains the character that you will delimit your data files with. I have
+choses a pipe symbol "|", which, since it has special meaning inside a
+regular expression must be escaped with a backslash and since I want that
+backslash to itself show up in the regular expression, I must escape it
+as well, leading to two backslashes and a pipe. Choose another symbol if 
+you like. If it has no special meaning in a regular expression, such as a
+comma or semi-colon, then no escaping is necessary. The $package variable
+is the name of the directory under $blosxom::plugin_state_dir that will 
+hold the working files. You can change this if needed, though I see no
+good reason to do so.
+
+=head1 AUTHOR
+
+Joey Gibson <joey@joeygibson.com>, http://www.joeygibson.com
+
+=head1 BUGS
+
+Send bug reports and comments to joey@joeygibson.bom
+
+=head1 LICENSE
+
+google - Blosxom plugin
+	
+Copyright (C) 2004, Joey Gibson <joey@joeygibson.com>
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files
+(the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify,
+merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished
+to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,.
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE. 

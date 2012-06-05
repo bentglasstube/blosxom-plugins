@@ -1,0 +1,249 @@
+# Blosxom Plugin: lastmodified
+# Author: Bob Schumaker <cobblers@pobox.com>
+# Version: 20030501
+# http://www.cobblers.net/blog/
+# License: Public Domain
+
+package lastmodified;
+
+use strict;
+use warnings;
+
+use Data::Dumper;
+use POSIX qw(strftime);
+#use Time::gmtime;
+
+my $usedigest;
+my $usejustmd5;
+
+BEGIN {
+  if(eval "require Digest::MD5") {
+    Digest::MD5->import();
+    $usedigest = 1;
+  }
+  elsif(eval "require MD5") {
+    MD5->import();
+    $usejustmd5 = 1;
+  }
+}
+
+# --- Plug-in package variables -----
+
+my $use_others;
+
+my $check_rfc822;
+my $check_iso8601;
+
+# --- Output variables -----
+
+our %latest_etag = ();
+
+our $latest_rfc822;
+our $latest_iso8601;
+
+our $others_rfc822;
+our $others_iso8601;
+
+our $now_rfc822;
+our $now_iso8601;
+
+our $story_rfc822;
+our $story_iso8601;
+
+# --- Configurable variables -----
+
+# Where to cache the etag value
+my $etag_cache = "etag.cache";
+
+my $generate_mod = 1;
+my $generate_etag = 1;
+my $generate_cookie = "Last Visited Check";
+
+# --------------------------------
+
+sub start {
+  if ( open CACHE, "<$blosxom::plugin_state_dir/$etag_cache" ) {
+    my $index = join '', <CACHE>;
+    close CACHE;
+    my $VAR1;
+    $index =~ /\$VAR1 = \{/ and eval($index) and !$@ and %latest_etag = %$VAR1;
+  }
+  1;
+}
+
+my $blosxom_files;
+
+sub filter {
+	my ($pkg, $files, $others) = @_;
+
+	$blosxom_files = $files;
+
+	my @sorted = sort { $files->{$b} <=> $files->{$a} } keys %$files;     
+	
+	$latest_rfc822 = rfc822($files->{$sorted[0]});
+	$latest_iso8601 = iso8601($files->{$sorted[0]});
+
+	   @sorted = sort { $others->{$b} <=> $others->{$a} } keys %$others;     
+	
+	$others_rfc822 = rfc822($others->{$sorted[0]});
+	$others_iso8601 = iso8601($others->{$sorted[0]});
+
+	if( $use_others ) {
+		$check_rfc822 = $others_rfc822;
+		$check_iso8601 = $others_iso8601;
+	}
+	else {
+		$check_rfc822 = $latest_rfc822;
+		$check_iso8601 = $latest_iso8601;
+	}
+
+	my $now = time;
+	$now_rfc822 = rfc822($now);
+	$now_iso8601 = iso8601($now);
+
+	return 1;
+}
+
+sub skip {
+  my $nochange = 0;
+  if ($ENV{'HTTP_IF_MODIFIED_SINCE'}) {
+	if ($check_rfc822 =~ m/$ENV{'HTTP_IF_MODIFIED_SINCE'}/) {
+      $nochange++;
+    }
+  }
+  my $cache_tag = cache_tag();
+  if( $nochange ) {
+    if ($ENV{'HTTP_IF_NONE_MATCH'}) {
+	  unless ($latest_etag{$cache_tag} =~ m/$ENV{'HTTP_IF_NONE_MATCH'}/) {
+        $nochange = 0;
+      }
+    }
+  }
+  if ($nochange) {
+    $blosxom::header->{'Status'} = "304 Not Modified";
+	$blosxom::header->{'Last-Modified'} = $check_rfc822 if( $generate_mod );
+    $blosxom::header->{'ETag'} = $latest_etag{$cache_tag} if( $generate_etag );
+    $blosxom::output = "";
+  }
+  return $nochange;
+}
+
+sub head {
+	my($pkg, $currentdir, $head_ref) = @_;
+	if ($generate_mod && $latest_rfc822) {
+		$blosxom::header->{'Last-Modified'} = $latest_rfc822;
+	}
+}
+
+sub story {
+  my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) =@_;
+
+  $path ||= "";
+
+  my $timestamp = $blosxom_files->{"$blosxom::datadir$path/$filename.$blosxom::file_extension"};
+  $story_rfc822 = rfc822($timestamp);
+  $story_iso8601 = iso8601($timestamp);
+
+  return 1;
+}
+
+sub rfc822 {
+  my($timestamp) = @_;
+  return strftime "%a, %e %b %Y %T GMT", gmtime($timestamp || "");
+}
+
+# 2003-04-01T14:30-08:00
+sub iso8601_OLD {
+  my($timestamp) = @_;
+  return strftime "%Y-%m-%dT%T%z", localtime($timestamp);
+}
+
+# 2003-04-01T14:30PDT
+sub iso8601 {
+  my($timestamp) = @_;
+  my $tz_offset = strftime ("%z", localtime());
+  $tz_offset = substr($tz_offset, 0, 3) . ":" . substr($tz_offset, 3, 5);
+  return strftime ("%Y-%m-%dT%T", localtime($timestamp)) . $tz_offset;
+}
+
+sub last {
+  if ($ENV{'HTTP_IF_MODIFIED_SINCE'}) {
+	if ($latest_rfc822 =~ m/$ENV{'HTTP_IF_MODIFIED_SINCE'}/) {
+      $blosxom::header->{'Status'} = "304 Not Modified";
+      $blosxom::output = "";
+    }
+  }
+
+  if ($generate_etag && ($usedigest || $usejustmd5)) {
+    my $cache_tag = cache_tag();
+    if($usedigest) {
+      $latest_etag{$cache_tag} = '"' . Digest::MD5::md5_hex($blosxom::output) . '"';
+    }
+    else {
+      $latest_etag{$cache_tag} = '"' . MD5->hex_hash($blosxom::output) . '"';
+    }
+    $blosxom::header->{'ETag'} = $latest_etag{$cache_tag};
+	if ( open CACHE, "> $blosxom::plugin_state_dir/$etag_cache" ) {
+	  print CACHE Dumper \%latest_etag;
+	  close CACHE;
+	} else {
+	  warn "couldn't > $blosxom::plugin_state_dir/$etag_cache: $!\n";
+	}
+    if ($ENV{'HTTP_IF_NONE_MATCH'}) {
+	  if ($latest_etag{$cache_tag} =~ m/$ENV{'HTTP_IF_NONE_MATCH'}/) {
+        $blosxom::header->{'Status'} = "304 Not Modified";
+        $blosxom::output = "";
+      }
+    }
+  }
+}
+
+sub cache_tag {
+  my $url = $ENV{REQUEST_URI} || "";
+  unless( $url =~ /index/ ) {
+    $url .= "/" unless( $url =~ /\/$/ );
+    $url .= "index.$blosxom::flavour";
+  }
+  return $url;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: lastmodified
+
+=head1 DESCRIPTION
+
+This plugin can be configured to add a 'Last-Modified' and an 'ETag' header to your blosxom log:
+
+   $lastmodified::generate_mod: add the Last-Modified header
+   $lastmodified::generate_etag: add the ETag header (calculated at the end of the story,
+                                 using a modified version of the blosxom CGI
+
+It keeps track of the currently requested URL for matching ETag values. That way all rss or
+html requests don't end up with the same value. Also, accesses down into the tree don't
+overwrite the cached top-level ETag value.
+
+In addition, lastmodified exports the following variables:
+
+   $lastmodified::latest_rfc822: the modifed date of the newest story in RFC822 format
+   $lastmodified::latest_iso8601: the modifed date of the newest story in ISO 8601 format
+   $lastmodified::story_rfc822: the modifed date of the current story in RFC822 format
+   $lastmodified::story_iso8601: the modifed date of the current story in ISO 8601 format
+
+=head1 AUTHOR
+
+Bob Schumaker <cobblers@pobox.com> http://www.cobblers.net/blog
+
+
+=head1 LICENSE
+
+This source is submitted to the public domain.  Feel free to use and modify it.  
+If you like, a comment in your modified source attributing credit to myself for 
+my work would be appreciated.
+
+THIS SOFTWARE IS PROVIDED AS IS AND WITHOUT ANY WARRANTY OF ANY KIND.  USE AT 
+YOUR OWN RISK!

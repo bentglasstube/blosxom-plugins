@@ -1,0 +1,155 @@
+# Blosxom Plugin: yoshitaka
+# Author(s): Kasu Toru <castor@s26.xrea.com>
+# Version: 0.41
+# Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+
+package yoshitaka;
+
+# --- Configurable variables -----
+
+# HTML templates
+$paginate_prev_link  = '<a href="$prev_url" target="_self">&lt; Prev</a>';
+$paginate_next_link  = '<a href="$next_url" target="_self">Next &gt;</a>';
+$paginate_list_start = ' [ ';
+$paginate_list_join  = ' | ';
+$paginate_list_end   = ' ] ';
+$paginate_list_item      = '<a href="$curr_url" target="_self">$curr_number</a>';
+$paginate_list_curr_item = '<b>$curr_number</b>';
+
+# The display number of cases in a page.
+$display = 5;
+
+# The maximum list width
+$max_list_size = 10;
+
+
+# --------------------------------
+
+use vars qw( $prev_link $link_list $next_link $prev_url $next_url $curr_number $curr_url $page $pages );
+
+use CGI qw/param url/;
+
+# Grab the templates at start
+$curr_path;
+sub start {
+  $curr_path = "$blosxom::datadir/$blosxom::path_info";
+  if ((-d $curr_path) and ($blosxom::path_info_yr eq '')) {
+    return 1;
+  }
+}
+
+# Count total stories & calculate # of stories to skip at filter time.
+sub filter {
+  my ($pkg, $files) = @_;
+  
+  my $current_date;
+  my %allentries;
+  my %entries;
+  my $count;
+  $pages = 1;
+  
+  foreach(sort { $files->{$b} <=> $files->{$a} } keys %$files){
+  	
+	if( !($blosxom::path_info ne '' and $_ !~ m!^$curr_path!) ){
+	    my @date  = localtime($files->{$_});
+	    my $date  = ($date[5] * 10000) + ($date[4] * 100) + $date[3];
+	    $current_date ne $date and $current_date = $date and $count++;
+	    
+	    $count > $display and $count=1 and $pages++;
+	    $entries{$pages}++;
+	}
+	$allentries{$pages}++;
+   }
+
+
+  # Make sure the page number param is in the valid range;
+  ($page) = (param("page") =~ /(\d+)/); $page ||= 1;
+
+  # Determine number of entries to skip
+  for $i (0 .. $page-1){
+  	$skip += $allentries{$i};
+  }
+  
+  $blosxom::num_entries =  $entries{$page};
+}
+
+# Build previous & next links, as well as a list of available pages.
+sub head {
+  my($pkg, $path, $head_ref) = @_;
+
+  # Set the current path
+  $curr_path = $path;
+  
+  # Set flavour
+  if($blosxom::flavour ne $blosxom::default_flavour){
+      param("flav" => $blosxom::flavour);
+  }
+
+  # Provide a previous page link, if needed.
+  $prev_link = "";
+  if ($page > 1) {
+    param("page" => $page - 1);
+    $prev_url = url(-path_info=>1,-query=>1);
+    $prev_link = fill_template($paginate_prev_link);
+  }
+
+  # Construct a list of links to each page
+  my @list = ();
+  push @list, $paginate_list_start;
+  
+  my $halfmax = int $max_list_size / 2;
+  my $st = 1;
+  my $to = $max_list_size;
+  
+  $page > $halfmax and $st=$page-$halfmax and $to=$st+($max_list_size-1);
+  $to > $pages and $to = $pages;
+  ($pages - $page) < $halfmax and $st=$to-($max_list_size-1);
+  $st < 1 and $st = 1;
+  
+  for $curr_number ($st..$to) {
+    param("page" => $curr_number);
+    $curr_url = url(-path_info=>1,-query=>1);
+    push @list, fill_template( ($curr_number eq $page) ? 
+			       $paginate_list_curr_item : 
+			       $paginate_list_item );
+      push @list, $paginate_list_join
+      if ($curr_number < $to);
+  }
+  push @list, $paginate_list_end;
+  $link_list = join '', @list;
+
+  # Provide a next page link, if needed.
+  $next_link = "";
+  if ($page < $pages) {
+    param("page" => $page + 1);
+    $next_url = url(-path_info=>1,-query=>1);
+    $next_link = fill_template($paginate_next_link);
+  }
+
+  return undef;
+}
+
+# Perform skipping behavior, if necessary, to display chosen page
+sub sort {
+  return sub {
+    my($files_ref) = @_;
+
+    # Sort entries as normal (TODO: consult other plugins here?)
+    my @sorted = sort { $files_ref->{$b} <=> $files_ref->{$a} } keys %$files_ref;
+
+    # Return the sorted entries, skipping the proper amount
+    return @sorted[$skip .. scalar(@sorted)];
+  };
+}
+
+# Inspired by blosxom's template handling - load and fill template all in one
+sub fill_template {
+  my $tmpl = join '', @_;
+  $tmpl =~ s/(\$[\w:]+)/$1 . "||''"/gee;
+
+  return $tmpl;
+}
+
+1;
+

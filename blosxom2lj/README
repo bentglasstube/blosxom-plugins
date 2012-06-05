@@ -1,0 +1,14 @@
+http://satyap.csoft.net/blosxom2lj.tar.gz
+
+v0.4
+
+Edit config.pl. Edit all the other files and fix the path to config.pl.
+
+WARNING: It may post all entries to your livejournal. This may happen
+the first time you use the plugin, or when you run with -all=1, or if
+the data file is deleted/emptied.
+
+Fix: Use the seen.pl script to mark all entries as 'seen' so that this
+doesn't happen.
+
+20031106: Fix: change <br/> to \n and <p/> to \n\n -- after first removing all \n.

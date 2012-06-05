@@ -1,0 +1,302 @@
+# Blosxom Plugin:Login
+# Author: Fletcher T. Penney
+# Version: 0.4
+
+# NOTE: a functional cookies plugin is required.  Apparently, it has to be named something like
+# 9999cookies to work properly.
+#
+# Also, this plugin works by modifying the filter subroutine.  You may need to rename your plugins to insure
+# the proper order, but it works properly with exclude, and menu to my testing.  I am sure there are possible
+# conflicts with other plugins though.
+
+
+package login;
+
+# --- Configurable variables -----
+
+# Where is the passwd file?  Should not be in a public directory nor group/world writeable
+# This file is created with the htpasswd command (Do a man htpasswd to figure it out - please don't ask
+# me to explain how to do this - there are plenty of references on the web.
+# I will work on updating this to allow a cgi program to maintain this file, but can't guarantee
+# when that will occur.  In the meantime, this provides for better security.
+#
+#
+
+my $passwd_file = "$blosxom::datadir/passwd";
+
+# Where is your excludefile - this controls which user is able to see which files
+# the excludefile is built using regular expressions in the format:
+# user=page
+# user is a regexp to match allowed user (.* matches all VALIDATED users)
+# page is a regexp to match pages or directories (.* matches all pages)
+#
+# Examples:
+# A blank or nonexistent file allows full access to anyone, logged in or not
+# myusername=.*
+#	Only someone logged in as myusername can access any files on the web site
+# (myuser1|myuser2)=private
+#	Only these two people can access a file or directory named private, private1, privatestuff, etc
+# .*=priv$
+#	Any VALIDATED user can view the directory named priv, but this doesn't affect one named private
+#
+# 
+my $excludefile = "$blosxom::datadir/requireuser";
+
+my $default_message = "Please log in.";
+
+
+# This section for gui creation of accounts
+
+my $pending_file = "$blosxom::plugin_state_dir/pendingaccounts";
+
+
+# --------------------------------
+
+# Ideas for improvement
+# Option to log all succesful logins
+# Ability to set a sort of exclude file to filter out entries by login name
+
+use CGI qw/:standard/;
+
+$username = "";		# users login name, if any - set only after password is validated
+$path_noflavour = "";
+
+
+$message = "";
+
+my $passphrase ="";
+my $validated = 0;
+
+sub validate {
+	my ($submituser, $submitpass) = @_;
+	if (open(PASSWD, $passwd_file)) {
+		$message = "Password file open.";
+		while (<PASSWD>) {
+			chop;
+			($testuser, $testpass) = split(':',$_);
+			if ($testuser eq $submituser) {
+				if (crypt($submitpass,$testpass) eq $testpass) {
+					$message = "Welcome, $submituser.";
+					$username = $submituser;
+					$validated = 1;
+					$loginform = $logoutform;
+				} else {
+					warn "blosxom : login plugin > Incorrect password for user $submituser.";
+				}
+			}
+		}
+		if ($validated eq 0) {
+			$message = "Login for user $submituser failed.";
+			warn "blosxom : login plugin > $message";
+			$username = "";
+		} 
+		close PASSWD;
+	} else {
+		$message =  "Unable to access password file.\n";
+		warn "blosxom : login plugin > $message";
+		$username = "";
+	}
+
+return $validated;
+}
+
+
+
+sub start {
+	$path_noflavour = $blosxom::path_info;
+	if ($path_noflavour !~ s/\.[^\.]*$//) {
+		$path_noflavour =~ s/\/$//;
+		$path_noflavour .= "\/index";
+		$path_noflavour =~ s/^([^\/])/$1/;
+	}
+	$path_noflavour =~ s/^\/*//;
+
+	open (REQUIRE, $excludefile);
+	@requiredlist = <REQUIRE>;
+	close REQUIRE;
+
+# HTML code for the login form to be displayed
+# Converts to a logout button as well?
+
+$loginform = qq!<form method="POST" action="$blosxom::url/$path_noflavour.$blosxom::flavour">
+<table border=0 cellpadding=0 cellspacing=0>
+<tr>
+<td align=right>Login:</td><td><input name="user" size="10" value="" ><br></td>
+</tr><tr>
+<td align=right>Password:</td><td><input name="pass" size="10" value="" type="password"><br></td>
+</tr><tr>
+<td colspan=2 align=center><input type="submit" value="Login"></td>
+</tr></table>
+<input type="hidden" name="plugin" value="login">
+<input type="hidden" name="task" value="login">
+</form>!;
+
+$logoutform = qq!<form method="POST" action="$blosxom::url/$path_noflavour.$blosxom::flavour">
+<input type="submit" value="Logout">
+<input type="hidden" name="plugin" value="login">
+<input type="hidden" name="task" value="logout">
+</form>!;
+
+$signupform = qq!<form method="POST" action="$blosxom::url/$path_noflavour.$blosxom::flavour">
+<table border=0 cellpadding=0 cellspacing=0>
+<tr>
+<td align=right>Login(no spaces):</td><td><input name="user" size="10" value="" ><br></td>
+</tr><tr>
+<td align=right>Email:</td><td><input name="email" size="10" value=""><br></td>
+</tr><tr>
+<td align=right>Password:</td><td><input name="pass" size="10" value="" type="password"><br></td>
+</tr><tr>
+<td align=right>Verify:</td><td><input name="verifypass" size="10" value="" type="password"><br></td>
+</tr><tr>
+<td colspan=2 align=center><input type="submit" value="Sign Me Up"></td>
+</tr></table>
+<input type="hidden" name="plugin" value="login">
+<input type="hidden" name="task" value="signup">
+</form>!;
+
+	1;
+}
+
+
+sub filter {
+	my ($pkg, $files_ref) = @_;
+	my @files_list = keys %$files_ref;
+
+	# This handles login requests and creates a cookie, if valid
+	if ( request_method() eq 'POST' and (param('plugin') eq 'login')) {
+		if (param('task') eq 'logout') {
+			&cookies::remove('login');	# These don't seem to work
+			&cookies::clear('login');	# So I overwrite the cookie below
+				&cookies::add(
+					cookie(
+						-name=>'login',
+						-value=>{ },
+						-domain=>$cookies::domain,
+						-expires=>'now'
+					)
+				);
+			$username="";
+			$validated=-1;
+		}
+
+		if (param('task') eq 'login') {
+			my $user = param('user');
+			my $pass = param('pass');
+			if ((validate($user,$pass)) and $blosxom::plugins{cookies} > 0) {
+				# Create a cookie
+				&cookies::add(
+					cookie(
+						-name=>'login',
+						-value=>{ 'user' => $user, 'pass' => $pass},
+						-domain=>$cookies::domain,
+						-expires=>$cookies::expires
+					)
+				);
+			}
+		}
+
+		if (param('task') eq 'signup') {
+			my $user = param('user');
+			my $pass = param('pass');
+			my $verify = param('verifypass');
+			my $email = param('email');
+			$validated=-1;
+
+			$message= "";
+
+			if ($pass ne $verify) {
+				$message = "Your passwords were different.  Please try again.";
+			} 
+			if (length($pass) < 5) {
+				$message = "Come on.... Your password has to be at least 5 characters.";
+			}
+			if (length($email) <5) {
+				$message = "That's not a real email address... Try again.";
+			}
+
+			if ($message eq "") {
+				open(PENDING,">>$pending_file") || ($message = "Error submitting information.  Please try again.");
+				if ($message eq "") {
+					my @salts = (a..z,A..Z,0..9,'.','/'); 
+					my $salt=$salts[rand @salts];
+						$salt.=$salts[rand @salts];
+
+						my $encrypted=crypt($pass,$salt);
+
+						my ($dw, $mo, $mo_num, $da, $ti, $yr) = &blosxom::nice_date(time());
+					print PENDING "$yr $mo $da $ti $user $email $encrypted\n";
+					close PENDING;
+					$message="Request submitted.  Don't call us... We'll call you...  ;)";
+				}
+			}
+		}
+	}
+
+	# Now, read cookies to see if user is logged in
+	if ($blosxom::plugins{cookies} > 0 and my $cookie = &cookies::get('login') and $validated eq 0) {
+		my $user = $cookie->{'user'};
+		my $pass = $cookie->{'pass'};
+
+		validate($user,$pass);
+	}
+
+	$message = $default_message if ($message eq "");
+
+	# Now filter the files
+	foreach $file (@files_list) {
+		$localfile = $file;
+		$localfile =~ s/\/\//\//g;		#An improperly formatted url such as:
+						# /my/document/dir/secret//files would slip through
+		foreach $required (@requiredlist) {
+			if ($required =~ /(.*)=(.*)/) {
+				$requser=$1;
+				$reqfile=$2;
+				if ($localfile =~ /^$blosxom::datadir(\/)?$reqfile/) {
+					delete $files_ref->{$file} if (($username !~ /$requser/) or $username eq "");
+				}
+			}
+		}
+	}
+	
+
+1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: login
+
+=head1 DESCRIPTION
+
+Login allows you to create a passwd file that defines usernames and passwords for your web site.  Another file, $excludefile, defines which users can access certain parts of your site.  The format for the files is explained above.
+
+$login::username provides the users login, once it has been validated against the database.  It remains "" if someone is not logged in.
+
+$login::loginform provides the login/logout box.  Place it in your templates wherever you like.
+$login::message gives certain status messages.
+
+By default, login provides logging messages when certain errors occur, and when a failed login attempt happens.
+
+$login::signupform provides html code for a simple account sign up form.  Once a user submits the information, it is added to a text file defined by $pending_file.  If you want to add the account, simply copy the user and password hash to the defined password file in the format "user:hash" as defined by the htpasswd command.
+
+
+PLEASE NOTE:  I am not a security expert.  I can't guarantee that there isn't a huge loophole in this somewhere.  And note - any malicious plug-in could expose a whole by tampering with the $username variable - verify that other plugins do not attempt to manipulate $login::username or access the cookies.  But this is more a matter of being careful which plugins you install.
+
+Also, this plugin does not pretend to offer serious security.  Someone could read a restricted file if they have read access to the location that the file is stored.  This could occur if you datadir is in your web servers documentroot.  
+
+There are many issues to consider when securing a web site, and I don't pretend to address them all, nor do I guarantee that this plugin even works properly.  It is simply a means to provide some form of control without much effort on your part.  You get what you pay for.  But I will continue to work with the community to improve it as security holes are noted.
+
+=head1 AUTHOR
+
+Fletcher T. Penney - http://fletcher.freeshell.org
+
+
+=head1 LICENSE
+
+This source is submitted to the public domain.  Feel free to use and modify it.  If you like, a comment in your modified source attributing credit for my original work would be appreciated.
+
+THIS SOFTWARE IS PROVIDED AS IS AND WITHOUT ANY WARRANTY OF ANY KIND.  USE AT YOUR OWN RISK!

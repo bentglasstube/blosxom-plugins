@@ -1,0 +1,29 @@
+# Blosxom Plugin: extensionless
+# Author(s): Frank Hecker <hecker@hecker.org>
+# Version: 0.2z mod by Stu MacKenzie
+package extensionless;
+use strict;
+use CGI qw/:standard :netscape/;
+
+# --- Configurable variables -----
+my $hide_category = 0;
+# --------------------------------
+
+sub start {1;}
+
+sub filter {
+  my ($pkg, $files_ref) = @_;
+  my $path_info = path_info();
+  $path_info =~ s!(^/*)|(/*$)!!g;
+  if (
+    $blosxom::path_info !~ m!\.! and
+    (! -d "$blosxom::datadir/$path_info" || $hide_category) and
+    $$files_ref{"$blosxom::datadir/$path_info.$blosxom::file_extension"}
+  ) {
+    $blosxom::path_info = "$path_info.$blosxom::flavour";
+    $blosxom::path_info_yr = '';
+  }
+  1;
+}
+1;
+__END__

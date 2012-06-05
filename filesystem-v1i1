@@ -1,0 +1,129 @@
+# Blosxom Plugin: filesystem
+# Author(s): Eric Davis <edavis <at> foobargeek <dot> com>
+# Documentation: See the bottom of this file or type: perldoc filesystem
+
+package filesystem;
+
+# --- Configurable variables ---
+
+# ------------------------------
+
+use File::Basename;
+
+sub start
+{
+    return 1;
+}
+
+sub dir_list
+{
+    my ($self, $attributes, $content) = @_;
+    my $dir_path = $attributes->{"dir_path"};
+    my $dir_url = $attributes->{"dir_url"};
+    my $return_data = "";
+
+    if (!opendir(DIR, $dir_path))
+    {
+        $return_data .= qq{Failed to open $dir_path!};
+        return $return_data;
+    }
+
+    @list = readdir(DIR);
+    @list = sort(@list);
+
+    foreach (@list)
+    {
+        if (!/\.|\.\./)
+        {
+            $return_data .= qq{<a href="$dir_url/$_">$_</a><br />\n};
+        }
+    }
+
+    closedir(DIR);
+
+    return $return_data;
+}
+
+sub cat_file
+{
+    my ($self, $attributes, $content) = @_;
+    my $file_path = $attributes->{"file_path"};
+    my $return_data = "";
+
+    if (!open(TASKS, "$file_path"))
+    {
+        $return_data .= qq{Failed to open $file_path!};
+        return $return_data;
+    }
+
+    while (<TASKS>)
+    {
+        $return_data .= $_;
+    }
+
+    close(TASKS);
+
+    return $return_data;
+}
+
+sub path_basename
+{
+    my ($self, $attributes, $content) = @_;
+
+    return basename($attributes->{"path"});
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plugin: filesystem
+
+=head1 DESCRIPTION
+
+This plugin provides some functions that can be used with B<interpolate_fancy>
+to provide filesystem like information in your flavour files.
+
+The B<dir_list> function provides a list of all elements in a given directory
+with each element constructed as a link.  This function takes one argument
+called B<dir_url> (i.e. directory path from your webroot.  Each directory entry
+is tacked to the end of this string when creating the links.  Here is an
+example:
+
+  <@filesystem.dir_list dir_path="/var/www/pics" dir_url="/pics" output="yes" />
+
+The B<cat_file> function pulls in the entire contents of a given file.  Here is
+an example:
+
+  <@filesystem.cat_file file_path="/home/edavis/resume.txt" output="yes" />
+
+The B<path_basename> function returns the basename of the given path.  Here is
+an example:
+
+  <@filesystem.path_basename path="$path" output="yes" />
+
+Some of this functionality could probably be provided using Server Side
+Includes or something of the like but having options are always a good thing.
+
+=head1 VERSION
+
+1.1  implemented
+
+=head1 VERSION HISTORY
+
+1.1  implemented
+
+=head1 AUTHORS
+
+Eric Davis <edavis <at> foobargeek <dot> com> http://www.foobargeek.com
+
+=head1 LICENSE
+
+This source is submitted to the public domain.  Feel free to use and modify it.
+If you like, a comment in your modified source attributing credit for my original
+work would be appreciated.
+
+THIS SOFTWARE IS PROVIDED AS IS AND WITHOUT ANY WARRANTY OF ANY KIND.  USE AT YOUR OWN RISK!
+

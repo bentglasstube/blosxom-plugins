@@ -1,0 +1,65 @@
+#!/usr/bin/perl -w
+# Blosxom Plugin: flavourmenu
+# Author: Tim Lambert (lambert@cse.unsw.edu.au)
+# Version: 0.31
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/blosxom
+# create a menu to let users choose a particular flavour.
+
+# to use, just edit the list of flavours to include in the menu,
+# optionally give them different names by changing flavournames below
+# and then put $flavourmenu::menu  in your template
+
+package flavourmenu;
+use CGI qw/:standard/; # need path_info()
+
+# --- Configurable Variables ---
+
+# Flavours and the names to use in the menu
+%flavournames = ('html'=>'Default', 'index'=>'Index',
+                           'rss'=>'RSS');
+@flavours = qw(html index rss);
+# ------------------------------
+
+$menu = '';
+
+sub start {
+    return 1;
+}
+
+sub head {
+  my($pkg, $currentdir, $head_ref) = @_;
+  my $unflavoured;
+  my $suffix;
+  # path_info() only works if dynamic -- bleah
+  if ($blosxom::static_or_dynamic eq 'dynamic') {
+    $unflavoured = path_info();
+    $suffix = $blosxom::flavour;
+  } else {
+    $unflavoured = $currentdir;
+    $suffix = $blosxom::file_extension;
+  }
+  if($unflavoured =~ /.*\.$suffix$/) {
+    $unflavoured  =~ s|.[^.]*$||;
+  } else {
+    if ($unflavoured !~ m(/$) ) {
+        $unflavoured .= '/';  # make sure it ends with a /
+      }
+    $unflavoured .= 'index';
+  }
+  $unflavoured =~ s|^/||; #strip leading /
+
+  $menu = '<table>';
+  foreach $flav (@flavours) {
+    if ($flav ne $blosxom::flavour) {
+      my $name = $flavournames{$flav} || $flav;
+      $menu .= qq|<tr><td>$name<td><a href="$blosxom::url/index.$flav">All</a></td>|;
+      if ($unflavoured ne 'index') {
+	$menu .= qq|<td> <a href="$blosxom::url/$unflavoured.$flav">This</a></td>|;
+      }
+      $menu .= "</tr>";
+    }
+  }
+  $menu .= "</table>";
+}
+
+1;

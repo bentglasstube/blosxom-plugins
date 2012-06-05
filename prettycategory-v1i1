@@ -1,0 +1,29 @@
+
+# Blosxom Plugin: PrettyCategory
+# Author: Randall Hand (yerase@yeraze.com)
+# Version: 1.1
+# http://www.yeraze.com/twiki/bin/view.pl/Main/PrettyCategoryBlosxomPlugin
+#
+
+package prettycategory;
+
+use CGI::Carp qw( fatalsToBrowser );
+
+$category;
+
+sub start {
+    1;
+}
+
+sub story {
+    my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    $category = $path;
+    $category =~ s:([a-z])([A-Z]):\1 \2:g; 
+    $category =~ s:_: :g;
+    $category =~ s:^/::g;
+
+    1;
+}
+
+
+1;

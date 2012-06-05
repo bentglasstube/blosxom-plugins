@@ -1,0 +1,108 @@
+# Blosxom Plugin: absolute
+# Author(s): Rael Dornfest <rael@oreilly.com> 
+# Version: 2.0b3-4
+# Documentation: See the bottom of this file or type: perldoc readme
+
+package absolute;
+
+# --- Configurable variables -----
+
+# What's the URL of your images directory?
+my $image_url = "";
+# e.g. http://www.example/images
+
+# What's the URL of your $datadir, if publicly-accessible?
+my $datadir_url = "";
+# e.g. http://www.example/blosxom
+
+# --------------------------------
+
+$image_url =~ s!/$!!; $datadir_url =~ s!/$!!;
+
+sub start {
+  1;
+}
+
+sub story {
+  my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+  $$body_ref =~ s!(<a.+?href\s*=\s*(["']))(/.+?)\2(.*?)>!$1$blosxom::url$3$2$4>!sig;
+
+  $image_url and $$body_ref =~ s!(<img.+?src=(["']))(/.+?)\2(.*?)>!$1$image_url$3$2$4>!sig;
+
+  $datadir_url and $$body_ref =~ s!(<img.+?src=(["']))([^\/]+?)\2(.*?)>!$1$datadir_url$path/$3$2$4>!sig;
+
+  return 1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: absolute
+
+=head1 SYNOPSIS
+
+Replaces <a href="/relative/path/to/something.html"> with the fully-qualified/
+absolute <a href="$blosxom::url/relative/path/to/something.html">, especially 
+important for RSS feeds, since most RSS readers don't make these absolute 
+themselves.
+
+Optionally replaces <img src="/relative/path/to/image.gif"> with the 
+fully-qualified/absolute <img src="$image_url/relative/path/to/image.gif">.
+
+For those who have their $datadir publicly-available (i.e. under their
+Web server's document root), also optionally adds fully-qualified/absolute
+paths to images.  So mention of <img src="something.gif"> in 
+/relative/path/to/something.txt will be replaced with
+<img src="$datadir_url/relative/path/to/something.gif">.
+
+The plug-in also should preserve any attributes included in the <a /> or
+<img /> tags.
+
+=head1 VERSION
+
+2.0b3-4
+
+Version number coincides with the version of Blosxom with which the 
+current version was first bundled.
+
+=head1 AUTHOR
+
+Rael Dornfest  <rael@oreilly.com>, http://www.raelity.org/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Blosxom and this Blosxom Plug-in
+Copyright 2003, Rael Dornfest 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

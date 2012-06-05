@@ -1,0 +1,467 @@
+# Blosxom Plugin: showgallery
+# Author: Bob Schumaker <cobblers@pobox.com>
+# Version: 0+3i
+# http://www.cobblers.net/blog/
+# License: Public Domain
+# dothumb based on code in bbgallery Copyright (C) 2001 Bodo Bauer <bb@bb-zone.com>
+
+package showgallery;
+
+use Data::Dumper;
+
+my $image_size;
+
+BEGIN {
+  if(eval "require Image::Size") {
+    Image::Size->import();
+    $image_size = 1;
+  }
+}
+
+# --- Plug-in package variables -----
+
+# The path to the images (should be web accessible). 'path' will be added to find images
+$imagedir;
+
+# The URL that maps to the base image dir ($imagedir)
+$imageurl;
+
+# The 'frame' color
+$framecolor = "666666";
+
+# The picture background color
+$bgcolor = "EEEEEE";
+
+# The table cell padding
+$cellpadding = 0;
+
+# The table cell padding
+$cellspacing = 1;
+
+# Where to generate thumbnails
+$thumbdirname = "thumbs";
+$thumbprefix = "th-";
+
+# Number of pictures per row
+$picsperrow = 5;
+
+# Index of style routines for different kinds of gallery
+%styles = ();
+
+# Flavour to use for story links (defaults to $blosxom::flavour)
+$flavour;
+
+# JavaScript for loading images
+$javascript = <<JAVASCRIPT;
+<script language="JavaScript"><!--
+function loadImage(source,desc) {
+  if (document.images) {
+    document.mainimage.src = source;
+  }
+  document.getElementById(\"mainimagedesc\").innerHTML=desc;
+  document.getElementById(\"mainimagedesc\").className=desc;
+}
+//-->
+</script>;
+JAVASCRIPT
+
+
+# --- Output variables -----
+
+$just_show_link = 0;
+
+# --- Configurable variables -----
+
+# What flag in your weblog entries lets me know to turn on gallery generation?
+$gallery_on_flag = "<!-- gallery=\"(.*)\" -->";
+
+$gallery_cache = "gallery.cache";
+
+# --------------------------------
+
+my $updated_cache = 0;
+
+my $identify;
+my $convert;
+
+my %pictures = ();
+
+sub start {
+  if ($blosxom::flavour eq "rss") {
+    $flavour ||= "html";
+	$just_show_link = 1;
+  }
+  else {
+    my $article_check = $blosxom::path_info;
+    # Remove .flavour if there, fall through if not
+    if ($article_check !~ s/\.[^\.]*$//) {
+	  $article_check =~ s/\/$//;		# remove trailing slash, if any
+	  $article_check .= "\/index";		# force it to have something
+    }
+    $article_check =~ s/^\/*//;			# remove initial /
+    if (($article_check =~ /index$/) || ($article_check =~ /\/$/)) {
+	  $just_show_link = 1;
+    }
+    $flavour ||= $blosxom::flavour;
+  }
+
+  if ( open PICTURES, "$blosxom::plugin_state_dir/$gallery_cache" ) {
+    my $index = join '', <PICTURES>;
+    close PICTURES;
+    $index =~ /\$VAR1 = \{/ and eval($index) and !$@ and %pictures = %$VAR1;
+  }
+
+  1;
+}
+
+sub filter {
+  my($files, $others) = @_;
+  foreach my $t (("content_type", "head", "date", "story", "foot")) {
+    $blosxom::template{gallery}{$t} ||= &{$blosxom::template}("/", $t, "html");
+  }
+}
+
+sub head {
+  my($pkg, $path, $head_ref) = @_;
+
+  my $origpath = $path;
+
+  for (;;) {
+    do {
+      -r "$blosxom::datadir/$path/config.gallery" and require "$blosxom::datadir/$path/config.gallery" and last;
+    } while ($path =~ s/(\/*[^\/]*)$// and $1);
+    last;
+  }
+  $path = $origpath;
+  
+  $imagedir ||= $blosxom::datadir;
+  $imageurl ||= $blosxom::url;
+
+  if( defined($hostinfo::do_replacement) ) {
+    $imagedir = &{$hostinfo::do_replacement}($imagedir);
+    $imageurl = &{$hostinfo::do_replacement}($imageurl);
+  }
+
+  if ( open PICTURES, "$blosxom::plugin_state_dir/$gallery_cache" ) {
+    my $index = join '', <PICTURES>;
+    close PICTURES;
+    $index =~ /\$VAR1 = \{/ and eval($index) and !$@ and %pictures = %$VAR1;
+  }
+
+  unless( $just_show_link ) {
+    $$head_ref .= $javascript;
+  }
+
+  return 1;
+}
+
+sub story {
+  my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+  $$body_ref =~ s/$gallery_on_flag//mi or return 0;
+  my $style = $1;
+
+  my @lines = split( /\n/, $$body_ref );
+  my $header = "";
+  my $trailer = "";
+  my %imagenames = ();
+  my %imagecaptions = ();
+  my %imagedescs = ();
+  foreach my $line (@lines) {
+    if( $line =~ /^\|(.*)\|$/ ) {
+      my @bits = split(/\|/, $1);
+      $imagenames{$bits[0]} = 1;
+      $imagecaptions{$bits[0]} = $bits[1];
+      $imagedescs{$bits[0]} = $bits[2];
+    }
+    else {
+      if( %imagecaptions ) {
+        $trailer .= "$line\n";
+      }
+      else {
+        $header .= "$line\n";
+      }
+    }
+  }
+
+  my %gallery = ();
+  foreach my $image_file ( sort keys %imagenames ) {
+    my $basename = $image_file;
+    $basename =~ s/.*\///;
+    my $thumbname = $thumbprefix . $basename;
+	my ($w, $h) = getthumbsize($path, $thumbname);
+    $gallery{$image_file} = [ $w, $h, $basename, $thumbname,
+								$imagecaptions{$basename}, $imagedescs{$basename} ];
+	# Only show the first image unless we're showing them all
+    last if $just_show_link;
+  }
+  $galleryoutput = callstyle( $style, "startgallery", $path, %gallery);
+  my $row = "";
+  my $idx=0;
+  foreach my $image_file (sort keys %gallery) {
+    my $line;
+    if( $just_show_link ) {
+      $line = "<a href=\"$blosxom::url$path/$filename.$flavour\" >";
+      $line = linkimage( $line, $path, @{$gallery{$image_file}} );
+      $line .= "</a>";
+    }
+    else {
+      $line = callstyle( $style, "imagelink", $path, $filename, @{$gallery{$image_file}} );
+    }
+
+    $row  = callstyle($style, "startrow") unless( $row );
+    $row .= callstyle($style, "picture", $line);
+    $idx++;
+    if( $idx%$picsperrow == 0 ) {
+      $galleryoutput .= $row . callstyle($style, "finishrow");
+      $row = "";
+    }
+  }
+  $galleryoutput .= $row . callstyle($style, "finishrow") if( $row );
+  $galleryoutput .= finishgallery($style, $path, $filename, %gallery);
+
+  $$body_ref = $header . $galleryoutput . $trailer;
+  return 1;
+}
+
+sub end {
+  if( $updated_cache ) {
+    if ( open PICTURES, "> $blosxom::plugin_state_dir/$gallery_cache" ) {
+      print PICTURES Dumper \%pictures;
+      close PICTURES;
+    } else {
+      warn "couldn't > $blosxom::plugin_state_dir/$gallery_cache: $!\n";
+    }
+  }
+  1;
+}
+
+sub finishgallery {
+  my($style, $path, $filename, %gallery) = @_;
+  my $start = "";
+  my $disp = "";
+  my $desc = "";
+  unless( $just_show_link ) {
+    my @keys = sort keys %gallery;
+    my $count = ($#keys + 1);
+    $count = $picsperrow if( $count > $picsperrow );
+    my($w, $h, $basename, $thumbname, $caption, $description) = @{$gallery{$keys[0]}};
+    my $url = "$imageurl$path/$basename";
+    $disp  = "<img src=\"$url\" name=\"mainimage\" ";
+	($w, $h) = getimagesize($path, $basename);
+    if( defined($h) && defined($w) ) {
+       $disp .= "width=\"$w\" height=\"$h\" ";
+    }
+    $disp .= ">\n";
+    $disp = callstyle( $style, "showpicture", $count, $disp);
+    $desc = callstyle( $style, "showdescription", "mainimagedesc", $count, $description)
+    	if( $description );
+  }
+  $start .= "$disp\n";
+  $start .= "$desc\n" if( $desc );
+  $start .= callstyle($style, "finishgallery");
+  return $start;
+}
+
+sub getimagesize {
+  my($path, $imagename) = @_;
+  my $name = "$imagedir$path/$imagename";
+  if( defined($pictures{$name}) ) {
+    return @{$pictures{$name}};
+  }
+  elsif( $image_size ) {
+    $updated_cache = 1;
+    ($w, $h) = imgsize($name);
+	$pictures{$name} = [ $w, $h ];
+    return @{$pictures{$name}};
+  }
+}
+
+sub getthumbsize {
+  my($path, $thumbname) = @_;
+  return getimagesize("$path/$thumbdirname", "$thumbname");
+}
+
+sub linkimage {
+  my($line, $path, $w, $h, $basename, $thumbname, $caption, $description) = @_;
+  $line .= "<img src=\"$imageurl$path/$thumbdirname/$thumbname\" ";
+  if( defined($h) && defined($w) ) {
+     $line .= "width=\"$w\" height=\"$h\" ";
+  }
+  $line .= "alt=\"" . $caption . "\" " if( $caption );
+  $line .= ">";
+  return $line;
+}
+
+sub callstyle {
+  my($style, $routine, @args) = @_;
+  if( $styles{$style}{$routine} ) {
+    return &{$styles{$style}{$routine}}(@args);
+  }
+  if( $styles{"plain"}{$routine} ) {
+    return &{$styles{"plain"}{$routine}}(@args);
+  }
+  return "<!-- missing style -->\n";
+}
+
+$styles{"plain"}{"startgallery"} = sub {
+  my($style, $path, %gallery) = @_;
+  return "<div align=\"center\">\n";
+};
+
+$styles{"plain"}{"finishgallery"} = sub {
+  return "</div>\n";
+};
+
+$styles{"plain"}{"showpicture"} = sub {
+  my($count, $disp) = @_;
+  return $disp;
+};
+
+$styles{"plain"}{"showdescription"} = sub {
+  my($tagname, $count, $desc) = @_;
+  return "<br>\n<span id=\"$tagname\" class=\"$tagname\">$desc</span>" if( $desc );
+};
+
+$styles{"plain"}{"startrow"} = sub {
+  return "";
+};
+
+$styles{"plain"}{"finishrow"} = sub {
+  return "<br />\n";
+};
+
+$styles{"plain"}{"picture"} = sub {
+  my($picline) = @_;
+  return "";
+};
+
+$styles{"plain"}{"imagelink"} = sub {
+  my($path, $filename, $w, $h, $basename, $thumbname, $caption, $description) = @_;
+  my $line;
+  if( $just_show_link ) {
+    $line = "<a href=\"$blosxom::url$path/$filename.$flavour\" >";
+  }
+  else {
+    $line = "<a href=\"javascript:loadImage('$imageurl$path/$basename', '$description')\">";
+  }
+  $line = linkimage($line, $path, $w, $h, $basename, $thumbname, $caption, $description);
+  $line .= "</a>";
+  return $line;
+};
+
+
+$styles{"table"}{"startgallery"} = sub {
+  my $start;
+  $start  = "<table";
+  $start .= " bgcolor=\"$framecolor\"" if( $framecolor );
+  $start .= "><tr><td align=\"center\">\n<table";
+  $start .= " bgcolor=\"$bgcolor\"" if( $bgcolor );
+  $start .= " cellpadding=\"$cellpadding\"  cellspacing=\"$cellspacing\">\n";
+  return $start;
+};
+
+$styles{"table"}{"finishgallery"} = sub {
+  return "</table></td></tr></table>\n";
+};
+
+$styles{"table"}{"showpicture"} = sub {
+  my($count, $disp) = @_;
+  return "<tr><td colspan=\"$count\">$disp</td></tr>";
+};
+
+$styles{"table"}{"showdescription"} = sub {
+  my($tagname, $count, $desc) = @_;
+  my $line;
+  $line  = "<tr><td colspan=\"$count\" align=\"center\">\n";
+  $line .= "<font color=\"000000\">\n";
+  $line .= "<span id=\"$tagname\" class=\"$tagname\">\n";
+  $line .= "$desc</span></font></td></tr>";
+  return $line;
+};
+
+$styles{"table"}{"startrow"} = sub {
+  return "<tr>\n";
+};
+
+$styles{"table"}{"finishrow"} = sub {
+  return "<br /></tr>\n";
+};
+
+$styles{"plain"}{"picture"} = sub {
+  my($picline) = @_;
+  return "<td>$picline</td>";
+};
+
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: showgallery
+
+=head1 SYNOPSIS
+
+Purpose: display a gallery page for a collection of images
+
+Somewhere in the body of the story, the flag '<!-- gallery="type" -->' should appear,
+where type is one of 'plain', or 'table.'
+
+The first line, as always, is the title of this entry.
+Each subsequent line, where it exists, should look like:
+
+|IMAGE FILENAME|Caption|Short description|
+
+Each image in the directory that does not have an entry will have their caption and
+short description set to the name of the image.
+
+Any line that is not bracketed by vertical bars ('|') will be passed through directly. The images
+will appear at the point the first vertical bar is found.
+
+If the makegallery plugin has run, the image sizes that have been cached will be used.
+
+=head1 VERSION
+
+0+3i
+
+=head1 AUTHOR
+
+Bob Schumaker  <cobblers@pobox.com>, http://www.cobblers.net/blog/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Blosxom
+Copyright 2003, Rael Dornfest 
+This Blosxom Plug-in
+Copyright 2003, Bob Schumaker 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

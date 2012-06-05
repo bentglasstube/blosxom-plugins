@@ -1,0 +1,167 @@
+# -*- perl -*-
+# Blosxom Plugin: sublog
+# Author: Terrence Yu (but most of the hard work was done by Brian St. Pierre and infozo)
+# Version: 2.0
+# License: caveat emptor
+# Purpose: to allow links of interest to be shown on a blosxom weblog, using blosxom itself to
+# create archives and RSS feeds.
+
+# Each sublog entry should contain:
+# Line 1: title
+# Line 2: url of interesting link
+# Line 3 onwards: optional commentary
+#
+# Variables of use
+# $sublog::sublog = variable that outputs the links in an unordered list format
+# $sublog::titleurl = variable that the url of interest will be stored in.  Users should use this variable in place
+# of any permalink variables they have in their story flavour files if the user has configured the title of posts
+# as permalinks.  When a post in the sublog folder is encountered, this plugin will replace the variable with the 
+# link of interest; all other posts will be given the normal permalink url of the post.  For the RSS feed to work,
+# the bit in between <link> and </link> will have to be replaced in the blosxom template.
+# 
+
+
+# INSPIRED BY / BASED ON:
+#
+# Blosxom Plugin: sublog
+# Author: Brian St. Pierre <brian@bstpierre.org>
+# Download: http://bstpierre.org/Projects/sublog
+# Version: 1
+# License: MIT style
+# Purpose: To allow weblog-like stuff to be included in a blosxom weblog
+# as a $sublog::sublog variable.
+#
+# Blosxom Plugin: sideblog
+# Author: infozo <infozo@infozo.info> http://infozo.info
+# Version: 20030708
+# License: caveat emptor
+# Purpose: to read the first handful of lines from a sideblog file
+# containing not-quite-ready-for-prime-time blog material (be it
+# uncommented links, simple verbal quips, or unformulated thoughts)
+# into a variable made available to the head/foot files.
+
+# Copyright (c) 2004, Brian St. Pierre
+#
+# Permission to use, copy, modify, and distribute this software and its
+# documentation for any purpose, without fee, and without a written agreement
+# is hereby granted, provided that the above copyright notice and this
+# paragraph and the following two paragraphs appear in all copies.
+#
+# IN NO EVENT SHALL THE AUTHOR BE LIABLE TO ANY PARTY FOR DIRECT,
+# INDIRECT, SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES, INCLUDING LOST
+# PROFITS, ARISING OUT OF THE USE OF THIS SOFTWARE AND ITS DOCUMENTATION,
+# EVEN IF THE AUTHOR HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+# THE AUTHOR SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING, BUT NOT
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+# PARTICULAR PURPOSE.  THE SOFTWARE PROVIDED HEREUNDER IS ON AN "AS IS"
+# BASIS, AND THE AUTHOR HAS NO OBLIGATIONS TO PROVIDE MAINTENANCE,
+# SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
+
+package sublog;
+
+use FileHandle;
+use File::Find;
+use File::stat;
+
+# --- Configurable variables -----
+#
+# Where should sublog look for sublog entries?
+# Note: if the sublog directory is in your data directory and you do not want sublog posts to
+# be shown with the main entries, use the Hide plugin (http://www.blosxom.com/plugins/files/hide.htm)
+# to hide sublog entries from blosxom.  That way, you can still leverage blosxom to create archives and
+# RSS feeds with a bit of template trickery with the interpolate fancy plugin (http://www.blosxom.com/plugins/interpolate/interpolate_fancy.htm)
+# Example: my $sublog_dir = "$blosxom::datadir/sublog";
+my $sublog_dir = "$blosxom::datadir/loopylinks";
+
+# What is the name of the sublog directory?
+# Example: my $sublog_dir_name = "sublog";
+my $sublog_dir_name = "loopylinks";
+
+# how many entries would you like to be displayed in the sublog? 
+my $number_entries = 7;
+
+# --------------------------------
+
+my $sublog_data;
+
+use vars qw! %files %indexes %others !;
+
+sub sublog_find_entries {
+    my(%files, %indexes, %others);
+    find(
+      sub {
+        if ( 
+		# a match
+		$File::Find::name =~ m!^$sublog_dir/!
+
+		# and is readable
+		and (-r $File::Find::name)
+        ) {
+		# add the file and its associated mtime to the list of files
+		$files{$File::Find::name} = stat($File::Find::name)->mtime;
+	}
+      }, $sublog_dir
+    );
+
+    return (\%files, \%indexes, \%others);
+}
+
+sub start {
+        my ($files, $indexes, $others) = sublog_find_entries();
+        %files = %$files;
+	%indexes = %$indexes;
+	%others = ref $others ? %$others : ();
+
+	my %f = %files;
+
+	# Define a default sort subroutine
+	my $sort = sub {
+		my($files_ref) = @_;
+		return sort { $files_ref->{$b} <=> $files_ref->{$a} } keys %$files_ref;
+	};
+  
+	my ($title, $body);
+	my $fh = new FileHandle;
+
+        my $sublog_count = 0;
+
+	$sublog = "<ul class=\"links\">\n";
+	  
+	foreach my $sb_entry ( &$sort(\%f, \%others) ) {
+	  if ($sublog_count != $number_entries) {
+	  	if (-f "$sb_entry" && $fh->open("< $sb_entry")) {
+			chomp($title = <$fh>);
+			chomp($body = join '', <$fh>);
+			($titlelink, @body) = split /\n/, $body;
+			$body = join "\n", @body;
+			$fh->close;
+		}
+		$sublog .= "  <li><a href=\"$titlelink\">" . $title . "</a> " . $body . "</li>\n";
+		
+		$sublog_count++;
+	   }
+	}
+	$sublog .= "</ul>";
+	1;
+}
+
+sub story {
+  my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+  if ($path =~ /\/$sublog_dir_name/)
+  {
+    ($titlelink, @body) = split /\n/, $$body_ref;
+    $$body_ref = join "\n", @body;
+    $titleurl = $titlelink;
+  } 
+  else
+  {
+    $titleurl = "$blosxom::url$path/$filename\.$blosxom::default_flavour";
+  }
+    
+
+  1;
+}
+
+1;

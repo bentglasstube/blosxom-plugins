@@ -1,0 +1,62 @@
+# Blosxom Plugin: param
+# Author(s): Cortland Haws
+# Version: 1
+# Documentation: See the bottom of this file or type: perldoc param
+
+package param;
+
+sub start {
+  1;
+}
+
+use CGI qw/:standard/;
+$query = new CGI;
+$query->import_names('param');
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: param
+
+=head1 SYNOPSIS
+
+This plugin provides access to parameters that may be sent from the http client. For example, a request ending in '?name=joe' would set the variable $param::name to 'joe'.
+
+=head1 USAGE
+
+Simply insert $param::key into your templates, where 'key' is the param that you wish to use. This plugin will automatically set the variable if it exists, so you can do an interpolate_fancy query like <?$param::key>key exists</?>, even if nothing was set as a value for param.
+
+=head1 INSTALLATION 
+
+Drop this plugin into your Blosxom plugins folder.
+
+=head1 VERSION
+
+1
+
+=head1 AUTHOR
+
+Cortland Haws <pixelcort@pixelcort.com>, http://pixelcort.com/
+
+=head1 SEE ALSO
+
+Blosxom Plugin User Documentation:
+  http://www.blosxom.com/documentation/users/plugins.html
+
+Blosxom Plugin Developer Documentation: 
+  http://www.blosxom.com/documentation/developers/plugins.html
+
+Developer's Site
+  http://pixelcort.com
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Copyright 2003 Cortland Haws, blah, blah blah...

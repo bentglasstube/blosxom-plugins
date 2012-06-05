@@ -1,0 +1,459 @@
+# vim: ft=perl
+# Blosxom Plugin: entries_cache_meta
+# Author(s): Jason Thaxter <sseye@ahab.com>
+# Version: 0.5
+# Based on entries_cache by Fletcher T. Penney <http://fletcher.freeshell.org/>,
+# and on entries_index by Rael Dornfest
+
+package entries_cache_meta;
+
+# --- Configurable variables -----
+
+#
+# Caching variables
+#
+
+# How many minutes delay before entries are re-indexed?
+# (In minutes)
+# default: 15
+# zero means never auto-reindex
+$cache_period;
+
+# what magic query string variable forces reindex
+# default: none (re-index by time only)
+$reindex_param;
+
+# pathname of the cache file
+# default: $blosxom::plugin_state_dir/entries_cache_meta
+$cachefile;
+
+# if set to any value, this will prevent the "write-lock" warning
+# default: off
+$no_lock_warn;
+
+#
+# Meta-related variables
+#
+
+# What prefix should I expect prepended to each meta tag?
+# default: meta-
+$meta_prefix;
+
+# If set, this meta variable will enable you to set modification times
+# e.g.:
+#   meta-last_modified: 2003/01/12 10:33:33
+# see pod docs re: time format
+# default: mtime
+$meta_mtime;
+
+# enabled
+# default: 1
+# set to zero to disable this plugin
+# good for use w/ config plugin
+$enabled;
+
+# --------------------------------
+
+# defaults
+$cache_period = 15 if not defined $cache_period;
+$cachefile   ||= "$blosxom::plugin_state_dir/entries_cache_meta";
+$meta_prefix ||= 'meta-';
+$meta_mtime = 'mtime' unless defined $meta_mtime;
+$enabled    = 1       unless defined $enabled;
+
+# standard perl modules
+use Fcntl qw(:DEFAULT :flock);
+use File::stat;
+use File::Find;
+use Data::Dumper;
+
+# standard for blosxom
+use CGI qw/:standard/;
+
+# we'll use Date::Parse if we have it
+$have_date_parse;
+eval { require Date::Parse; };
+if ($@) {
+    use Time::Local;
+}
+else {
+    $have_date_parse = 1;
+}
+
+%cache;    # the cache
+%indexes = ();    # nothing - we don't do static
+$reindex;         # reindex or not
+*CACHE;           # for the cache file
+$reindexed;       # flag for "save cache"
+
+sub start {
+
+    return 0 if ( not $enabled or param('-all') );
+
+    # Read cache and reindex if failed or otherwise directed
+    (
+        (
+            open( MYCACHE, $cachefile ) and $index = join '',
+            <MYCACHE>
+              and $index =~ /\$VAR1 = /
+              and eval($index)
+              and !$@
+              and %cache = %$VAR1
+              and close MYCACHE
+        )
+          and (
+            not param($reindex_param)
+            and not($cache_period
+                and -f "$cachefile"
+                and stat($cachefile)->mtime lt( time() - $cache_period * 60 ) )
+          )
+      )
+      or $reindex = &lokkit( \*CACHE, $cachefile );
+
+    return 1;
+}
+
+sub entries {
+
+    # If we haven't flagged a need to re-index,
+    # copy from the cache
+    return sub {
+        my %files;
+        foreach ( keys %cache ) {
+            # copy into cache if the file exists
+            $files{$_} = $cache{$_}{mtime} if -f $_;
+        }
+        return ( \%files, \%indexes );
+      }
+      unless $reindex;
+
+    # otherwise, do a full reindex
+    return sub {
+
+        # Check to see if previously indexed files exist, and then rescan
+        # the datadir for any new files, while preserving the old times
+
+        for my $file ( keys %cache ) {
+            -f $file or do { $reindexed++; delete $cache{$file} };
+        }
+
+        find(
+            sub {
+
+                # easier to read.
+                $ffname = $File::Find::name;
+
+                # return if we're out of our depth
+                my $curr_depth = $File::Find::dir =~ tr[/][];
+                if ( $blosxom::depth and $curr_depth > $blosxom::depth ) {
+                    $cache{$ffname}
+                      and delete $cache{$ffname};
+                    return;
+                }
+
+                # only bother for real entries
+                return
+                  unless ( $ffname =~
+m!^$blosxom::datadir/(?:(.*)/)?(.+)\.$blosxom::file_extension$!
+                    and $2 ne 'index'
+                    and $2 !~ /^\./
+                    and ( -r "$ffname" )
+                    and ++$reindexed );
+
+                # process meta tags
+                if ( -T "$ffname" and open( FF, "<$ffname" ) ) {
+                    $meta_title = <FF>;
+                    chomp($meta_title);
+                    $cache{$ffname}{title} = $meta_title;
+                    while (<FF>) {
+
+                        # get values
+                        ( $key, $value ) = m/^$meta_prefix(.+?):\s*(.+)$/;
+                        last if not $key;
+
+                        # set values
+                        if ( $key ne "$meta_mtime" ) {
+                            $cache{$ffname}{$key} = $value;
+                        }
+
+                        # set modification time
+                        # with a double negative (hey)
+                        else {
+                            if ($have_date_parse) {
+                                $time = Data::Parse::str2time($value);
+                            }
+                            elsif (
+                                my ( $yr, $mo, $day, $hr, $min, $sec, $tz ) = (
+                                    $value =~
+                                      m! (\d{4}) [/\:\-] (\d{2}) [/\:\-] (\d{2}) \s+
+                                      (\d{2}) : (\d{2}) : (\d{2})
+                                      \s*((UTC|GMT)*)!x
+                                )
+                              )
+                            {
+                                if ($tz) {
+                                    $time =
+                                      timegm( $sec, $min, $hr, $day, --$mo,
+                                        $yr );
+                                }
+                                else {
+                                    $time =
+                                      timelocal( $sec, $min, $hr, $day, --$mo,
+                                        $yr );
+                                }
+                            }
+                            else {
+                                warn "unparseable time in $ffname: $value";
+                            }
+                            $cache{$ffname}{mtime} = $time;
+                        }
+                    }
+                    close FF;
+                }
+                else {
+                    warn "couldn't open entry ($ffname): $!";
+                }
+
+                # If we have no meta mtime and no cached time,
+                # stat the file and store it.
+                if ( $cache{$ffname}{mtime} ) {
+                    $files{$ffname} = $cache{$ffname}{mtime};
+                }
+                else {    # make sure blosxom behaves normally
+                    $files{$ffname} = stat($ffname)->mtime;
+                    $cache{$ffname}{mtime} = $files{$ffname};
+                }
+
+                # show or not to show future entries
+                if ( not $blosxom::show_future_entries
+                    and $files{$ffname} > time() )
+                {
+                    delete $files{$ffname} and return;
+                }
+
+            },
+            $blosxom::datadir
+        );
+
+        return ( \%files, \%indexes );    # indexes is bogus: we don't do static
+      }
+}
+
+# put the stuff into $meta:: namespace as soon as we can
+# pretty much ripped from meta plugin. will stay that way til it shouldn't.
+sub story {
+    my ( $pkg, $path, $filename, $story_ref, $title_ref, $body_ref ) = @_;
+
+    my ( $body, $in_header ) = ( '', 1 );
+    foreach ( split /\n/, $$body_ref ) {
+        /^\s*$/ and $in_header = 0 and next;
+        if ($in_header) {
+            my ( $key, $value ) = m/^$meta_prefix(.+?):\s*(.+)$/;
+            $key =~ /^\w+$/ and ${"meta::$key"} = $value and next;
+        }
+        $body .= $_ . "\n";
+    }
+    $$body_ref = $body;
+
+    return 1;
+}
+
+# save cache - as late as possible
+# this gives other plugins a chance to alter values
+# or, forbid us from caching them!
+sub end {
+    &stuffit( \*CACHE, Dumper \%cache ) if ($reindexed);
+    1;
+}
+
+#####################################################################
+# Internal subs
+#
+
+# Reserve file for writing
+sub lokkit {
+    local *FH = shift;
+    my $filename = shift;
+
+    # open it
+    unless ( sysopen( FH, $filename, O_RDWR | O_CREAT ) ) {
+        warn "can't open file $filename: $!";
+        return;
+    }
+
+    # Only continue if we can flock.
+    # see the perlopentut manpage.
+
+    # autoflush FH
+    $ofh = select(FH);
+    $|   = 1;
+    select($ofh);
+
+    # LOCK it
+    unless ( flock( FH, LOCK_EX | LOCK_NB ) ) {
+        close FH;
+        warn "can't lock file: $!" unless $no_lock_warn;
+        return undef;
+    }
+
+    return 1;
+}
+
+# Write and release file
+sub stuffit {
+    local *FH       = shift;
+    local $contents = shift;
+
+    if ( seek( FH, 0, 0 ) ) {
+        if ( print FH $contents ) {
+            if ( truncate( FH, tell(FH) ) ) {
+                flock( FH, LOCK_UN )
+                  or warn "can't unlock file: $!";
+            }
+            else {
+                warn "can't truncate file: $!";
+            }
+        }
+        else {
+            warn "can't write file: $!";
+        }
+    }
+    else {
+        warn "can't rewind file $filename: $!";
+    }
+
+    close(FH) or warn "can't close file: $!";
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: entries_cache_meta
+
+=head1 SYNOPSIS
+
+The entries_cache plugin is a "souped-up" version of the entriescache plugin,
+which itself extends the entries_index plugin. It can be used as an equivalent
+for entriescache plus the meta plugin.
+
+Additionally, it makes use of code for file locking - this provides greater
+safety in case two simultaneous hits result in a corrupted file. It also
+prevents many near-simultaneous hits from bogging the server down with multiple
+simultaneous reindexes.
+
+Basically this combines entriescache and meta and aims to be compatible with
+both. Since meta only fires during the C<story> hook, it's too late to remake
+meta cache info while doing C<find()>. If meta and entriescache serve your
+needs, you should use them, since smaller plugins are better. If, however, you
+need access to meta-data for all entries before output begins, this plugin is
+for you.
+
+It doesn't currently work in static mode, in part because the premise of static
+mode is to be a performance benefit all on its own. Also because I don't use
+static mode and I'm lazy.
+
+=head1 USAGE
+
+A couple of configuration variables - and a properly permissioned $plugin_state_dir
+are all that's needed.
+
+=over 4
+
+=item $cache_period
+
+How often, in minutes, to reindex automatically. If set to zero, re-indexing will never
+be automatic.
+
+=item $reindex_param
+
+What query string variable forces reindex.  As in entriescache, you can force a
+scan by appending a query string, e.g.  C<?reindex=y> to the end of the url.
+This will also cause meta tags to be updated. However, for security's sake, you
+must configure the name of this variable.
+
+=item $cachefile
+
+The filename where the cache is stored.
+
+=item $no_lock_warn
+
+Prevents the plugin from warning you when it can't save cached data due to an
+flock().
+
+=item $meta_prefix
+
+What prefix marks meta variable names. Defaults to C<meta->. An empty string
+should be permitted, but currently it isn't.
+
+=item $meta_mtime
+
+The name of the meta-property for file modification times. If this property is
+present in a given entry, it will override the modification time of the file as
+the entry's time. The default value is "mtime".
+
+The format of the time is obviously important: it can be either
+
+        meta-mtime: YYYY/MM/DD HH:MM:SS [UTC|GMT]
+
+or, if Date::Parse is present, any format parseable by that module. Either way,
+unparseable dates are simply ignored as if the property was not present. This
+feature may be disabled by setting it to an empty string.
+
+=back
+
+=head1 VERSION
+
+Version 0.5
+
+=head1 AUTHOR
+
+Jason Thaxter <sseye@ahab.com>
+
+Based on original code by:
+Fletcher T. Penney <http://fletcher.freeshell.org/> and
+Rael Dornfest  <rael@oreilly.com>, http://www.raelity.org/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+entries_cache_meta plugin
+Copyright 2004, Jason Thaxter
+except for portions hacked from entriescache
+
+(entriescache plugin
+Copyright 2003, Fletcher Penney
+except for portions hacked from entries_index)
+
+Blosxom and original entries_index plugin and meta plugin
+Copyright 2003, Rael Dornfest
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

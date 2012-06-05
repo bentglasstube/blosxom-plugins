@@ -1,0 +1,110 @@
+# Blosxom Plugin: headinglevel
+# Author(s): KITAMURA Akatsuki <kits@akatsukinishisu.net>
+# Version: 2004-11-05
+# Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+# This script is encoded in UTF-8.
+
+package headinglevel;
+use strict;
+
+# --- Configurable variables -----------
+
+# 見出しレベルを変更するフレーバーの拡張子とその差分
+# h2をh3に変更するなら +1
+# h2をh1に変更するなら -1
+
+my %diff = (
+	'html' => +1,
+);
+
+# --- Plug-in package variables --------
+
+# --------------------------------------
+
+sub start {
+	foreach my $f (keys %diff) {
+		return 1 if ($blosxom::flavour eq $f);
+	}
+	0;
+}
+
+sub story {
+	# my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+	my $body_ref = $_[5];
+	$$body_ref =~
+		s{
+			(</?h)([1-6])
+		} {
+			$1 . one_to_six($2 + $diff{$blosxom::flavour})
+		}egx;
+	1;
+}
+
+# 1未満なら1を、6より大きければ6を返す
+
+sub one_to_six {
+	my $v = $_[0];
+	($v < 1) ? 1 : ($v > 6) ? 6 : $v;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: headinglevel
+
+=head1 SYNOPSIS
+
+目的: フレーバーにより本文中の見出しレベルを変更します。
+
+=head1 INSTALLATION
+
+このプラグインファイルをプラグインディレクトリ($plugin_dir)に
+置いて下さい。
+
+=head1 CONFIGURATION
+
+%diff に、見出しレベルを変更するフレーバーの拡張子と
+変更の差分を設定して下さい。
+
+=head1 VERSION
+
+2004-11-05
+
+=head1 AUTHOR
+
+北村曉 (KITAMURA Akatsuki)
+<kits@akatsukinishisu.net>,
+http://www.akatsukinishisu.net/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+Blosxom Plugin Docs: http://www.blosxom.com/plugins/
+
+=head1 LICENSE
+
+This Blosxom Plug-in Copyright (c) 2004, KITAMURA Akatsuki
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

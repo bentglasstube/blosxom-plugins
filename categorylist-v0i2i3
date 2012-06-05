@@ -1,0 +1,122 @@
+# Blosxom Plugin: categorylist
+# Author: Keith Hudgins
+# Version: 0.2.3 (Any better ideas on a versioning scheme to be more blosxom-like?)
+# Plugin home: http://www.greenman.org/projects/categorylist
+
+
+package categorylist;
+
+###########################
+##
+## Configurable variables
+##
+##
+###########################
+
+# Set this to 1 if you want the slashes
+# removed from your display menu
+my $iDontWantSlashes = 1;
+my $giveMeAList = 1;
+# Make this equal to what you want the
+# non-leading slashes replaced with.
+my $replacement = ": ";
+
+###########################
+
+
+use vars qw(@categorylist, $display);
+
+use File::Find;
+
+my @categorylist;
+
+
+sub start {
+	find (sub {
+			if (-d $File::Find::name) {
+				my $categoryname = $File::Find::name;
+				$categoryname =~  s/$blosxom::datadir//;
+				if ($categoryname)
+				{
+					unless (-e "$blosxom::datadir/$categoryname/category.exclude")
+					{
+						push @categorylist, $categoryname if $categoryname;
+					}
+				}
+			}
+		},	
+			$blosxom::datadir);
+	@categorylist = sort @categorylist;
+	if ($giveMeAList) {
+		$display = "<ul>\n";
+	}
+	foreach $thing (@categorylist) {
+		
+		my $displayString = $thing;
+		if ($iDontWantSlashes) {
+			#print STDERR "Parsing slashes\n";
+			$displayString =~ s!^\/!!;
+			$displayString =~ s!\/!$replacement!g;
+
+		}
+		if ($giveMeAList) {
+			$display .= "<li><a href=\"$blosxom::url$thing\">$displayString</a></li>\n";
+			#$display .= "<li>/Blah/Blah</li>";
+		}
+		else
+		{
+			$display .= "<a href=\"$blosxom::url$thing\">$displayString</a><br />\n";
+		}
+	}
+	if ($giveMeAList)
+	{
+		$display .= "</ul>\n";
+	}
+	return 1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plugin: categorylist
+
+=head1 SYNOPSIS
+
+Purpose: Grants $categorylist::display, a list of all category directories with
+appropriate links for the blog sidebar.
+
+=head1 VERSION
+
+0.2.3 Added <ul> feature and the ability to exclude directories.
+
+=head1 AUTHOR
+
+Keith Hudgins <greenman@greenman.org> http://www.greenman.org
+
+=head1 BUGS
+
+I don't know of any.
+
+=head1 USAGE
+
+Just drop this into your blosxom plugins directory. Then, you can insert the 
+variable:
+
+$categorylist::display
+
+into your flavour files wherever you want a list of your categories to go. Each
+line holds the name of one category, each one linked to the appropriate place in
+your blosxom weblog.
+
+If you want the directory path slashes removed, just look at the config
+variables. Set $iDontWantSlashes equal to 1, and change $replacement's
+assignment to whatever you want the non-leading slashes to be equal to.
+
+To print an unordered list instead of a series of break-tag separated links, set $giveMeAList to 1.It'll print a standard <ul> list, xhtml-compliant. If you want it to look differently, use your stylesheets to alter its appearance. http://www.alistapart.com/articles/taminglists is a great reference on how to do this.
+
+Finally, I've added a requested feature: you can exclude any directory by putting a file named "category.exclude" (no quotes) into that directory. This does NOT affect subdirectories. If you want to exclude a whole subdirectory, put the category.exclude file in each one.
+
+Wow, I'm gettin' all sophisticated and stuff. :)

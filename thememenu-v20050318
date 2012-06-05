@@ -1,0 +1,77 @@
+#Blosxom Plugin: thememenu
+#Author(s): JonahC (http://www.theblankline.net)
+#Version: 2005-3-18
+#Blosxom Home/Docs/Licensing: http://www.blosxom.com
+
+package thememenu;
+
+#--- User Configurable Variables ---
+
+# where are your theme files stored?
+$themedir = "$blosxom::datadir/themes";
+
+# what should I look for? (since most directories do NOT have file extensions, I'd suggest leaving it as a single asterisk)
+$dirspec = "*";
+
+#--- End of User Configurable Variables ---
+
+sub start {
+	@thememenu = <$themedir/$dirspec>;  #old glob syntax
+	
+	for $thememenu (@thememenu) {
+		$startat = rindex($thememenu, "/") + 1;
+		$totallength = length($thememenu);
+		$thememenu = substr($thememenu, $startat, $totallength - $startat);
+		$display .= '<p class="thememenu"><a href="';
+		$display .= "$blosxom::url/index.$thememenu";
+		$display .= '">';
+		$display .= $thememenu;
+		$display .= "</a></p>";
+		}
+	1;
+}
+
+sub end {
+	1;
+}
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: ThemeMenu
+
+=head1 SYNOPSIS
+
+ThemeMenu is a companion plugin to Rael Dornfest's theme plugin.  It dynamically populates a variable with a listing of all the theme folders that it can find in your themes directory and allows you to display that list in your theme template(s). This list lets your users click on individual themes to try them out.  Since ThemeMenu does this dynamically, any time you create or add new themes to your Blosxom configuration, they automagically appear in your theme list. You don't have to worry about going back into all your Blosxom theme templates and manually adding the new theme to your list.
+
+IMPORTANT NOTE: This plugin makes two assumptions:
+
+First, you have successfully installed and configured the theme plugin.
+Second, your theme folders do not have any extensions on them.
+
+=head1 INSTALLATION AND CONFIGURATION
+
+Copy the thememenu plugin into your Blosxom plugin directory.  Set the themedir variable to the location of your themes directory (usually this is $blosxom::datadir/themes).  You will probably not need to change the dirspec variable, unless you use extensions on your theme folders.
+
+Then just put $thememenu::display in your theme page files where you want the list of themes to be displayed, such as in a sidebar or footer.
+
+I should also mention that the output is wrapped in paragraph tags with a class attribute of "thememenu" which can be used as a CSS selector to control font, font-size, line height, appearance and so on.
+
+=head1 VERSION
+
+2005-3-17
+
+=head1 AUTHOR
+
+Jonah Chanticleer (jonahc@theblankline.net)
+
+=head1 BUGS
+
+If you find any, please let me know via my email address.  Thanks!
+
+=head1 ACKNOWLEDGEMENTS
+
+This plugin was initially inspired by Tim Lambert's flavourmenu plugin.
+
+Thanks to Doug over at the Unofficial Blosxom User Group for telling me about the theme plugin in Blosxom, and persuading me to modify my initial concept to include themes rather than just stick with flavours.

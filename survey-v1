@@ -1,0 +1,237 @@
+# Blosxom Plugin: survey
+# Author(s): Rael Dornfest <rael@oreilly.com>
+#		Fletcher T. Penney <http://fletcher.freeshell.org>
+# hacked to do surveys TDL
+# Documentation: None yet - read the source
+# Based on original writeback plugin by Rael Dornfest <rael@oreilly.com>
+# as modified by Fletcher Penney
+
+package survey;
+
+# This plugin is created as a replacement for Rael Dornfest's original writeback 
+# plugin. It adds several new features, improves ease of use, and in general,
+# attempts address the comments and feedback from users of the original writeback
+# plugin.
+
+# This program would not be possible without Rael's original version, and as much of
+# the code from the original that could be re-used was.  I simply attempted to make a
+# few updates to his work.
+
+# --- Configurable variables -----
+
+# Where should I keep the survey hierarchy?
+# I suggest: $survey_dir = "$blosxom::plugin_state_dir/survey";
+#
+# NOTE: By setting this variable, you are telling the plug-in to go ahead
+# and create a survey directory for you.
+my $survey_dir = "$blosxom::plugin_state_dir/survey";
+
+# What file extension should I use for surveys? 
+# Make sure this is different from that used for your Blosxom weblog
+# entries, usually txt.
+my $file_extension = "sv";
+
+# What fields are used in your survey form?
+my @fields = qw! name url x y ip results!;
+
+# --------------------------------
+
+# Survey results for a story; use as $survey::surveys in flavour templates
+$surveys;
+
+# Count of surveys for a story; use as $survey::count in flavour templates
+$count;
+
+# Response to survey; use as $survey::survey_response in 
+# flavour templates
+$survey_response;
+
+#last entry added
+$lastentry;
+#last ten entries
+$last_ten_entries;
+# --------------------------------
+
+#ensure value is within specified range
+sub constrain {
+    my ($val, $min, $max) = @_;
+    if ($val < $min) {return $min;}
+    if ($val > $max) {return $max;}
+    return $val;
+}
+
+
+use CGI qw/:standard/;
+use FileHandle;
+
+my $fh = new FileHandle;
+
+	# Added for spam protection
+	my $email = '[\w\.]+@\w+(\.\w+)+';
+
+# Strip potentially confounding bits from user-configurable variables
+$survey_dir =~ s!/$!!; $file_extension =~ s!^\.!!;
+
+
+sub start {
+
+  # $survey_dir must be set to activate surveys
+  unless ( $survey_dir ) { 
+    warn "blosxom : survey plugin > The \$survey_dir configurable variable is not set; please set it to enable surveys. Surveys are disabled!\n";
+    return 0;
+  }
+
+  # the $survey_dir exists, but is not a directory
+  if ( -e $survey_dir and ( !-d $survey_dir or !-w $survey_dir ) ) { 
+    warn "blosxom : survey plugin > The \$survey_dir, $survey_dir, must be a writeable directory; please move or remove it and Blosxom will create it properly for you.  Surveys are disabled!\n";
+    return 0;
+  }
+  
+  # the $survey_dir does not yet exist, so Blosxom will create it
+  if ( !-e  $survey_dir )  {
+
+    my $mkdir_r = mkdir("$survey_dir", 0777);
+
+    warn $mkdir_r 
+      ? "blosxom : survey plugin > \$survey_dir, $survey_dir, created.\n"
+      : "blosxom : survey plugin > There was a problem creating your \$survey_dir, $survey_dir. Surveys are disabled!\n";
+
+    $mkdir_r or return 0;
+
+    my $chmod_r = chmod 0777, $survey_dir;
+
+    warn $chmod_r 
+      ? "blosxom : survey plugin > \$survey_dir, $survey_dir, set to 0755 permissions.\n"
+      : "blosxom : survey plugin > There was a problem setting permissions on \$survey_dir, $survey_dir. Surveys are disabled!\n";
+
+    $chmod_r or return 0;
+
+    warn "blosxom : survey plugin > surveys are enabled!\n";
+  }
+
+  $path_info = CGI::path_info();
+  my($path,$fn) = $path_info =~ m!^(?:(.*)/)?(.*)\.$blosxom::flavour!;
+  $path =~ m!^/! or $path = "/$path";
+  $path = "/$path";
+
+  # Only spring into action if POSTing to the survey plug-in
+  if ( !$blacklist::black and request_method() eq 'POST' and (param('plugin') eq 'survey') ) {
+
+    foreach ( ('', split /\//, $path) ) {
+      $p .= "/$_";
+      $p =~ s!^/!!;
+      -d "$survey_dir/$p" or mkdir "$survey_dir/$p", 0777;
+	chmod (0777,"$survey_dir/$p");
+    }
+
+    if ( $fh->open(">> $survey_dir$path/$fn.$file_extension") ) {
+      foreach ( @fields ) {
+        my $p = param($_);
+        if ( $_ == "url" ) {
+        	$p =~ s/^($email)/mailto:$1/;
+        }
+        $p =~ s/\r?\n\r?/\r/mg;
+ 	if ( $_ eq "ip" ) {
+	  $p = $ENV{'REMOTE_ADDR'};
+	}
+        print $fh "$_: $p\n";
+      }
+      print $fh "-----\n";
+      $fh->close();
+      chmod (0777,"$survey_dir$path/$fn.$file_extension");
+      if (-x "$survey_dir$path/$fn.pl") {
+         system "$survey_dir$path/$fn.pl";
+      }
+
+      $survey_response = "I've added your results to the table!<br>";
+
+
+    } else {
+      warn "couldn't >> $survey_dir$path/$fn.$file_extension\n";
+
+      $survey_response = "There was a problem storing your results.";
+    }
+  }
+  1;
+}
+
+sub story {
+  my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    
+  return 1 unless $meta::survey;
+
+  $path =~ s!^/*!!; $path &&= "/$path";
+
+  ($surveys, $count)  = ('', -4);
+  my %param = ();
+  my @table;
+  my %names = ();
+  my @entries;
+
+  if ( $fh->open("$survey_dir$path/$filename.$file_extension") ) {
+    foreach my $line (<$fh>) {
+      $line =~ /^(.+?): (.*)$/ and $param{$1} = $2;
+      if ( $line =~ /^-----$/ && $param{url} =~ m|http://.|) {
+
+
+        if ($ENV{'HTTP_REFERER'} =~ m|${param{url}}|) {
+	    $param{name} = qq|<font color="red">$param{name}</font>|;
+        }
+        if ($param{url} =~ m|http://no$|) { #used to put labels in cells
+	  $lastentry = qq|$param{name}<br />|;
+        } else {
+	  $lastentry = qq|<a href="$param{url}" title="($param{x},$param{y})">$param{name}</a>|;
+	  if ($param{results} =~ m|http://.|){
+	    $lastentry .= qq|&nbsp;<a href="$param{results}" title="Results">*</a>|;
+          }
+          push @entries, $lastentry;
+          $lastentry .= "<br />";
+        }
+
+	$names{$param{name}}= { entry => $lastentry,
+                                    x => $param{x},
+                                    y => $param{y},
+			       };
+      }
+    }
+    $last_ten_entries = join " ", @entries[$#entries-9 .. $#entries];
+
+    foreach my $name (sort keys %names) {
+	my ($entry, $x) = $names{$name};
+	my $i = int ((9.99-$names{$name}{y})/2);
+	my $j = int (($names{$name}{x}+10)/2);
+        $table[constrain($i,0,9)][constrain($j,0,9)] .= $names{$name}{entry};
+        $count++;
+    }
+    $surveys .= '<table border="1">';
+    my $coltitles = "<tr><td></td>";
+      for (my $j = 0; $j <= 9; $j++) {
+        my $x = 2*($j - 5);
+        my $xplus = $x + 1.99;
+        $coltitles .= "<td>$x&ndash;$xplus</td>";
+      }
+    $coltitless .= "</tr>";
+    $surveys .= $coltitles;
+
+    for (my $i = 0; $i <= 9; $i++) {
+      my $y = 2*(4 - $i);
+      my $yplus = $y + 1.99;
+      $surveys .= "<tr><td>$y&ndash;$yplus</td>";
+      for (my $j = 0; $j <= 9; $j++) {
+        my $entry = defined $table[$i][$j] ? $table[$i][$j] : '&nbsp;';
+        $surveys .= "<td>$entry</td>";
+      }
+      $surveys .= "<td>$y&ndash;$yplus</td></tr>";
+    }
+    $surveys .= $coltitles;
+    $surveys .= "</table>";
+
+  }
+  1;
+}
+
+
+1;
+
+__END__
+

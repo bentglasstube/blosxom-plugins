@@ -1,0 +1,195 @@
+# Blosxom Plugin: dbcomments
+# Author(s): l.m.orchard <deus_x@pobox.com>
+# Version: 0.1
+
+package dbcomments;
+
+use CGI;
+use File::Basename qw(dirname);
+use File::Path qw(mkpath);
+
+$comments_root     ||= "/www/decafbad.com/data/blosxom/entries/comments";
+$comments_url      ||= "http://$ENV{HTTP_HOST}/comments";
+$comments_post_url ||= "http://$ENV{HTTP_HOST}/comments";
+$blog_root         ||= "/www/decafbad.com/data/blosxom/entries/blog";
+$blog_url          ||= "http://$ENV{HTTP_HOST}/blog";
+$allow_posting     ||= 0;
+
+# Signify that this is a plugin at startup, and handle comment posts.
+sub start {
+
+    # Only act upon a post to the comment post URL
+    if ($allow_posting) {
+
+        if ($ENV{REQUEST_METHOD} eq 'POST') {
+            # Ensure a safe path from the given path info.
+            # Only single slashes and a-zA-Z.
+            my $pi = join('', map { /([A-Za-z_0-9]+)/ and "$1/" } split("/", path_info()));
+
+            # Create a new randomized comment file name.
+            my $comment_fn = sprintf("%s/%s%d%0.5d.txt",
+                                     $comments_root, $pi,
+                                     time(), (rand()*1000));
+            $comment_fn =~ tr/0123456789/oabcdefghi/;
+
+            # Dump the comment out to file.
+            mkpath([dirname($comment_fn)], 0, 0777) if !-d dirname($comment_fn);
+            open(FOUT, ">$comment_fn");
+            print FOUT param('title')."\n";
+            print FOUT "meta-Author: ".param('name')."\n";
+            print FOUT "meta-Email: ".param('email')."\n";
+            print FOUT "meta-Url: ".param('url')."\n";
+            print FOUT "\n";
+            print FOUT param('excerpt')."\n";
+            close(FOUT);
+            chmod 0777, $comment_fn;
+        }
+
+    }
+
+    1;
+}
+
+# Provide a parameterized sort for entries.  Set $blosxom::story_order to
+# 'ascending' to see things in chronological order, otherwise things will
+# be in the default reverse-chronological order.
+sub sort {
+    return sub {
+        my($files_ref) = @_;
+        if ($blosxom::story_order eq 'ascending') {
+            return sort { $files_ref->{$a} <=> $files_ref->{$b} } keys %$files_ref;
+        } else {
+            return sort { $files_ref->{$b} <=> $files_ref->{$a} } keys %$files_ref;
+        }
+    };
+}
+
+# Provide info pointing at a comment page's parent entry
+sub head {
+    my($pkg,$currentdir,$headref) = @_;
+
+    $parent_url = "$blog_url/$currentdir.html";
+    if (-r "$blog_root/$currentdir.txt") {
+        open(FIN, "$blog_root/$currentdir.txt");
+        $parent_title = <FIN>;
+        close(FIN);
+    }
+}
+
+# If the present blog entry appears to have a companion comment directory,
+# try to count the number of .txt files in it to come up with a count for
+# the blog entry to use.  Use $dbcomments::count in story templates.
+sub story {
+    my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+    ($enc_path = $path) =~ tr/0123456789/oabcdefghi/;
+    ($enc_filename = $filename) =~ tr/0123456789/oabcdefghi/;
+
+    $url = "$comments_url$enc_path";
+    $post_url = "$comments_post_url$enc_path/$enc_filename";
+
+    my $comments_path = "$comments_root$enc_path/$enc_filename";
+    $count = "-0-";
+    if (-d $comments_path) {
+        opendir(DIN, $comments_path);
+        my @filenames = grep { /\.txt$/ } readdir(DIN);
+        closedir(DIN);
+        $count = "-".scalar(@filenames)."-";
+    }
+
+    1;
+}
+
+1;
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: dbcomments
+
+=head1 DESCRIPTION
+
+Facilitates comments in the form of a blosxom blog hierarchy.
+
+=head1 ABSTRACT
+
+This plugin supports comments in the form of one blosxom blog
+shadowing another one.  It requires the use of two copies of the
+blosxom script, each configured for a separate blog, or the use of
+a plugin like multiblosxom.
+
+For example, take one blog whose datadir is in "blog/".  Comments for
+this blog will appear in a blog whose datadir is "comments/".  A story
+in the main blog might reside at "blog/one/two/three/hello.txt".  Comments
+will appear under at "comments/one/two/three/hello/".
+
+This plugin has the following config variables:
+
+ # Root dir of comment files
+ $comments_root     = "/www/decafbad.com/data/blosxom/entries/comments";
+ # URL path to published comments
+ $comments_url      = "/comments";
+ # URL path to active blosxom script supporting comments
+ $comments_post_url = "/comments";
+ # Root dir of blog files
+ $blog_root         = "/www/decafbad.com/data/blosxom/entries/blog";
+ # URL path to published blog entries
+ $blog_url          = "/blog";
+
+In templates, the following variables are made available in main weblog stories:
+
+ # Path to reading a comment associated with the current story
+ $dbcomments::url
+ # Path to posting comment form
+ $dbcomments::post_url
+ # Count of comments associated with a main blog post
+ $dbcomments::count
+
+And, when creating a story template for the comments blog, the following
+variables are made available:
+
+ # URL to parent blog entry
+ $dbcomments::parent_url
+ # Title of parent blog entry (or, the story's first line, to be exact)
+ $dbcomments::parent_title
+
+=head1 VERSION
+
+v0.1
+
+=head1 AUTHOR
+
+l.m.orchard <deus_x@pobox.com> http://www.decafbad.com
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports to the author.
+
+=head1 LICENSE
+
+This Blosxom Plug-in
+Copyright 2003, l.m.orchard
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

@@ -1,0 +1,77 @@
+# Blosxom Plugin: randomizer
+# Author(s): Pascal Deschenes 
+# Version: 0.1
+# http://chozmedia.dyndns.org/cgi-bin/blosxom.cgi/O11OO1O/Blosxom/Plugins
+
+package randomizer;
+
+# --- Configurable variables -----
+
+# the location of the text file where the randomization should be apply.
+$random_text_file="/var/www/blosxom/random.dic";
+
+# --------------------------------
+
+sub start
+{
+
+  open (FILE, $random_text_file);
+  @file_content=<FILE>;
+  close FILE;
+
+  $index = int(rand(int(@file_content)));
+  $text = join('', $file_content[$index]);
+  
+  return 1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: randomizer
+
+=head1 SYNOPSIS
+
+Populates $randomizer::text with a random line from a text file. 
+
+Note that multiline random text can be provided using <br/> tag
+
+=head1 VERSION
+
+0.1
+
+=head1 AUTHOR
+ 
+Pascal Deschenes  <pasde@geocities.com>
+
+=head1 SEE ALSO
+
+=head1 BUGS
+
+Submit bug reports and comments to author's email address.
+
+=head1 LICENSE
+
+This Blosxom Plug-in
+Copyright 2004, Pascal Deschenes
+ 
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+ 
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+ 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

@@ -1,0 +1,47 @@
+<!-- The usual story bits -->
+
+<p>
+<a name="$fn"><b>$title</b></a>
+<br />
+$body
+</p>
+
+<!-- A link to the WriteBacks flavour (this flavour) with WriteBack counts -->
+
+<p>
+<a href="$url$path/$fn.writeback">$writeback::count writebacks</a>
+</p>
+
+<!-- TrackBack auto-discovery bits -->
+
+<!--
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+  xmlns:dc="http://purl.org/dc/elements/1.1/"
+  xmlns:trackback="http://madskills.com/public/xml/rss/module/trackback/">
+
+  <rdf:Description
+    rdf:about="$url$path/$fn.$flavour"
+    dc:identifier="$url$path/$fn.$flavour"
+    dc:title="$title"
+    trackback:ping="$url$path/$fn.trackback" />
+
+</rdf:RDF>
+-->
+
+<p><b>writebacks...</b></p>
+
+<!-- WriteBacks for this story -->
+
+<font color="red">$writeback::writeback_response</font>
+
+$writeback::writebacks
+
+<p><b>trackback</b></p>
+
+<!-- The right URL for a TrackBack ping; notice the flavour is trackback -->
+
+<p>TrackBack ping me at:</p>
+
+<p>$url$writeback::trackback_path_and_filename.trackback</p>
+
+

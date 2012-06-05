@@ -1,0 +1,123 @@
+# Blosxom Plugin : recent_awsxom
+# Author(s)      : Nyarla, <thotep@nyarla.net>
+# Version        : 2006-08-15
+# License        : Public Domain
+
+package recent_awsxom;
+
+use strict;
+use DirHandle;
+use FileHandle;
+use File::stat;
+
+# --- configurable variables ---- #
+
+# awsxomプラグインのキャッシュディレクトリ($cachedir)と同じ値を指定する
+my $awsxom_cache_dir = "$blosxom::plugin_state_dir/aws_cache";
+
+# recent_awsxom側で使用したいデフォルトのテンプレートを指定
+my $default_template = "list";
+
+# 表示するアイテムの数
+my $items_num = "5";
+
+# ------------------------------- #
+my @recent_items = ();
+# ------------------------------- #
+sub start {
+    &read_awsxom_cache;
+    return 1;
+}
+
+sub head {
+    my($pkg, $path, $head_ref) = @_;
+    &conv($head_ref);
+    return 1;
+}
+sub story {
+    my($pkg, $path, $fn, $story_ref, $title_ref, $body_ref) = @_;
+    &conv($story_ref);
+    return 1;
+}
+sub foot {
+    my($pkg, $path, $foot_ref) = @_;
+    &conv($foot_ref);
+    return 1;
+}
+# ------------------------------- #
+sub read_awsxom_cache {
+    my %recent_items = (); # $recent_items{$item} = mtime;
+
+    my $dh = DirHandle->new($awsxom_cache_dir);
+    if(defined $dh){
+        foreach my $file ($dh->read){
+            next unless -f "$awsxom_cache_dir/$file";
+            my ($item) = ($file =~ m{^([a-zA-Z0-9]+?)\.xml$});
+            $recent_items{$item} = stat("$awsxom_cache_dir/$file")->mtime
+        }
+        $dh->close;
+    }
+
+    foreach (sort { $recent_items{$b} <=> $recent_items{$a} } keys %recent_items){
+        push @recent_items, $_;
+    }
+}
+
+sub make_recent_list {
+    my $template = shift;
+    my $list     = '';
+
+    $template ||= $default_template;
+
+    my $tmp;
+    if($template ne ''){
+        $tmp = ":$template:";
+    }
+
+    my $count = $items_num;
+
+    foreach my $item (@recent_items){
+        last if ($count <= 0);
+        $list .= "ASIN:$item$tmp\n";
+        $count--;
+    }
+
+    return $list;
+}
+
+sub conv {
+    my $template_ref = shift;
+
+    # $recent_awsxom::template
+    $$template_ref =~ s{\$recent_awsxom::(\w+)}{
+        &make_recent_list($1);
+    }eg;
+
+    # $recent_awsxom
+    $$template_ref =~ s{\$recent_awsxom}{
+        &make_recent_list;
+    }eg;
+}
+
+1;
+__END__
+=head1 NAME
+
+Blosxom Plug-in : recent_awsxom
+
+=head1 AUTHOR
+
+にゃるら、(Nyarla,)
+<thotep@nyarla.net>
+http://nyarla.net/blog/
+
+=head1 SEE ALSO
+
+http://nyarla.net/blog/blosxom-plugin-recent_awsxom
+
+=head1 LICENSE
+
+This source is submitted to the public domain.
+
+see also : http://creativecommons.org/licenses/publicdomain/
+

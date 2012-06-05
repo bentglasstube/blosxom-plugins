@@ -1,0 +1,28 @@
+<p><b>comment...</b></p>
+
+<!-- A simple comments form -->
+
+<form method="POST" action="$url/$path_info">
+
+<table border="0" cellspacing="3" cellpadding="0">
+<tr><td>&nbsp;</td></tr>
+<tr><td>Name:</td><td><input name="name" size="35" value="$writeback::pref_name" /></td></tr>
+<tr><td>URL/Email:</td><td><input name="url" size="35" value="$writeback::pref_url" /> [http://... or mailto:you@wherever] (optional)</td></tr>
+<tr><td>Title:</td><td><input name="title" size="35" /> (optional)</td></tr>
+<tr><td>Comments:</td><td><textarea name="comment" rows="5" cols="60"></textarea></td></tr>
+<tr><td colspan="2">
+<input type="checkbox" name="save_preferences" value="1" checked /> Save my Name and URL/Email for next time
+</td></tr>
+<tr><td colspan="2">
+<input type="hidden" name="plugin" value="writeback" />
+<input type="submit" value="Post" />
+</td></tr>
+</table>
+
+</form>
+
+<!-- The rest of your foot -->
+
+</body>
+
+</html>

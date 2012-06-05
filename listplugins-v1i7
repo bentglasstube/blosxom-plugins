@@ -1,0 +1,42 @@
+# -*-Mode: cperl;-*-
+# Blosxom Plugin: listplugins
+# Author(s): Yu-ji Hosokawa <yu-ji at hoso dot net>
+# Version: $Revision: 1.7 $
+# $Id: listplugins,v 1.7 2004/02/25 09:38:25 yu-ji Exp $
+
+package listplugins;
+use strict;
+use vars qw($value);
+
+$value = '';
+
+###
+# --- Configurable variables -----
+my $separator = ', ';
+my %referTo =
+  (
+   'code_utf8' => 'http://www.hoso.net/~yu-ji/blog/blosxom/code_utf8.html',
+   'category' => 'http://www.hoso.net/~yu-ji/blog/blosxom/category.html',
+   'date_fullname' => 'http://www.blosxom.com/plugins/date/date_fullname.htm',
+   'listplugins' => 'http://www.hoso.net/~yu-ji/blog/blosxom/listplugins.html',
+   'rss' => 'http://www.hoso.net/~yu-ji/blog/blosxom/rss.html',
+   'whoami' => 'http://www.blosxom.com/plugins/author/whoami.htm',
+   'writeback' => 'http://www.blosxom.com/plugins/input/writeback.htm',
+   'yukiwikix' => 'http://www.hoso.net/~yu-ji/blog/blosxom/yukiwiki.html',
+   'paginate' => 'http://www.hoso.net/~yu-ji/blog/blosxom/paginate.html',
+  );
+
+
+sub start {
+    1;
+}
+sub head {
+    my(@plugins) = @blosxom::plugins;
+    $value = join $separator, map {
+	if ($referTo{$_}) {
+	    $_ = '<a href="' . $referTo{$_} . '">' . $_ . '</a>';
+	}
+	$_;
+    } @plugins;
+}
+1;

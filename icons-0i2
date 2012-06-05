@@ -1,0 +1,87 @@
+#Plugin: icons
+#Author(s): Gregory Bair http://mypage.iu.edu~gbair/
+#Version: 0+2
+#Blosxom Home: http://www.raelity.org/apps/blosxom
+#Blosxom plugins: http://www.raelity.org/apps/blosxom/plugins
+
+#More help: http://mypage.iu.edu/~gbair/index.cgi/Blosxom/Plugins/Icons/
+
+package icons;
+
+#------------------- Configurable Options --------------------
+
+#Ok, there's two ways to do this.  Choices: "basic" or "advanced".  Basic
+#is for those who either want to keep their images in one place or who don't
+#have their data directory in a public place.  Advanced requires that the 
+#data directory be under the document root of your server.
+$basic_or_advanced = "basic";
+
+#The basic way: Put your icons in a directory specified by $icons_url.
+#Name your icons according to the category (i.e. for /Computers, you would
+#name it Computers.gif or .png or whatever as indicated by $icons_ext).
+#This way only displays top-level categories.
+$icons_url = "/images";
+$icons_ext = qq!png!;
+
+#The Advanced way: Put your images in your category directories,
+#and name them according to $pub_icon_fn.
+$icon_fn = qq!icon.png!;
+$datadir_url = "";
+#--------------------------------------------------------------
+
+sub start {1;}
+
+sub story {
+	$icons = "";
+        my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+	if ($basic_or_advanced eq "basic")
+	{
+		my @paths = split(/\//, $path);
+
+		$icon_name = $paths[1];
+		if ($icon_name ne "")
+		{$icons = "<img src=\"$icons_url/$icon_name.$icons_ext\" alt=\"$icon_name\" /";}
+	}
+	elsif ($basic_or_advanced eq "advanced")
+	{	
+		#Check to see if image is in directory of the story.
+		if (-e "$blosxom::datadir/$path/$icon_fn")
+		{
+			#image's here!
+			$icons = qq!<img src="$datadir_url$path/$icon_fn">!;
+		}
+		#if it's not there, do this
+		else {
+			#split the path up for easier manipulation.
+			my @paths = split(/\//, $path);
+			#We know it's not in the last one.
+			pop @paths;
+	
+			foreach $i (@paths)
+			{
+				#Join them back up so we can process it.
+				my $npath = join(/\//, @paths);
+				#See if it's here
+				if (-e "$blosxom::datadir/$npath/$icon_fn")
+				{
+					#It's here!
+					$icons = qq!<img src="$datadir_url/$npath/$icon_fn" alt="$npath">!;
+					last;
+				}	
+				else
+				{
+					#It's not here, so remove this directory and keep looking
+					pop @paths;
+				}
+				
+				
+			}
+		}
+	}
+	else{die "icons is misconfigured.  Please check your variables."}
+
+	
+1;
+}
+1;

@@ -1,0 +1,90 @@
+# Bloxsom Plugin:IconSet
+# Author: Fletcher T. Penney
+# Version: 0.2
+
+package iconset;
+
+# --- Configurable variables ----
+
+# Where are your icon image files?
+$logos_url = "/images";
+
+# Where is the icon definition page
+# Note that this is optional
+$icon_file = "$blosxom::datadir/iconlist";
+
+# Is the icons plugin enabled
+$use_icons_plugin = 1;
+
+# -------------------------------
+
+$iconset="";
+
+sub start {
+	open (ICONS, $icon_file);
+	@iconslist = <ICONS>;
+	close ICONS;
+1;
+}
+
+sub story {
+	my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+	$iconset = "";
+	foreach $iconpair (@iconslist) {
+		if ($iconpair =~ /(.*)=(.*)/) {
+			$categ=$1;
+			$icon=$2;
+		$iconset= qq!<img src="$logos_url/$icon" alt="logo">! if ($path =~ /^$categ/i);
+		}
+	}
+
+	if ($$body_ref =~ /<!-- iconset\s*(\S*)\s*-->/i) {
+		$iconset= qq!<img src="$logos_url/$1" alt="logo">! if $1 ne"";
+	}
+
+	if ($use_icons_plugin eq 1) {
+		$icons::icons = $iconset if ($iconset ne "");
+	}
+
+	1;
+}
+
+1;
+
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: iconset
+
+=head1 DESCRIPTION
+
+IconSet allows you to set an icon to be used within a particular story.  Set the $logos_url to the url for your icons.  You then use the <!-- iconset ### --> directive within a story to set an icon to be displayed for that story.  If a default icon is set by the icons plug-in, it will be overridden.
+
+If the icons plugin is present, then you may continue to use the $icons::icons variable.  Otherwise, you can use the $iconset::iconset variable.
+
+The $icon_file allows you to set an icon for any story in a category by using a definitions file.  This allows you to set an icon for any category, whether it is top level or not, without having a world readable datadir.  (The original icons plugin cannot do this.)
+
+The format for iconfile is:
+path=iconfile
+
+and uses regexp's for either expression. So, 
+/computers/blosxom=blosxom.gif will set the icon to blosxom.gif for any file in the computers/blosxom directory, or any of its subdirectories.
+
+If you later defined:
+/computers/blosxom/newstuff=cool.png, then anything in this one subdirectory will have a different icon.  The line that matches last is the one that "sticks."
+
+By using this technique, you can replace the icons plugin altogether by replacing $iconset::iconset in your templates wherever you used to use $icons::icons.  If you do this, then change the $use_icons_plugin variable.
+
+=head1 AUTHOR
+
+Fletcher T. Penney - http://fletcher.freeshell.org
+
+
+=head1 LICENSE
+
+This source is submitted to the public domain.  Feel free to use and modify it.  If you like, a comment in your modified source attributing credit to myself and Gregory Bair for his original work would be appreciated.
+
+THIS SOFTWARE IS PROVIDED AS IS AND WITHOUT ANY WARRANTY OF ANY KIND.  USE AT YOUR OWN RISK!

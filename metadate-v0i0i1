@@ -1,0 +1,222 @@
+# Blosxom Plugin: metadate
+# Author(s): Mark Ivey <zovirl@zovirl.com>
+# Version: 0.0.1
+# Documentation: See the bottom of this file or type: perldoc metadate
+
+package metadate;
+
+# --- Configurable variables -----
+
+# fullpath to the external metadates file (see perldoc for description)
+$external_file = "$blosxom::datadir/external_metadate";
+
+$use_UK_dates = 0;          # Default is mm/dd/yy (US)
+                            # Set to 1 to use dd/mm/yy (UK)
+
+# --------------------------------
+
+use English;
+use File::Basename;
+use Time::Local;
+
+use vars qw( %dirs );
+
+my $debug = 0;   # log debug messages or not?
+
+sub start 
+{
+    return 1;
+}
+
+# FIXME: handle stuff besides just external metadate files
+# FIXME: make the external metadate file optional
+# FIXME: handle both creation date & modification date...
+
+sub filter 
+{
+    # read the external metadates file
+    unless (open(FILE, "< $external_file"))
+    {
+        warn "metadate::filter() couldn't open external file $external_file\n"; 
+        return 0;
+    }
+    
+    while (<FILE>) 
+    {
+        next if (/^\s*#/);  # skip comments
+        if (/(.*)=>(.*)/)
+        {
+            my ($file, $time) = ($1, $2);
+            $file =~ s!/*$!!;               # remove any trailing slashes
+            warn "metadate: $file=>$time\n" if $debug > 0;
+            
+            $time = parsedate($time);
+            
+            # check %files, then %others, then check for a directory
+            if (exists $blosxom::files{$file})
+            {
+                $blosxom::files{$file} = $time;
+            }
+            elsif (exists $blosxom::others{$file})
+            {
+                $blosxom::others{$file} = $time;
+            }
+            elsif (-d "$file")
+            {
+                $dirs{$file} = $time;
+            }
+        }
+    }
+    close(FILE);
+
+    return 1;
+}
+
+
+# parsedate() taken from Fletcher T. Penney's entriescache plugin
+# <http://www.blosxom.com/plugins/indexing/entries_cache.htm> 
+sub parsedate 
+{
+	my ($datestring) = @_;
+	#warn "Parsing $datestring\n";
+	
+	# Possible formatting
+	# Month can be 3 letter abbreviation or full name (in English)
+	# Time must be hh:mm or hh:mm:ss  in 24 hour format
+	# Year must be yyyy
+	# The remaining 1 or 2 digits are treated as date
+	# ie: May 25 2003 18:40 
+	# order is not important as long as pieces are there
+		
+	# Convert the datestring to a time() format
+
+	# Find "Shorthand" Date
+	if ( $datestring =~ /\d\d?\/\d\d?\/\d\d\d?\d?/) {
+		if ( $use_UK_dates eq 0) {
+			# Use US Formatting
+			$datestring =~ s/(\d\d?)\/(\d\d?)\/(\d\d\d?\d?)//;
+			$mon = $1 - 1;
+			$day = $2;
+			$year = $3;
+		} else {
+			# Use UK Formatting
+			$datestring =~ s/(\d\d?)\/(\d\d?)\/(\d\d\d?\d?)//;
+			$mon = $2 - 1;
+			$day = $1;
+			$year = $3;
+		}
+		
+		# Now, clean up year if 2 digit
+		# You may change the 70 to whatever cutoff you like
+		$year += 2000 if ($year < 70 );
+		$year += 1900 if ($year < 100);
+	}
+	
+	# Find Month
+	$mon = 0 if ($datestring =~ s/(Jan|January)//i);
+	$mon = 1 if ($datestring =~ s/(Feb|February)//i);
+	$mon = 2 if ($datestring =~ s/(Mar|March)//i);
+	$mon = 3 if ($datestring =~ s/(Apr|April)//i);
+	$mon = 4 if ($datestring =~ s/(May)//i);
+	$mon = 5 if ($datestring =~ s/(Jun|June)//i);
+	$mon = 6 if ($datestring =~ s/(Jul|July)//i);
+	$mon = 7 if ($datestring =~ s/(Aug|August)//i);
+	$mon = 8 if ($datestring =~ s/(Sep|September)//i);
+	$mon = 9 if ($datestring =~ s/(Oct|October)//i);
+	$mon = 10 if ($datestring =~ s/(Nov|November)//i);
+	$mon = 11 if ($datestring =~ s/(Dec|December)//i);
+
+	# Find Time
+	if ($datestring =~ s/(\d\d?):(\d\d)(:\d\d)?//) {
+		$hour = $1;
+		$min = $2;
+		$sec = $3;
+	}
+	
+	if ($datestring =~ s/(\d\d\d\d)//) {
+		$year = $1;
+	}
+	
+	if ($datestring =~ s/(\d\d?)//) {
+		$day = $1;
+	}
+	
+	return timelocal($sec,$min,$hour,$day,$mon,$year);
+	
+}
+
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: metadate
+
+=head1 SYNOPSIS
+
+Handles meta tags related to dates.  Currently only does
+external meta-creation_dates.
+
+=head1 VERSION
+
+0.0.1
+
+=head1 AUTHOR
+
+Mark Ivey <zovirl@zovirl.com>, http://zovirl.com
+
+=head1 DESCRIPTION
+
+metadate currently provides a way to save metadates externally from a file.
+This is most useful for non-story files, such as pictures or categories which
+can't contain metadates internally.
+
+The file $external_file should contain entries in this format:
+
+ # comment lines start with a "#"
+ /home/user/blosxom/software=>11/17/2003 22:45
+ /home/user/blosxom/software/screenshot.png=>11/18/2003 22:50
+ /home/user/blosxom/software/static_file.patch.asc=>11/18/2003 22:50
+
+metadates stores dates in %blosxom::files (for story files), %blosxom::others
+(for non-story files), or %metadate::dirs (for directories).
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+parsedate() taken from Fletcher T. Penney's entriescache plugin:
+http://www.blosxom.com/plugins/indexing/entries_cache.htm
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+metadate Blosxom Plugin Copyright 2003, Mark Ivey
+
+Portions Copyright 2003, Fletcher Penney
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

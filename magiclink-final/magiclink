@@ -1,0 +1,111 @@
+# Blosxom Plugin: magiclink
+# Author: Bruce Alderson
+# Version: 2003-11-24 (v0.6)
+# License: LGPL            
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/blosxom
+
+# magiclink
+#
+# An automatic link-formatter that uses a mostly natural format.
+# Markup is inline, is easy to remember, and reads well in a 
+# text file.  Both magical (guessed) and normal linking is
+# supported.  Magical linking works by using a keyword and 
+# constructing a link from an dictionary file, and links using
+# URLs are also possible.  
+#
+# This version also adds the ability to link images using a 
+# similar syntax.  The name of the thumbnail is guessed from
+# the image name (name.thumbnail.type).
+#
+# Usage Examples:
+# 
+#  "Sponge Bob"[google]    Builds a link to a google search for "Sponge Bob"
+#  "Test"[folodoc]         Builds a link to a FOLDOC search for "Test"
+#  "Site"[http://site.org] Builds a link to site.org
+#  "Local"[/dl/file]       A relative link for a local file
+#
+# Image links:
+#   [name.jpg:right] A right-aligned image (with a name.thumbnail.jpg thumb)
+#   [name.jpg:left]  A left-aligned image
+#   [name.png]       A default-aligned image
+#
+#
+package magiclink;
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# Configuration Section
+
+use lib "./plugins"; # finds configuration library
+use magicConf; 
+
+# Link-dictionary file name
+my $cfg_file = 'plugins/magiclink.conf';
+
+# configuration for images
+
+$image_root     = "/images/";       # the base image path (from webserver pov)
+$default_align  = 'left';           # the default image alignment
+
+#
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+my $sources;
+
+sub start {
+    $sources = magicConf::load($cfg_file);
+    warn "MagicLink: Could not find $cfg_file" unless -f $cfg_file;
+    warn "MagicLink: Configuration not loaded" unless defined $sources;
+  1;
+}
+
+sub magic_url {
+    my ($terms, $service) = @_;
+  
+    # service not found, return something sane
+    return "\"$terms\"[$service]" 
+        if (!exists($sources->{$service})); 
+    
+    # get config for this service
+    my ($url, $ws, $q, $tmpl, $img) = 
+        ($sources->{$service}{url}, $sources->{$service}{ws}, $sources->{$service}{q}, 
+         $sources->{$service}{tmpl}, $sources->{$service}{img});
+        
+    my $pound = $sources->{$service}{p} || '';
+
+    # build url
+    $url =~ s/%terms%/$q$terms$q/g;
+    $url =~ s/\s/$ws/g;
+    $url =~ s/\#/$pound/g;
+    
+
+    # no user-defined template, use default
+    return "<a href=\"$url\">$terms</a>"
+        unless defined $tmpl and length $tmpl; 
+        
+    # populate user-defined template    
+    $img =~ s/%terms%/$terms/g;
+    $tmpl =~ s/%url%/$url/g;
+    $tmpl =~ s/%img%/$img/g;
+    $tmpl =~ s/%terms%/$terms/g;
+
+    return $tmpl;
+}
+
+sub story {
+ my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    
+    # magic urls "term term"[service]
+    $$body_ref =~ s/"([^\"]+)"\[([^\]]+)\]/magic_url($1,$2)/ges;
+
+    # manual urls "term term"[http://theurl.com] (with or without http)
+    $$body_ref =~ s/"([^\"]+)"\[([^\]]+)\]/<a href=\"$2\">$1<\/a>/gs;
+
+    # image directives
+    $$body_ref =~ s/\[([^\.]+)\.(jpg|jpeg|gif|png):([^\]]+)\]/ <a href="$image_root$1.$2"><img src="$image_root$1.thumbnail.$2" align="$3" alt="[$1]"\/><\/a>/gs;
+    $$body_ref =~ s/\[([^\.]+)\.(jpg|jpeg|gif|png)\]/ <a href="$image_root$1.$2"><img src="$image_root$1.thumbnail.$2" align="left" alt="[$1]"\/><\/a>/gs;
+ 1;
+}
+
+
+1;
+

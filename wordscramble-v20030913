@@ -1,0 +1,60 @@
+# Blosxom Plugin: wordscramble
+# Author: Nelson Minar <nelson@monkey.org>
+# Version: 20030913
+# http://www.nelson.monkey.org/~nelson/weblog/
+# License: Public Domain
+
+# Blosxom plugin that scrambles the letters in a word. Only activates
+# if the CGI parameter scramble=something is part of the URL. I won't
+# support this code - please don't write me for help making it run.
+
+# The implementation is horribly hackish and inefficient - uses a
+# Python function to do the text processing (I hate Perl). There is
+# one clveer hack, though - Python inlining is only invoked if the
+# plugin is active, avoiding substantial overhead otherwise.
+# For more info on Python inlining, see Rael's inline_python demo plugin
+#   http://www.blosxom.com/plugins/programming/inline_python.htm
+
+package wordscramble;
+
+use CGI qw/:standard/;
+
+# Only activate if scramble=something is passed as a CGI parameter
+sub start {
+  if (!param('scramble')) {
+      return 0;
+  } else {
+      use Inline Python => Config => DIRECTORY => ($blosxom::plugin_state_dir . '/wordscramble');
+      Inline->bind(Python => $pythonCode);
+  }
+}
+
+sub story {
+  my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+  $$title_ref = scramble($$title_ref);
+  $$body_ref = scramble($$body_ref);
+  1;
+}
+
+$pythonCode = <<'END';
+def scramble(s):
+    "Scramble the letters in each word of input. Preserve HTML and punctuation"
+    import re, random, sys
+    pat = re.compile(r'(<[^>]+>|\w+|&[^;]+;)([^\w<>&]*)')
+    text = pat.findall(s)
+    r = []
+    for t in text:
+        if t[0].startswith('<') or t[0].startswith('&'):
+            r.append(t[0])
+        else:
+            r.append(t[0][0])
+            chars = [c for c in t[0][1:-1]]
+            random.shuffle(chars)
+            r.extend(chars)
+            if len(t[0]) > 1:
+               r.extend(t[0][-1])
+        r.append(t[1])
+    return ''.join(r)
+END
+
+1;

@@ -1,0 +1,151 @@
+# Blosxom Plugin: graffiti
+# Author(s): Eric Davis <edavis <at> foobargeek <dot> com>
+# Version: $Id: graffiti,v 1.1 2004/04/23 20:58:11 edavis Exp $
+# Documentation: See the bottom of this file or type: perldoc graffiti
+
+package graffiti;
+
+# --- Configurable variables -----
+
+# set this to the file name used as the graffiti cache
+my $cachefile = "$blosxom::plugin_state_dir/graffiti.dat";
+
+# string separator inserted between entries in the text box
+my $entry_separator = "\n";
+
+# size of the text box
+my $text_rows = "10";
+my $text_cols = "16";
+
+# size of the entry box
+my $entry_rows = "3";
+my $entry_cols = "16";
+
+# --------------------------------
+
+use CGI qw/:standard/;
+
+$display; # $graffiti::display
+
+sub start
+{
+    my $new_entry = param('graffiti_entry');
+    my $entry = '';
+    my @entries;
+
+    $display .= qq{<div class="graffiti">\n};
+    $display .= qq{<form class="graffiti_form" method="POST" action="$blosxom::url/$blosxom::path_info">\n};
+    $display .= qq{<textarea class="graffiti_text" readonly cols="$text_cols" rows="$text_rows">\n};
+
+    # open the $cachefile for reading/writing(append) and create if doesn't exist
+    open(GRAFFITI, "+>>$cachefile");
+
+    if ($new_entry)
+    {
+        print(GRAFFITI "$new_entry\n");
+        print(GRAFFITI "-----\n");
+    }
+
+    seek(GRAFFITI, 0, 0); # seek to the beginning of the cache file
+
+    while ($line = <GRAFFITI>)
+    {
+        if ($line =~ /^\s$/)
+        {
+            # skip empty lines
+            next;
+        }
+        elsif ($line =~ /^-----\s$/)
+        {
+            push(@entries, $entry);
+            $entry = '';
+        }
+        else
+        {
+            $entry .= qq{$line};
+        }
+    }
+
+    foreach (reverse(@entries))
+    {
+        $display .= qq{$_};
+        $display .= qq{$entry_separator};
+    }
+
+    close(GRAFFITI);
+
+    $display .= qq{</textarea>\n};
+    $display .= qq{<textarea class="graffiti_entry" name="graffiti_entry" cols="$entry_cols" rows="$entry_rows">\n};
+    $display .= qq{</textarea>\n};
+    $display .= qq{<input class="graffiti_submit" type="submit" value="Submit" />\n};
+    $display .= qq{</form>\n};
+
+    $display .= qq{</div>\n};
+
+    return 1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: graffiti
+
+=head1 DESCRIPTION
+
+This plug-in provides a simple text form that allows visitors to your site to
+add a brief comment, flame, kudo, splat, whatever.  A B<$graffiti::display>
+variable is provided that contains two text boxes and a submit button.  One box
+is used for entering in new text comments, and another that shows all
+previously entered text comments.  The graffiti display can be modified via the
+following configuration variables:
+
+B<$entry_separator>: a string that is shown between all graffiti entries
+in the text box
+
+B<$text_rows>: the number of rows in the graffiti text area
+
+B<$text_cols>: the number of columns in the graffiti text area
+
+B<$entry_rows>: the number of rows in the graffiti new entry text area
+
+B<$entry_rows>: the number of columns in the graffiti new entry text area
+
+B<$cachefile>: the location of the cache file holding all the graffiti text
+
+The following class identifiers are used for CSS control of the graffiti
+display:
+
+B<graffiti>: the graffiti output as a whole
+
+B<graffiti_form>: the graffiti form - text boxes and submit button
+
+B<graffiti_text>: the graffiti text area
+
+B<graffiti_entry>: the graffiti new entry text area
+
+B<graffiti_submit>: the graffiti submit button
+
+=head1 VERSION
+
+1.1    initial implementation
+
+=head1 VERSION HISTORY
+
+1.1    initial implementation
+
+=head1 AUTHORS
+
+Eric Davis <edavis <at> foobargeek <dot> com> http://www.foobargeek.com
+
+=head1 LICENSE
+
+This source is submitted to the public domain.  Feel free to use and modify it.
+If you like, a comment in your modified source attributing credit for my
+original work would be appreciated.
+
+THIS SOFTWARE IS PROVIDED AS IS AND WITHOUT ANY WARRANTY OF ANY KIND.  USE AT
+YOUR OWN RISK!
+

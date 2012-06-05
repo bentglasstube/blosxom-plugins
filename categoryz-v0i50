@@ -1,0 +1,221 @@
+# Blosxom Plugin: categoryz
+# Author(s): Stu MacKenzie
+#            based on categorytree plugin (v1.7) by Eric Davis
+# Version: 0.50
+# Documentation: See the bottom of this file or type: perldoc categoryz
+
+package categoryz;
+
+# = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
+#
+#  Configuration Section
+#
+# = = = = = = = = = = = = = = = =
+#
+# Style bits --
+#       The directory structure of your entries is displayed
+#       as a series of nested unordered lists. To control the
+#       appearance of these lists, you'll probably want to use
+#       CSS definitions. The $style_bits variable holds style
+#       info you want to include in the <ul> tags (or none).
+#
+#       For example, the plugin comes preconfigured to assign
+#       each list to the "categoryz" class, with:
+#           my $style_bits = qq{class="categoryz"};
+#       You could also supply your own class name with:
+#           my $style_bits = qq{class="myliststyle"};
+#       Or you could supply an "inline" style definition with:
+#           my $style_bits = qq{style="margin:0px 0px 0px 1em;list-style-type:disc;"};
+#       Or you could supply no style info:
+#           my $style_bits = qq{};
+#       Etc.
+#
+#      Enter your list style info between the {} below:
+  my $list_style_bits = qq{class="categoryz"};
+#      Enter your list item style info between the {} below:
+  my $item_style_bits = qq{class="categoryz_item"};
+#
+#
+# Entries counts --
+#      Should each category item show the number of entries it contains?
+#       0 = no; 1 = yes
+  my $show_counts = 1;
+#
+#      What, if any, characters should preceed/follow the count?
+#       Note: the count will *always* be preceeded by a space,
+#       even if $pre_count is empty
+#      Enter characters between the {} below:
+#       (To use braces, enter "\{" and "\}" -- no quotes)
+  my $pre_count_bits  = qq{(};
+  my $post_count_bits = qq{)};
+#
+#
+# Category view flavour --
+#       What flavour should be used in category links?
+#       (Leave blank to use the current blosxom flavour)
+  my $cat_flavour = qq{}
+        unless defined $cat_flavour;
+#
+# = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
+
+$display;                           # call results with: $categoryz::display
+
+use File::Basename;
+
+sub start {
+  return 1;
+}
+
+# if there's something in $list_style_bits, prepend a single space
+$list_style_bits =~ s/\s+//;  $item_style_bits =~ s/\s+//;
+$list_style_bits =~ s/^([^ ])/ $1/;  $item_style_bits =~ s/^([^ ])/ $1/;
+
+#$cat_flavour and $cat_flavour =~ s|^|/index.|;
+$cat_flavour and $cat_flavour =~ s|^|?flav=|;
+
+sub filter {
+  my ($pkg, $files_ref) = @_;
+  my %count;
+
+  foreach (keys %$files_ref) {
+    s/$blosxom::datadir//;          # trim leading datadir
+    $tmp = dirname($_);             # trim trailing filename
+    while ($tmp !~ m/^\/$/) {       # count and remember each item in path
+#      if (exists($count{$tmp})) { $count{$tmp} += 1 }
+#      else { $count{$tmp} = 1 }
+      $count{$tmp}++;
+      $tmp = dirname($tmp);
+    }
+  }
+  @tree = sort keys %count;
+
+  $level = 0;
+  $new_level = $level;
+  $list_tag = 'ul';
+  $display .= "<$list_tag$list_style_bits>\n";
+  $item_tag = 'li';
+  
+  foreach $dir (@tree) {
+    $ref = $dir;
+    $dir =~  s!^/!!;
+    $dir =~ s!(.+/)*!!;
+    $new_level = $1 =~ tr!/!!;
+    
+    if ($new_level > $level) {                 # open a new list, or
+      for (1..($new_level - $level)) {
+        $display .= "<$list_tag$list_style_bits>\n";
+      }
+      $level = $new_level;
+    } elsif ($new_level < $level) {            # close the current list, or
+      for (1..($level - $new_level)) {
+        $display .= "</$list_tag>\n";
+      }
+      $level = $new_level;
+    }                                          # add a new list item
+    $display .= qq'<$item_tag$item_style_bits><a href="$blosxom::url$ref$cat_flavour">$dir</a>';
+    $show_counts and $display .= " $pre_count_bits$count{$ref}$post_count_bits";
+    $display .= qq'\n';
+
+  }
+  
+  for (0..$level) {                            # close any open lists
+    $display .= "</$list_tag>\n";
+  }
+
+  1;
+}
+
+1;
+
+__END__
+
+
+=head1 NAME
+
+Blosxom Plug-in: categoryz
+
+
+=head1 SYNOPSIS
+
+categoryz produces a hierarchical tree of all the directories 
+("categories") in your datadir that contain entries; the tree is 
+composed of nested unordered lists. Each list item is a link to 
+that category's view. Optionally, each directory item can display 
+the number of entries it contains.
+
+
+=head1 INSTALLATION
+
+Open the "categoryz" file and answer the questions in CONFIGURATION 
+SECTION. Upload or drop the "categoryz" file into your blosxom plugins 
+folder. Blog on.
+
+
+=head1 CONFIGURATION
+
+The plugin comes preconfigured for most blosxom installs; just drop it 
+into your plugins folder and blog on. The following values can be changed 
+to alter categoryz's behavior:
+
+Style bits -- as shipped, categoryz assigns its lists and list items 
+to the "categoryz" and "categoryz_item" CSS classes, respectively. 
+These assignments can be changed to whatever you wish, including empty.
+
+Entries counts -- as shipped, the plugin shows the number of entries 
+(the count) for each category list item; each count is surrounded by 
+parentheses. To suppress the count, set $show_counts to 0 (zero). To 
+change the characters that surround the count, enter values into the 
+$pre_count_bits and $post_count_bits variables.
+
+Category view flavour -- as shipped, the category URLs composed by the 
+plugin contain no flavour information; whatever flavour is specified in 
+blosxom's configuration section or by the config plugin will be used 
+when a category view is opened. To specify a flavour of your choice for 
+category views, enter it into the $cat_flavour variable. $cat_flavour is 
+available to the config plugin.
+
+(Category view flavour is set by setting the "flav" parameter in URLs, 
+as in "/category?flav=flavour". If you dig around in the code, you'll 
+find a spot to use "/index.flavour" instead.)
+
+
+=head1 USAGE
+
+Add "$categoryz::display" (no quotes) to a head or foot flavour to 
+display the list generated by the plugin. To take advantage of the CSS 
+class identifiers "categoryz" and "categoryz_item" you will, of course, 
+have to add definitions to your style sheet or head flavour. 
+
+For the most-complete listing of your blog's categories, the plugin 
+should run as early as possible. To accurately reflect modifications 
+to your entries list, run the plugin as late as possible.
+
+
+=head1 NOTES
+
+Inspired by a post to the blosxom list from Steph Smith; adapted from the 
+"categorytree" plugin v1.7 by Eric Davis.
+
+
+=head1 LICENSE
+
+this Blosxom Plug-in
+Copyright 2005, Stu MacKenzie  (S2_Mac, HyperSTUff)
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

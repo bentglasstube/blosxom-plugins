@@ -1,0 +1,218 @@
+# Blosxom Plugin: rellink
+# Author(s): Terrence Ezrol <terry@ezrol.com>
+# version 0.02
+# Short Description: Allows relative links/images, and special
+#                    links in Blosxom pages, these will be made
+#                    absolute
+
+package rellink;
+
+# spacial url types, format type -> "Base URL" 
+# allows $type:<keyword> to become $BaseURL$keyword
+# please note url types may include [a-zA-Z0-9] and are case
+# sensitive
+
+my %urltypes = (  google => "http://www.google.com/search?sourceid=mozclient&ie=utf-8&oe=utf-8&q=" );
+
+#this built in type allows for google: links
+#example: <a href="google:term">Search for TERM</a>
+#will be converted into the google search for "term"
+# "http://www.google.com/search?sourceid=mozclient&ie=utf-8&oe=utf-8&q=term"
+
+#----------------------------------------------------------------
+# The actual module code
+#----------------------------------------------------------------
+
+#Start.. just return true
+
+sub start{
+    return 1;
+}
+
+#Story.. search the story for links and images
+
+sub story {
+    my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+    #correct all links
+    $$body_ref =~ s/(\<[Aa]\s.*?\>)/&_linktag($1,$path)/eg;
+    #correct all images
+    $$body_ref =~ s/(\<[Ii][Mm][Gg]\s.*?\>)/&_imgtag($1,$path)/eg;
+    
+}
+
+#_linktag.. update the link tag
+sub _linktag{
+    my ($tag,$path) = @_;
+
+    #find url, create/fix new version, and return corrected tag
+    if($tag =~ /[Hh][Rr][Ee][Ff]\=("(.*?)"|'(.*?)')/){
+        my $URL = $2 || $3;
+        my $tmpl_start=$`;
+        my $tmpl_end=$';
+        my $URL=_fix(_genurl($URL,$path));
+        
+        return "$tmpl_start href=\"$URL\"$tmpl_end";
+    }
+    #no url found.. return current tag
+    return $tag;
+}
+
+#_imgtag.. update the image tag
+sub _imgtag{
+    my($tag,$path)=@_;
+
+    #find url, create/fix new version, and return corrected tag
+    if($tag =~ /[Ss][Rr][Cc]\=("(.*?)"|'(.*?)')/){
+        my $URL = $2 || $3;
+        my $tmpl_start=$`;
+        my $tmpl_end=$';
+        my $URL=_fix(_genurl($URL,$path));
+
+        return "$tmpl_start src=\"$URL\"$tmpl_end";
+    }
+    #no url found.. return current tag
+    return $tag;
+}
+
+#_genurl.. Generate the new URL
+sub _genurl{
+    my ($URL,$path)=@_;
+
+    if($URL =~ /^([a-zA-Z0-9]*?)\:(.*)$/){
+        #a url type eg http: or google:
+        my $t=$1;
+        my $key=$2;
+        
+        if($urltypes{"$t"}){
+	    #we have a prefix for this type
+            return "" . $urltypes{"$t"} . $key;
+        }
+        #if we don't know the url type, assume client does
+        #(this is how http: or mailto: work out of the box
+        return $URL; # standard URL
+    }
+    if($URL =~ m!^//(.*)$!){
+        #url starts with // should be relative to the base of 
+        #this blog
+        $blogent = $1;
+        return "" . $blosxom::url . "/" . $blogent;
+    }
+    if($URL =~ m!^/(.*)$!){
+        #url starts with / .. relative to this host
+        $localent = $1;
+        if($blosxom::url =~ /^http:\/\/(.*?)\//){
+            #webhost extracted from $blosxom::url
+            return "http://" . $1 . "/" . $localent; 
+        }
+    }
+    #url none of the above, relative document location
+    return "" . $blosxom::url . $path . "/" . $URL;
+}
+
+#_fix.. fix url so we generate proper html
+sub _fix {
+    my ($URL)=@_;
+
+    #simply remove the '&' and make them &amp;
+
+    $URL =~ s/\&/\&amp;/g;
+
+    #also to be nice we can convert quotes
+    $URL =~ s/\"/%22/g;
+
+    return $URL;
+}
+
+1
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: rellink
+
+=head1 SYNOPSIS
+
+This is a plugin for Blosxom that generates absolute links
+for relative, and special short cuts 
+
+The plugin converts the following links to absolute:
+
+"//" +blog path 
+ from <a href="//<blog path>">
+ to   <a href="http://<domain>/<path to blog>/<blog path>">
+
+"/" +site path
+ from <a href="/<site path>">
+ to   <a href="http://<domain>/<site path>
+
+local path
+ from <a href="<relitive path>">
+ to   <a href="http://<domain>/<path to blog>/<path to cur entry>/< relative path>">
+
+The plugin also will add a prefix to know types
+the google: type is built in so they the url "google:term"
+searches for "term".
+
+To create your own types modify the urltypes hash at the beginning
+of the code
+
+The last feature of this plugin is attempts to convert links to 
+proper HTML, so far this includes converting '&' to '&amp;' within
+the URL
+
+=head1 VERSION
+
+v0.02
+
+=head1 AUTHOR
+
+Terrence Ezrol <terry@ezrol.com>
+
+=head1 ALSO SEE
+
+rellink: http://devnull.name/blog/blosxom/rellink
+
+Blosxom: http://www.blosxom.com/
+
+=head1 BUGS
+
+If you find a bug in this plugin, please goto the plugins
+website for information on contacting me.
+
+http://devnull.name/blog/bloxom/rellink
+
+=head1 LICENSE
+
+
+=head2 RELLINK:
+
+rellink 
+Copyright 2004, Terrence Ezrol
+
+Permission is hereby granted, free of charge, to any person 
+obtaining a copy of this software and associated documentation 
+files (the "Software"), to deal in the Software without 
+restriction, including without limitation the rights to use, 
+copy, modify, merge, publish, distribute, sublicense, and/or 
+sell copies of the Software, and to permit persons to whom the 
+Software is furnished to do so, subject to the following 
+conditions:
+
+The above copyright notice and this permission notice shall be 
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, 
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES 
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND 
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT 
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, 
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING 
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR 
+OTHER DEALINGS IN THE SOFTWARE.
+
+=head2 BLOSXOM
+
+For licensing information on Blosxom please goto
+http://www.blosxom.com/license.html

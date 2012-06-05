@@ -1,0 +1,32 @@
+# Plugin name: sort_by_name
+# Author: Jacob Kaplan-Moss <jacob@jacobian.org>
+# Version: 6-Apr-2003
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+# Documentation:
+# This is a pretty simple plugin; it simply sorts your entries by 
+# filename
+
+package sort_by_name;
+
+# --- Configurable variables -----
+
+# (none)
+
+# --------------------------------
+
+use File::Basename;
+
+sub start {
+    1;
+}
+
+sub sort {
+    return sub {
+        my($files_ref) = @_;
+        sort { basename($a) cmp basename($b) }keys %$files_ref;
+    };
+}
+
+1;
+

@@ -1,0 +1,119 @@
+# Blosxom Plugin: toc                                         
+# Author: Gregor Rayman <rayman@grayman.de>
+# Version: 0.1
+# Revision: $Id: toc,v 1.2 2004/02/26 19:58:03 gra Exp $
+
+
+package toc;
+
+# --- Configuration Variables ---
+
+# String which will be replaced by the table of contents
+my $toc_split = qr/<!-- toc -->/;
+
+# Which element marks the header of the chapters?
+my $toc_chapter_element = "h3";
+
+# This will prefix the chapters' headers
+my $toc_chapter_prefix = q:" ":;
+
+# Contents of the anchor of chapters prefix
+my $toc_anchor = q:"${chap}.":;
+
+# Prefix of the table of contents
+my $toc_prefix = q"<table class='PageTOC' cellpadding='3px' cellspacing='0'><tr><th align='left'>Table of Contents</th></tr>";
+
+# Line for each chapter will be inserted into the TOC 
+# Each chapter will have an anchor named #toc_${story_num}_${chap}
+my $toc_line = q:"<tr><td><a href='#toc_${story_num}_${chap}'>${chap}. $2</a></td></tr>\n":;
+
+# Suffix of the table of contents
+my $toc_suffix = "</table>\n"; 
+
+
+# ----------------------------------------------------------------------
+
+use FileHandle;
+use CGI;
+
+my $story_num = 0;
+
+sub start {
+  return 1;
+}
+
+sub story {
+  my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+  
+  my $text;
+  ($$body_ref, $text) = split $toc_split, $$body_ref, 2;
+  
+  if ($text) {
+	  my $toc = "";
+	  my $chap = 0;
+	  
+	  $text =~ s:<$toc_chapter_element\s*(.*?)>(.*?)</$toc_chapter_element>:($chap+=1,
+	             $toc .= eval($toc_line),
+	             "<$toc_chapter_element $1><a name='toc_${story_num}_${chap}' href='#TOC${story_num}'>" . 
+	             eval($toc_anchor) . "</a>" .
+	             eval($toc_chapter_prefix) . "$2</$toc_chapter_element>"):ego;
+	  if ($toc) {
+	    $$body_ref .= "<a name='TOC${story_num}'></a>" . $toc_prefix . $toc . $toc_suffix . $text;
+	  } else {
+	    $$body_ref .= text;
+	  }
+	}
+
+  $story_num += 1;
+  return 1;
+}
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: toc
+
+=head1 SYNOPSIS
+
+Creates a table of contents generated from headings.
+
+The table of contents will be generated only if the story
+contains string $toc_split and only from headers below
+$toc_split. 
+
+If there are no headers (element $toc_chapter_element), then 
+no table of context will be generated.
+
+=head1 AUTHOR
+
+Gregor Rayman  <rayman@grayman.de>, http://www.grayman.de/
+
+=head1 BUGS
+
+Address bug reports and comments to me
+[mailto:rayman@grayman.de].
+
+=head1 LICENSE
+
+Blosxom and this Blosxom Plug-in
+Copyright 2003, Gregor Rayman 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

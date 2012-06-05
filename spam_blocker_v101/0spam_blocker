@@ -1,0 +1,561 @@
+# Blosxom Plugin: spam_blocker
+# Author:         color99
+# Version:        1.01
+# Date:           2006.02.02
+
+# blosxom.cgiと同じディレクトリに、my_cript.plを設置する事
+
+package spam_blocker;
+
+use strict;
+use CGI::Carp qw(fatalsToBrowser);       #エラー時にはブラウザへ表示する
+use CGI qw/:standard/;
+use vars qw/$sb_error_code $sb_last_info $sb_last_info_ref $sb_pwd/;
+
+# --- Configurable variables -----------
+# 動作設定  0: 無効, 1: 有効
+my %switch = (
+#-- check of posted comment --       < 13 check >
+  'r'        => 1, # '1' referrer check
+  'c-l'      => 1, # '1' language check
+  'ae'       => 0, # '0' accept encoding check
+  'c-dp'     => 0, # '0' dynamic password check
+  'c-cp'     => 0, # '0' continuous posting check
+  'c-a'      => 0, # '0' ascii check
+  'c-nc'     => 1, # '1' no comment check
+  'c-ua'     => 1, # '1' user agent check
+  'c-nu'     => 0, # '0' no user agent check
+  'c-nd'     => 0, # '0' no domain check, need gethostbyaddr function
+                   #     valid when $feedburner_timeout is not set
+  'c-td'     => 0, # '0' top level domain check, need gethostbyaddr function
+                   #     valid when $feedburner_timeout is not set          
+  'c-at'     => 1, # '1' a tag check
+  'c-w'      => 1, # '1' inhibit word check
+#-- check of posted trackback --     < 12 check >
+  't-l'      => 1, # '1' language check for trackback
+  't-l_ua'   => 1, # '1' language and user agent check --- conbination check
+  't-dp'     => 0, # '0' dynamic password check
+  't-cp'     => 0, # '0' continuous posting check
+  't-a'      => 0, # '0' ascii check
+  't-nc'     => 1, # '1' no comment check
+  't-ua'     => 1, # '1' user agent check
+  't-nu'     => 0, # '0' no user agent check
+  't-nd'     => 0, # '0' no domain check, need gethostbyaddr function
+                   #     valid when $feedburner_timeout is not set
+  't-td'     => 0, # '0' top level domain check, need gethostbyaddr function
+                   #     valid when $feedburner_timeout is not set
+  't-at'     => 1, # '1' a tag check
+  't-w'      => 1, # '1' inhibit word check
+#-- check of non-posted referrer --  < 5 check >  valid when referrer = 1
+  'r-ua'     => 1, # '1' user agent check
+  'r-nu'     => 0, # '0' no user agent check
+  'r-nd'     => 0, # '0' no domain check, need gethostbyaddr function
+                   #     valid when $feedburner_timeout is not set
+  'r-td'     => 0, # '0' top level domain check, need gethostbyaddr function
+                   #     valid when $feedburner_timeout is not set
+  'r-w'      => 1, # '1' inhibit word check     
+#-- fucntion --
+  'referrer' => 0, # '0' non-posted referrer check function
+  'logger'   => 0, # '0' log recording function  
+  'block'    => 1  # '1' spam block function for comment and trackback
+);
+# 設定無しでプラグインに放り込むだけでスパム対策させるために、デフォルトでは
+# パスワード・ドメイン、リファラチェック、ログ記録は無効
+# デフォルトでは海外からの投稿を許可する為に、リファラ・ランゲージチェックは無効
+my $disp_charset  = 'UTF-8'; # 文字コード UTF-8, Shift_JIS, EUC-JPより選択
+# @inh_wordは禁止ワードチェックに使う禁止ワードを" "(半角スペース)で区切りながら指定します
+# online-と'-'までを禁止ワードとする事で、onlineは禁止ワードになりません。
+my @inh_word = qw(
+shemalestate extreme-tit-torture lol.to/ money.do.nu home.ripway.com www.6server.com 
+www.radiovoyeur.com www.weblog.ro www.myjavaserver.com buycialis ringtones buyviagra 
+cheap.lookscool.com phenterminebuy.webrally.net squirting.com 
+lesbians.com play.com hentai.com twinks.com busty.com yaoi.com amateurs.com 
+); # casino, drug, ?, money, sex, torture, ?
+my @inh_word_add = qw(
+online casinos poker cialis 
+viagra valium 
+ringtones ringtonea phentermine 
+credit buy free 
+penis enlargement pills 
+);
+my $add_lr = '-'; my $add_lr2 = '_'; my $add_l = '='; # (default "-","_","=")
+# ---- option 1 ------------------------
+# 選択ホワイトリスト機能 － 特定のＩＰアドレスに対して特定のスパムチェック機能を対象外にする
+my ($inh_r,$inh_l,$inh_ae,$inh_a,$inh_nu,$inh_nd,$inh_td)=(1,1,1,1,1,1,1); # (default  all "0")
+# スパムチェック対象外IPアドレス指定 (120.10.3.123 98.1.15.11 345.3.236.1)の様に指定
+# qw()内に" "(半角スペース)で区切りながら指定 → @inh_wordを参考にしましょう。
+my @pass_addr_r   = qw();
+my @pass_addr_l   = qw();
+my @pass_addr_ae  = qw();
+my @pass_addr_a   = qw();
+my @pass_addr_nu  = qw();
+my @pass_addr_nd  = qw(); 
+my @pass_addr_td  = qw();
+# リファラスパムで自ドメイン以外で対象外にするドメインを指定
+my @referrer_pass_domain= qw(
+search.yahoo.co.jp 
+search.msn.co.jp 
+www.blogshot.net 
+); # qw(search.yahoo.co.jp search.msn.co.jp www.blogshot.net);
+# ---- option 2 ------------------------
+# メール通知機能 － 
+my $notify_mail = 0; # (default "0")コメントまたはTrackBackがあった時にメールで通知する場合"1"に設定します
+                     # Jcodeモジュールが必要です
+my $sendmail = '/usr/sbin/sendmail'; # sendmailのパス（ご使用のサーバー仕様に合わせて下さい）
+my $from     = 'xxx@gmail.com';  # Fromヘッダに使用するメールアドレス（ご使用のメールアドレスを記入下さい）
+my $to       = 'xxx@gmail.com';  # Toヘッダに使用するメールアドレス（ご使用のメールアドレスを記入下さい）
+my $notify_stop_time = 3; # 単位：分、前のスパムとの投稿間隔がこの値以内なら通知設定でもメールを送らない
+# --------------------------------------
+
+# --- Semi-Configurable variables ------ set the following if needed
+my $strong = 0;             # (default 0)language checkを日本語環境限定にする場合、ここを"1"に設定する
+my $inh_strong = 0;         # (default 0)禁止ワードをURLとリファラ以外の欄にも適用する場合、ここを"1"に設定する
+my $caution_message = "You don't have permission to access this site."; # ブロック時のメッセージ設定
+### for dynamic password check
+my $time_lower = 10;        # 10 sec
+my $time_lower_t = 1;       # 1 sec  for trackback
+my $time_upper = 3600*24;   # 1 day
+### for continuous posting check
+# 同一IPから許可する書き込み間隔（秒）
+my $deny_time  = 10;        # 10 sec
+### for log recording
+# ログ記録ファイルの設定
+my $logdir        = "$blosxom::plugin_dir/log"; # log以下の部分をカスタマイズ下さい
+my $logfile       = "$logdir/logfile.cgi";      # logfile.cgi部分をカスタマイズ下さい
+my $reflogfile    = "$logdir/reflogfile.cgi";   # reflogfile.cgi部分をカスタマイズ下さい
+my $iplogfile     = "$logdir/iplogfile.cgi";    # iplogfile.cgi部分をカスタマイズ下さい
+my $log_limit     = 1;               # ログ記録量の制限をする場合"1"に設定(default "1")
+my $max_log_block = 50;              # 記録するログの上限 (1ログ500bytes前後として、50ログ25kbytes程度）
+my $max_reflog_block = 100;          # 記録するリファラログの上限 (1ログ500bytes前後として、100ログ50kbytes程度）
+my $char_convert  = 1;               # 新規ログを$charsetの文字コードに変換する時"1"に設定(default "1")
+                                     # Jcodeモジュールが必要です
+my $char_convert_for_old_record = 0; # 過去ログを$charsetの文字コードに変換する時"1"に設定(default "0")
+                                     # Jcodeモジュールが必要です
+my $white_country = 'jp|us|au|to';   # 許可する国を指定 "to" is for land.to.
+my $plugins       = 'writeback|guestbook|newentry|mailpost'; # コメントスパム対策するプラグインの指定
+# --------------------------------------
+#=== initialize ===
+$sb_error_code =''; # global variable
+my %flag       = ('cm' => 0         , 'tb' => 0         , 'rf' => 0  );
+my %comment    = ('cm' => 'comment' , 'tb' => 'excerpt' , 'rf' => '' ); 
+my $temp       = '';
+my $mobile     = 'ASTEL|UP\.Browser|^KDDI|PDXGW|DoCoMo|J-PHONE|Vodafone|MOT-|L-mode';
+  # http://specters.net/cgipon/labo/c_dist.html
+  # http://developers.vodafone.jp/dp/tech_svc/info/useragent.php --> J-PHONE|Vodafone|MOT-
+  # http://www.nttdocomo.co.jp/p_s/imode/spec/useragent.html     --> DoCoMo
+  # http://www.au.kddi.com/ezfactory/tec/spec/4_4.html           --> UP\.Browser
+  # (http://www.au.kddi.com/ezfactory/tec/spec/download_cgi.html)
+my $trackback_flavour = 'trackback';   # トラックバックフレーバーの指定
+my $sepa          = '--------------';     # ログの文字区切り
+push @inh_word, map {$add_lr.$_} @inh_word_add;
+push @inh_word, map {$_.$add_lr} @inh_word_add;
+push @inh_word, map {$add_lr2.$_} @inh_word_add;
+push @inh_word, map {$_.$add_lr2} @inh_word_add;
+push @inh_word, map {$add_l.$_ } @inh_word_add;
+my $inh_word      = join '|',@inh_word;
+my %cnvt_charset  = ('UTF-8' => 'utf8' , 'Shift_JIS' => 'sjis' , 'EUC-JP' => 'euc' );
+my $charset       = $cnvt_charset{$disp_charset};
+&message_disp_j('Invalid charset','Please check the configurable variables') unless($charset);
+
+#=== set standard spam check table ===
+my %r  =   ('cm' => 'r'   , 'tb' => ''    , 'rf' => ''    );# referrer check
+my %cl =   ('cm' => 'c-l' , 'tb' => ''    , 'rf' => ''    );# language check for comment
+my %tl =   ('cm' => ''    , 'tb' => 't-l' , 'rf' => ''    );# language check for trackback
+my %tlua = ('cm' => ''    , 'tb' =>'t-l_ua','rf' => ''    );# language and user agent check
+my %ae =   ('cm' => 'ae'  , 'tb' => ''    , 'rf' => ''    );# accept encoding check
+my %dp =   ('cm' => 'c-dp', 'tb' => 't-dp', 'rf' => ''    );# dynamic password check
+my %cp =   ('cm' => 'c-cp', 'tb' => 't-cp', 'rf' => ''    );# continuous posting check
+my %a  =   ('cm' => 'c-a' , 'tb' => 't-a' , 'rf' => ''    );# ascii check
+my %nc =   ('cm' => 'c-nc', 'tb' => 't-nc', 'rf' => ''    );# no comment check
+my %nu =   ('cm' => 'c-nu', 'tb' => 't-nu', 'rf' => 'r-nu');# no user agent check
+my %ua =   ('cm' => 'c-ua', 'tb' => 't-ua', 'rf' => 'r-ua');# LWP default user agent check
+my %nd =   ('cm' => 'c-nd', 'tb' => 't-nd', 'rf' => 'r-nd');# no domain check, need gethostbyaddr function
+my %td =   ('cm' => 'c-td', 'tb' => 't-td', 'rf' => 'r-td');# top level domain check, need gethostbyaddr function
+my %at =   ('cm' => 'c-at', 'tb' => 't-at', 'rf' => ''    );# a tag check
+my %w  =   ('cm' => 'c-w' , 'tb' => 't-w' , 'rf' => 'r-w' );# inhibit word check
+
+#=== set variable 1 ===
+my $addr = remote_addr();  my $host = remote_host();
+my ($http_host,$referrer,$user_agent,$accept_encoding) 
+ = ($ENV{'HTTP_HOST'},$ENV{'HTTP_REFERER'},$ENV{'HTTP_USER_AGENT'},$ENV{'HTTP_ACCEPT_ENCODING'});
+my $req_url = "http://$http_host$ENV{'REQUEST_URI'}"; #request_url
+my $accept_language = http('accept_language');
+my $req_method = request_method();
+my $plugin     = param('plugin');
+my $title      = param('title');
+my $name       = param('name');
+my $b_name     = param('blog_name');
+my $url        = param('url');
+my $flavour    = $blosxom::flavour;
+
+push @referrer_pass_domain, ($http_host);
+my $referrer_pass_domain = join '|', @referrer_pass_domain;
+
+#=== set variable 2 ===
+my $cmnt = param('comment'); my $excerpt = param('excerpt'); my $comment_excerpt = $cmnt.$excerpt;
+my $l_time = localtime(time);
+
+#=== set test variable ===
+# no use
+
+##################### for dynamic password
+my $lib        = './my_cript.pl';
+eval { require $lib; }; die "Failed to load $lib file.\n$@" if $@;
+my $time       = time;      # current time
+   $sb_pwd     = &my_encript($time);
+my $d_pwd      = param('d_pwd');
+   $d_pwd      = $ENV{'QUERY_STRING'} if($flavour eq $trackback_flavour);
+   $d_pwd      = &my_decript($d_pwd);
+#####################
+
+
+sub start{
+  #=== standard spam check part ===
+  # check of posted comment         コメントスパムチェック
+  if($req_method eq 'POST' and ($plugin =~ /$plugins/)){
+    ($sb_error_code, $flag{'cm'}) = &standard_spam_check('cm', $sb_error_code); &iplogout;
+  }
+  # check of posted trackback       トラックバックスパムチェック
+  if($req_method eq 'POST' and $flavour eq $trackback_flavour){
+    $time_lower = $time_lower_t;
+    ($sb_error_code, $flag{'tb'}) = &standard_spam_check('tb', $sb_error_code); &iplogout;
+  }
+  # check of non-posted referrer    リファラスパムチェック # 20051027
+  # feferrerが有って、コメント又はトラックバックチェックしてなくて(!A and !B = !(A or B))、パスドメインでなければ
+  if($switch{'referrer'} and $referrer and !$flag{'cm'} and !$flag{'tb'} 
+      and ($referrer !~ /$referrer_pass_domain/)){
+    $max_log_block = $max_reflog_block;
+    ($sb_error_code, $flag{'rf'}) = &standard_spam_check('rf', $sb_error_code);
+  }
+  #=== log record and spam block part ===
+  # spamならログ記録し遮断する、ログ記録数制限やメール通知も可能(メール通知は$reflogfileは対象外）
+  &log_record_and_spam_block if($sb_error_code);
+  #=== set last spam date part ===
+  # log記録しているならば最終ログ記録日時を読み取る($reflogfileは対象外）
+  # 上のspam block partでブロックされなかった時（スパム投稿以外；閲覧や正常コメント等）
+  # $sb_last_info変数をフレーバー上に表示させる事で最新のスパムを表示可能
+  $sb_last_info = &sb_last_info($logfile) if($switch{'logger'} and -e $logfile);
+  1;
+}
+
+sub iplogout{
+  #=== make logdir part (unless logdir) ===
+  &make_directory($logdir) unless(-d $logdir); 
+  #=== save ip_address and posting time ===
+  open(OUT, "> $iplogfile") || &message_disp_j('IP Logout Error',"Can't open $iplogfile : $!");
+  print OUT "$addr $time";
+  close(OUT);
+  return;
+}
+
+sub logout{ # log recording
+  my ($msg,$filename) =@_;
+  open(LOGOUT, ">> $filename") || &message_disp_j('Logout Error',"Can't open $filename : $!"); # 追加モードで開く
+  flock(LOGOUT, 2) || &message_disp_j('Error',"Can't lock $filename : $!");                    # ロック確認。
+  seek(LOGOUT, 0, 2);         # ファイルポインタを末尾にセット
+  print LOGOUT $msg;          # 書き込む
+  close(LOGOUT);              # closeすれば自動でロック解除
+}
+
+sub message_disp_j{
+  my ($title,$message) = @_;
+  my $page = qq(<html><head><title>$title</title></head> <body>$message</body> </html>);
+  print header(-type => 'text/html', -charset => $disp_charset); # レスポンスヘッダー出力
+  print $page; # 表示させるhtmlページ
+  exit;
+}
+
+# パスで指定したディレクトリを作成、"/"区切りでパス指定する事(windows上のファイルでも）
+sub make_directory{
+  my $path = shift;
+  my @path = split (m [/], $path);  # / でパスを分割
+  $path = shift @path;              # windows "c:"へ対応
+  while (@path) {
+    $path .= '/' . shift @path;     # / から順にパスを階層的に指定
+    unless(-d $path){               # 指定した階層のパスが無ければ
+      mkdir $path, 0755;            # パーミッション755でディレクトリ作成
+      chmod 0777, $path;            # 一気に777に設定出来ないのでここで変更
+    }
+  }
+}
+
+# br
+sub br2{
+  my $str = shift;
+  $str =~ s!\x0D\x0A!<br />!g;   #cr,lf
+  $str =~ s!\x0D!<br />!g;       #cr
+  $str =~ s!\x0A!<br />!g;       #lf
+  return $str;
+}
+
+sub inh_spam_check{
+  my @pass_addr = @_; my $check = shift @pass_addr;  my ($pass_addr,$check1,$check2);
+  $check1 = "c$check";  $check2 = "t$check";
+  while (@pass_addr){
+    $pass_addr = shift @pass_addr;
+    if($addr eq $pass_addr){$switch{$check}=0; $switch{$check1}=0; $switch{$check2}=0;}
+  }
+  return;
+}
+
+sub standard_spam_check{
+  my ($check_type,$sb_error_code) = @_;
+  $flag{$check_type} = 1;
+  #=== mobile setting === (Only Japanese mobile phone) ；user agent系チェックは無意味
+  if($ENV{'HTTP_USER_AGENT'} =~ /$mobile/) {
+    $switch{'r'}=0; $switch{'c-l'}=0; $switch{'ae'}=0; $switch{'c-a'}=1; $switch{'c-nc'}=1; $switch{'c-nd'}=1;
+    $switch{'t-l'}=0; $switch{'t-l_ua'}=0; $switch{'t-a'}=1; $switch{'t-nc'}=1; $switch{'t-nd'}=1;
+  }
+  #=== inhibit spam check ===
+  &inh_spam_check('r'  ,@pass_addr_r ) if($inh_r ); &inh_spam_check('-l' ,@pass_addr_l ) if($inh_l ); 
+  &inh_spam_check('ae' ,@pass_addr_ae) if($inh_ae); &inh_spam_check('-a' ,@pass_addr_a ) if($inh_a );
+  &inh_spam_check('-nu',@pass_addr_nu) if($inh_nu); &inh_spam_check('-nd',@pass_addr_nd) if($inh_nd); 
+  &inh_spam_check('-td',@pass_addr_td) if($inh_td); 
+  # check referrer ;リファラが自分のサイトでないかをチェック
+  if($switch{$r{$check_type}} and ($referrer !~ /$http_host/)){
+    $sb_error_code .= ": $r{$check_type} ";
+  }
+  if($strong){
+    # check language ;日本語環境でないかをチェック
+    if($switch{$cl{$check_type}} and ($accept_language !~ m!\b(ja|JPN)\b!)){
+      $sb_error_code .= ": $cl{$check_type} ";
+    }
+  }else{
+    # check language ;言語設定がないかをチェック
+    if($switch{$cl{$check_type}} and !$accept_language){
+      $sb_error_code .= ": $cl{$check_type} ";
+    }
+  }
+  # check language ;言語環境変数が有って日本語環境以外かをチェック
+  if($switch{$tl{$check_type}} and $accept_language and $accept_language !~ m!\b(ja|JPN)\b!){
+    $sb_error_code .= ": $tl{$check_type} ";
+  }
+  # check language and user agent ;
+  # 言語環境変数が無くてUserAgentがブラウザならばUserAgentを偽造したと判断してブロック
+  # 但し、Mozilla/3.0は例外扱いで許可する（Blog Ping Pingからのトラックバック許可の為）
+  if($switch{$tlua{$check_type}} and (!$accept_language and $user_agent =~ /Mozilla|Opera|Mac/i) 
+  and ($user_agent !~ m!^Mozilla/3\.0! )){
+    $sb_error_code .= ": t-l_ua ";
+  }
+  # check accept encoding ;圧縮ファイルとしてgzipを許可していないかをチェック
+  if($switch{$ae{$check_type}} and ($accept_encoding !~ /gzip/)){
+    $sb_error_code .= ": $ae{$check_type} ";
+  }
+  # dynamic user password ;有効期限範囲外かチェック
+  if($switch{$dp{$check_type}} and (($time < $d_pwd+$time_lower) or ($time > $d_pwd+$time_upper))){
+    $sb_error_code .= ": $dp{$check_type} ";
+  }
+  # continuous posting check ;連続書き込みかチェック（$iplogfileが存在する時のみ）
+  if($switch{$cp{$check_type}} and (-e $iplogfile)){
+    open(IN, "$iplogfile") || &message_disp_j('Open IP logfile Error',"Can't open $iplogfile : $!"); 
+    my @iplog = split(/ /, <IN>);
+    if(($iplog[0] eq $addr) and ($iplog[1] > $time - $deny_time)){
+      $sb_error_code .= ": $cp{$check_type} ";
+    }
+    close(IN);
+  }
+  # check ascii ;アスキーコードを含むかチェック
+  if($switch{$a{$check_type}} and ($comment_excerpt =~ /^[\x00-\x7f]+$/)){
+    $sb_error_code .= ": $a{$check_type} ";
+  }
+  # check no comment ;無コメントかチェック
+  if($switch{$nc{$check_type}} and !$comment_excerpt){
+    $sb_error_code .= ": $nc{$check_type} ";
+  }
+  # check no user agent ;ユーザーエージェントを名乗らないかチェック
+  if($switch{$nu{$check_type}} and !$user_agent){
+    $sb_error_code .= ": $nu{$check_type} ";
+  }
+  # check user agent ;ユーザーエージェントがLWP default設定かをチェック
+  if($switch{$ua{$check_type}} and ($user_agent =~ /libwww-perl|curl/)){
+    $sb_error_code .= ": $ua{$check_type} ";
+  }
+  my ($domain,$domain_addr) = &domain_addr($addr); # 20050921
+  my @tld = split /\./, $domain;
+  my $tld = pop @tld; # top level domain
+  # check no domain ;DOMAINを名乗らないIPアドレスかをチェック
+  if($switch{$nd{$check_type}} and !$domain){
+    $sb_error_code .= ": $nd{$check_type} ";
+  }
+  # check tld country; top level domainのカントリーコードが許可されているか確認
+  # $tldが英小文字２文字で有る時のみそれが許可されているカントリーコードでないかをチェック
+  if($switch{$td{$check_type}} && ($tld  =~ /^[a-z]{2}$/) && ($tld !~ /$white_country/)){
+    $sb_error_code .= ": $td{$check_type} ";
+  }
+  # check a tag       ;タイトル、名前、本文のどれかにaタグ（大文字・小文字共）が
+  #                    含まれているかをチェック
+  $temp = $title.$name.$b_name.$cmnt.$excerpt;
+  if($switch{$at{$check_type}} and ($temp =~ /<a\s/i)){
+    $sb_error_code .= ": $at{$check_type} ";
+  }
+  # check inhibit word;title,url,name,blog_name,comment,excerpt,referrerのどれかに
+  #                    禁止ワード（大文字・小文字共）が含まれているかをチェック
+  $temp = '' unless($inh_strong);
+  $temp = $temp.$url.$referrer;
+  if($switch{$w{$check_type}} and ($temp =~ /$inh_word/i)){
+    $sb_error_code .= ": $w{$check_type} ";
+  }
+  return ($sb_error_code, $flag{$check_type});
+}
+
+sub log_record_and_spam_block{ # スパムが有る場合のみコールする事！
+  if($switch{'logger'}){
+    #=== make logdir part (unless logdir) ===
+    &make_directory($logdir) unless (-d $logdir);    
+    #=== log recording part ===
+    my ($msg,$str) = ("","");
+    $cmnt = &br2($cmnt); $excerpt = &br2($excerpt);
+    my ($domain,$domain_addr) = &domain_addr($addr); # 20050921
+    require Jcode if ($char_convert); #### 20051016
+    
+    if($flag{'cm'} and $plugin ne 'guestbook' or $flag{'tb'}){ # for comment except guestbook or for trackback
+      $msg .= "title:$title\n"."name:$name\n"."blog_name:$b_name\n";
+      $msg .= "url:$url\n"."comment:$cmnt\n"."excerpt:$excerpt\n"."date:".time."\n";      
+      $msg .= "remote_addr:$addr\n"."remote_host:$domain\n"."-----\n";
+      $msg .= "local time:$l_time\n"."language: $accept_language\n"."accept_encoding: $accept_encoding\n";
+      $msg .= "user_agent: $user_agent\n"."plugin: $plugin\n"."password: $d_pwd\n";
+      $msg .= "req_url :$req_url\n"."referrer:$referrer\n"."sb_error_code$sb_error_code\n"."--------------\n";
+      if($char_convert){$msg = Jcode->new($msg)->$charset;}
+      &logout($msg,$logfile);
+    }
+    if($flag{'cm'} and $plugin eq 'guestbook'){ # for guestbook
+      $msg .= "name:$name\n"."comment:$cmnt\n"."timestamp:".time."\n"."host:$domain_addr\n"."-----\n";
+      $msg .= "local time:$l_time\n"."language: $accept_language\n"."accept_encoding: $accept_encoding\n";
+      $msg .= "user_agent: $user_agent\n"."plugin: $plugin\n"."password: $d_pwd\n";
+      $msg .= "req_url :$req_url\n"."referrer:$referrer\n"."sb_error_code$sb_error_code\n"."--------------\n";
+      if($char_convert){$msg = Jcode->new($msg)->$charset;}
+      &logout($msg,$logfile);
+    }
+    if($flag{'rf'}){ # for referrer spam
+      $str .= "remote_addr:$addr\n"."remote_host:$domain\n"."local time:$l_time\n"."user_agent: $user_agent\n";
+      $str .= "req_url :$req_url\n"."referrer:$referrer\n"."sb_error_code$sb_error_code\n"."--------------\n";
+    # referrerの方は日本語を含む可能性の有る領域の記録をしていないので、文字コード変換処理は加えない
+    &logout($str,$reflogfile);
+    }
+    
+    #=== limit & save logfile ============ for logfile
+    my @all_log = &limit_save($logfile) if($flag{'cm'} or $flag{'tb'});
+
+    #=== send mail part === for comment and trackback
+    if($notify_mail and ($flag{'cm'} or $flag{'tb'})){ # for comment and trackback 20051027 bug fix
+      my $temp  = pop @all_log;                        # 最新のスパムログ取り出し
+      my $temp1 = &get_item($temp ,'date:') + &get_item($temp ,'timestamp:'); # 投稿時刻取得
+      my $temp2 = pop @all_log;                        # 一つ前のスパムログ取り出し
+         $temp2 = &get_item($temp2,'date:') + &get_item($temp2,'timestamp:'); # 投稿時刻取得
+      my ($sec, $min) = localtime($temp1 - $temp2);    # スパム投稿間隔を計算、分情報を取得
+      &send_mail($temp) if($min >= $notify_stop_time); # 指定分以上ならメールを送る
+    }
+    
+    #=== limit & save logfile ============ for reflogfile
+    &limit_save($reflogfile) if($flag{'rf'});
+
+  } # log_record end
+  
+  #=== spam block part === # block for comment or trackback, no-block for referrer
+  if(($flag{'cm'} or $flag{'tb'}) and $switch{'block'}){
+    &message_disp_j('403 Forbidden - アクセス不可', qq!<h3>403 Forbidden</h3>
+                    $caution_message\n\n<br />error_code$sb_error_code\n\n<br />!); # for debug
+  }
+  
+}
+
+# fixed file lock part at 2006.01.29
+# reference: http://homepage1.nifty.com/glass/tom_neko/web/web_04.html
+sub limit_save{ 
+    my $logfile = shift;
+    #=== read log ============ for logfile
+    # logをスパム単位に分割して@log配列で返す、同時に文字コード変換を実施    
+    my @all_log = ();  my $k = 0;
+    # log separate and save to @all_log
+    open(OUT, "+< $logfile") || &message_disp_j('Open logfile Error for getting log',"Can't open $logfile : $!");
+    eval {flock(OUT, 2);};     # 書込中だから書込読込ロック、あとから来たら待つ。（ブロック）
+    # logをスパム単位に分割して@all_log配列に格納、文字コード変換も同時に実施
+    while(<OUT>){
+      if($char_convert_for_old_record){$_ = Jcode->new($_)->$charset;}
+      $all_log[$k] .= $_;
+      $k++ if($_ =~ $sepa && $_ !~ /title:|name:|blog_name:|url:|comment:|excerpt:/); # fixed at 2006.01.22
+    }
+    #=== write back of log ============ for logfile
+    seek(OUT, 0, 0);           # ファイルポインタを先頭にセット
+    #=== limit log number part === for logfile
+    if($log_limit){
+      @all_log = &log_limit(@all_log); # スパムログ数を制限
+        foreach(@all_log){print OUT $_;} # $logfileに書き出し
+    }
+    truncate(OUT, tell(OUT));  # ファイルサイズを書き込んだサイズにする
+    close(OUT);                # closeすれば自動でロック解除    
+    return @all_log;
+}
+
+sub info_msg{
+  my $msg = $_;      
+  $msg .= "local time:$l_time\n"."language: $accept_language\n"."accept_encoding: $accept_encoding\n";
+  $msg .= "user_agent: $user_agent\n"."plugin: $plugin\n"."password: $d_pwd\n";
+  $msg .= "req_url :$req_url\n"."referrer:$referrer\n"."sb_error_code$sb_error_code\n"."--------------\n";
+  return $msg;
+}
+
+sub domain_addr {
+  my $domain = shift;
+     $domain = gethostbyaddr(pack('C4',split(m!\.!,$addr)),2);
+  my $domain_addr = $domain || $addr if(!$host || $host eq $addr);
+  return $domain, $domain_addr;
+}
+
+sub log_limit { # log配列を引数として与えると最大記録数より前のログを削除して返す
+  my @log = @_;  my $temp = @log; # log block の数を取得 total log number
+  $temp = $temp - $max_log_block;
+  while($temp>0){
+    shift @log; # @all_log先頭要素を削除
+    --$temp;        # 最大記録数との差分がなくなるまで減算
+  }
+  return @log;
+}
+
+sub sb_last_info { # 最新のスパムの投稿情報（投稿時間＋投稿者名）を返す
+  my $file = shift;  my $k = 0;  my @all_log = ();
+  open(IN, "$file") || &message_disp_j('Open logfile Error for sb_last_info',"Can't open $file : $!");
+  while(<IN>){
+    $all_log[$k] .= $_;
+    $k++ if($_ =~ $sepa && $_ !~ /title:|name:|blog_name:|url:|comment:|excerpt:/); # fixed at 2006.01.22
+  }
+  close(IN);
+  my $temp  = pop @all_log; # 最新のスパムログ取り出し
+  my $temp1 = &get_item($temp,'date:') + &get_item($temp,'timestamp:');
+  my $temp2 = &get_item($temp,'name:').&get_item($temp,'blog_name:');
+  my ($sec1, $min1, $hour1, $mday1, $mon1, $year1, $wday1) = localtime($temp1);
+  # 最新スパム投稿時間を作成
+     $temp1 = sprintf("%02d/%02d %02d:%02d ",$mon1+1,$mday1,$hour1,$min1).' by '.$temp2;
+  return $temp1;
+}
+
+sub get_item { # スパムログテキストと情報を取り出す項目を入力するとその項目の情報を返す
+  my $text = shift; my $item = shift; my $line;
+  my @text = split (m [\n], $text); # 行毎に分割して配列へ格納
+  foreach(@text){
+    $line = $_ if($_ =~ /^$item/);  # $itemから始まる行を取り出し
+  }
+  @text = split (m [$item], $line);
+  $text = pop @text; # $itemの情報を取り出し
+  return $text;
+}
+
+sub send_mail { # 本文情報を入力するとメール送信する
+  my $body = shift;  my $subject = "$blosxom::blog_title - ".__PACKAGE__;
+  $subject = Jcode->new($subject, $charset)->mime_encode;
+  $body    = Jcode->new($body, $charset)->jis;
+  my $mail = 
+qq(From: $from
+To: $to
+Subject: $subject
+Content-Type: text/plain; charset=ISO-2022-JP
+X-Mailer: blosxom $blosxom::version
+
+$body);
+  if(open(MAIL, "| $sendmail -t")) {
+    print MAIL $mail;
+    close(MAIL);
+  }
+}
+
+1;

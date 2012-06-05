@@ -1,0 +1,319 @@
+# Blosxom Plugin: wikieditish_ext
+# Author: MayimMayim
+# Version: 2004-08-15
+
+package wikieditish_ext;
+
+# --- same as wikieditish -----------
+# These settings are for blosxom starter kit (http://hail2u.net/archives/bsk.html), by Kyo Nagashima
+my $preserve_lastmodified = $blosxom::wikieditish_preserve_lastmodified;
+my $require_password      = $blosxom::wikieditish_require_password;
+my $blog_password         = $blosxom::wikieditish_blog_password;
+my $restrict_by_ip        = $blosxom::wikieditish_restrict_by_ip;
+my @ips                   = @blosxom::wikieditish_ips;
+my $file_extension        = $blosxom::wikieditish_file_extension;
+# --------------------------------------
+
+# --- Configurable variables -----------
+my $file_datadir = $blosxom::datadir;
+my $file_url = ""; # blank is automatic (under blosxom::basedir)
+my $file_dir_extension = ".files";
+my $a_tag_attribute = "target=_blank";
+my $img_tag_attribute = "border=0";
+my ($img_max_width,$img_max_height) = (420,600);
+my $auto_file_delete = 1;
+my %plugins = (
+	$blosxom::writeback_dir => $blosxom::writeback_file_extension,  # for blosxom starter kit
+);
+# --------------------------------------
+
+use vars qw($new_url $newname $require_password);
+use CGI qw/:standard/;
+use FileHandle;
+use File::Path;
+
+my $fh = new FileHandle;
+my $redirect;
+
+
+sub start {
+	my($path, $fn) = ($blosxom::path_info =~ m!^(?:(.*)/)?(.*)\.$blosxom::flavour!);
+	$path =~ m!^/! or $path = "/$path";
+	my $dir = $file_datadir.$path;
+	$file_url ||= ($blosxom::url=~m!(.+:\/\/[\w\.:]+|)(.+[\\\/]).+!)[1].($file_datadir=~m!$blosxom::basedir\/(.+)!)[0];
+	$newname = param('newname') || $fn;
+	my ($title, $body) = (param('title'), param('body'));
+
+	# new url
+	$new_url = "javascript:window.location.href='"
+				.$blosxom::url.($blosxom::path_info eq''?'':"/$blosxom::path_info")."/new.wikieditish#wikieditish'";
+	if($newname eq $fn and $fn eq 'new'){
+		my ($ss,$mm,$hh,$d,$m,$y,$wd) = localtime;
+		$newname = sprintf("%.4d%.2d%.2d%.2d%.2d%.2d",$y+1900,$m+1,$d,$hh,$mm,$ss);
+	}
+
+	# post entry
+	if( request_method() eq 'POST' and param('plugin') eq 'wikieditish' ) {
+
+		# check password and remote ip address (same as wikieditish)
+		$require_password
+			and (!$blog_password or !param('password') or (param('password') and param('password') ne $blog_password))
+			and return 1;
+		$restrict_by_ip and !grep(/^\Q$ENV{'REMOTE_ADDR'}\E$/, @ips) and return 1;
+
+		# rename entry
+		if ($newname and $fn ne $newname) {
+			# check the name
+			($newname!~/^[a-zA-Z0-9\-\_]+$/)
+				and $wikieditish::response = "A name '$newname' contained an invalid character." and return 1;
+			-e "$blosxom::datadir$path/$newname.$file_extension"
+				and $wikieditish::response = "Entry with this name '$newname' already exists." and return 1;
+
+			# rename entry
+			rename "$blosxom::datadir$path/$fn.$file_extension" => "$blosxom::datadir$path/$newname.$file_extension";
+			(!-e "$blosxom::datadir$path/$newname.$file_extension")
+				and $wikieditish::response = "Rename with this name '$newname' failed."
+				and return 1;
+
+			# rename files
+			rename("${dir}/${fn}${file_dir_extension}","${dir}/${newname}${file_dir_extension}/");
+			$body =~ s/${fn}${file_dir_extension}\//${newname}${file_dir_extension}\//gm;
+			my $mtime = (stat "$blosxom::datadir$path/$fn.$file_extension")[9];
+			$mtime = time if !$mtime;
+			if ( $fh->open("> $blosxom::datadir$path/$newname.$file_extension") ) {
+				print $fh join "\n", $title, $body;
+				$fh->close();
+				$preserve_lastmodified and utime(time, $mtime, "$blosxom::datadir$path/$fn.$file_extension");
+			}
+
+			# rename plugin's states
+			foreach my $plugin_dir (keys %plugins) {
+				my $ext = $plugins{$plugin_dir};
+				rename "$plugin_dir$path/$fn.$ext" => "$plugin_dir$path/$newname.$ext";
+			}
+
+			# change filename
+			$fn = $newname;
+			$redirect = "$baseurl${blosxom::url}$path/$newname.wikieditish";
+		}
+
+		# save uploading files
+		my @file = grep{ $_ } param('file');
+		foreach my $file (@file) {
+
+			# get filename
+			my ($uppath, $upname, $upext) = ($file =~ m!(.+[\\\/]|)([^\.]+)(\..+)?$!);
+			!($upext =~ /^[\.a-zA-Z0-9]*$/) && ($upext ne "\.${blosxom::file_extension}") and next;
+			my $img_opt = "alt=\"${upname}\"";
+			if($upname !~ /^[a-zA-Z0-9\-\_]+$/) {
+				do {
+					$upname = sprintf("%04d",++$filenum);
+				} while(-e "${file_datadir}${path}/${fn}${file_dir_extension}/${upname}${upext}");
+			}
+
+			# write file
+			my $upfile = "${path}/${fn}${file_dir_extension}/${upname}${upext}";
+			mkpath("${file_datadir}${path}/${fn}${file_dir_extension}",0,0755);
+			!$fh->open("> ${file_datadir}${upfile}")
+				and ($wikieditish::response .= "<br>${file_datadir}${upfile} open failed" and next);
+			binmode $fh;
+			while (my $data = <$file>) {
+				print $fh $data;
+			}
+			$fh->close();
+
+			# add hyperlink
+			if($upext =~ /^\.(jpg|jpeg|png|gif)$/i){
+				my ( $format, $width, $height ) = &GetImageSize( "${file_datadir}${upfile}" );
+				if ($width > $img_max_width || $height > $img_max_height) {
+					my ($wper,$hper) = ($img_max_width/$width, $img_max_height/$height);
+					my $per = ($wper < $hper)? $wper : $hper;
+					($width,$height) = (int($width * $per)||1, int($height * $per)||1);
+				}
+				$img_opt .= " width=${width} height=${height}";
+				$file_body .= "\n<a href=\"${file_url}${upfile}\" ${a_tag_attribute}>"
+							. "<img src=\"${file_url}${upfile}\" ${img_opt} ${img_tag_attribute} /></a>";
+			}else{
+				$file_body .= "\n<a href=\"${file_url}${upfile}\" $a_tag_attribute>${upname}${upext}</a>";
+			}
+		}
+
+		# add comments
+		my @add_comment = grep{ $_ } param('add_comment');
+		foreach my $add_comment (@add_comment) {
+			($wikieditish::body !~ /\&lt;!--$add_comment--\&gt;/ ) and ($file_body .= "\n<!--$add_comment-->");
+		}
+
+		# write entry
+		if($file_body ne '') {
+			my $mtime = (stat "$blosxom::datadir$path/$fn.$file_extension")[9];
+			$mtime = time if !$mtime;
+			if ( $fh->open(">> $blosxom::datadir$path/$fn.$file_extension") ) {
+				print $fh $file_body;
+				$fh->close();
+				$preserve_lastmodified and utime(time, $mtime, "$blosxom::datadir$path/$fn.$file_extension");
+				$body .= $file_body;
+				$wikieditish::body .= $file_body;
+			}
+		}
+
+		# delete entry
+		if($file_body eq '' && param('body') eq '') {
+			unlink <$blosxom::datadir$path/$fn.$file_extension>;
+			foreach my $plugin_dir (keys %plugins) {
+				my $ext = $plugins{$plugin_dir};
+				unlink <$plugin_dir$path/$fn.$plugins{$plugin_dir}>;
+			}
+			$body = '';
+			$wikieditish::response = "Page deleted successfully.";
+		}
+
+		# delete files (automatic)
+		if($auto_file_delete and opendir(DIR, "${dir}/${fn}${file_dir_extension}")) {
+			my @files = sort grep { /.+/i && -f "${dir}/${fn}${file_dir_extension}/$_"} readdir(DIR);
+			closedir(DIR);
+			foreach my $filename (@files) {
+				my $file = "${dir}/${fn}${file_dir_extension}/$filename";
+				($body =~/${fn}${file_dir_extension}\/$filename/) and next;
+				unlink $file;
+			}
+			rmdir "${dir}/${fn}${file_dir_extension}";
+		}
+	}
+
+	1;
+}
+
+sub last {
+	if ($redirect) {
+#		$blosxom::header = {'-Location'=>$redirect};
+		$blosxom::header = {'-Refresh'=>"0; url=$redirect"};
+		$blosxom::output = '<p>Now Refreshing. Please wait.</p>';
+  }
+}
+
+
+
+########################################################################
+#
+# Sub-routine for getting image width and height.
+#   2001-2004 Copyright (C) cachu <cachu@cocoa.ocn.ne.jp>
+#   http://cachu.xrea.jp/perl/
+#
+# How to use:
+#  ( $format, $width, $height ) = &GetImageSize( $FileName, [$out] );
+#
+#   $format   : image format ('JPEG-JFIF', 'JPEG-JFIF-EXIF', 'JPEG-EXIF', 'PNG', 'GIF')
+#   $width    : image width
+#   $height   : image height
+#   $FileName : file name
+#   $out      : file handle
+#
+# Modified:
+#  2004-08-01 by Mayim : Delete except GIF, PNG and JPEG.
+#
+sub GetImageSize {
+	my ( $IMG, $in ) = @_;
+	my ( %SHT, %LNG );
+	my ( $buf, $mark, $type, $f_size, $width, $height );
+	my ( $TAG, $TYPE, $COUNT, $V_OFFSET, $PK, $ENTRY, $Exif_IFD );
+	my ( $endian, $dummy1, $dummy2, $dummy, $EOI, $APP1, $length, $exif );
+	my ( $format, $offset, $line, $CODE, $jfif );
+	my @TGA;
+	my $ntag;
+
+	$mark = pack("C", 0xff);
+	%SHT = ( 'II' => 'v', 'MM' => 'n' );
+	%LNG = ( 'II' => 'V', 'MM' => 'N' );
+	$endian   = '';
+	$width	  = -1;
+	$height   = -1;
+	$format   = '';
+	$Exif_IFD = -1;
+
+	if( $in eq '' ){
+		$in = 'IMG';
+	}
+
+	open( $in, $IMG ) || return( '', -1, -1 );
+
+	binmode($in);
+	seek( $in, 0, 0 );
+	read( $in, $buf, 6 );
+
+	# GIF
+	if($buf =~ /^GIF/i){
+		$format = 'GIF';
+		read( $in, $buf, 2 );
+		$width	= unpack("v*", $buf);
+		read( $in, $buf, 2);
+		$height = unpack("v*", $buf);
+
+	# PNG
+	}elsif( $buf =~ /PNG/){
+		$format = 'PNG';
+		seek( $in, 8, 0 );
+
+		while(1){
+			read( $in, $buf, 8 );
+			( $offset, $CODE ) = unpack( "NA4", $buf );
+
+			if( $CODE eq 'IHDR' ){
+			read( $in, $buf, 8 );
+			( $width, $height ) = unpack( "NN", $buf );
+			seek( $in, $offset-8+4, 1 );
+			last;
+
+			}elsif( $CODE eq 'IEND' ){
+			last;
+
+			}else{
+			seek( $in, $offset+4, 1 );
+			}
+		}
+
+	}else{
+	# JPEG
+		seek( $in, 0, 0 );
+		read( $in, $buf, 2 );
+		( $buf, $type ) = unpack("C*", $buf );
+		if( $buf == 0xFF && $type == 0xD8 ){
+			$format = 'JPEG';
+			JPEG:while(read( $in, $buf, 1 )){
+				if(($buf eq $mark) && read( $in, $buf, 3 )) {
+					$type   = unpack("C*", substr($buf, 0, 1));
+					$f_size = unpack("n*", substr($buf, 1, 2));
+					( $type == 0xD9 ) and ( last JPEG );
+					read( $in, $buf, $f_size-2 );
+					if($type == 0xC0 || $type == 0xC2){
+						$height = unpack("n*", substr($buf, 1, 2));
+						$width  = unpack("n*", substr($buf, 3, 2));
+						( $format =~ /EXIF/ ) and ( last JPEG );
+					}elsif( $type == 0xE1 ){
+						$exif = unpack( "A4", substr( $buf, 0, 4 ) );
+						if( $exif =~ /exif/i ){
+							$format .= '-EXIF';
+							( $width > 0 && $height > 0 ) and ( last JPEG );
+						}
+					}elsif( $type == 0xE0 ){
+						$jfif = unpack( "A4", substr( $buf, 0, 4 ) );
+						if( $jfif =~ /jfif/i ){
+							$format .= '-JFIF';
+						}
+					}
+				}
+			}
+		}
+
+		if( $width > 0 && $height > 0 ){
+			close( $in );
+			return( $format, $width, $height );
+		}
+
+	}
+
+	close( $in );
+	return( $format, $width, $height );
+}
+
+1;

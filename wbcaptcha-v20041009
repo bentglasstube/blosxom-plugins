@@ -1,0 +1,387 @@
+# Blosxom Plugin: wbcaptcha
+# Author(s): Pasi Savolainen <psavo@iki.fi>
+# Version: 2004-10-09
+# Documentation: See the bottom of this file or type: perldoc wbcaptcha
+# Requirements: Obviously writebacks -plugin (some relatives of it are
+#               compatible too)
+#               figlet -ASCII text image -generating program,
+#               available from <http://www.figlet.org>. Many unix
+#               installations have this installed or available as package.
+#
+# If you need CAPTCHA plugin in more general form, such IS
+# available. I just can't warrant having two modules doing this work.
+
+package wbcaptcha;
+
+# --- Configurable variables -----
+
+# -- wbcaptcha part --
+
+# -- blcaptcha part --
+
+# -k    : By default don't mash characters together (easier reading)
+# -w 80 : Default 4 characters aren't likely to be over 80 characters
+#         in image width
+$figprog = 'figlet -w 80 -k';
+
+# Fonts used when 'random font' is requested.
+@fonts = ('standard');
+# Please ensure that font you use contains all the characters from
+# @random_chars below. Some figlet fonts lack numbers, etc.
+# @fonts = ('standard', 'sans', 'big', 'banner', 'contrast');
+
+# how often to run cleanup. It's _average_. 1 will get you cleaning on
+# every pageload, 50 once in 50 pageloads.
+$cleanup = 100;
+
+# (In minutes) How long will captcha be kept alive.
+$lifetime = 60;
+
+# where to keep captcha data
+$statedir = $blosxom::plugin_state_dir . '/wbcaptcha';
+
+# this is reasonable default.
+# 0(zero) is not in character set to avoid confusion with O
+# 1(one) -"- I
+@random_chars = ('a'..'z','A'..'Z','2'..'9');
+
+
+#   · Variables below don't need tuning.
+#    ----------------------------------
+
+$debug = 0;
+
+# 'image', best put into <pre class=captcha>$wbcaptcha::image</pre>
+$image = "image not created";
+
+# challenge id. usable when loading with ?wbcaptcha=gen (or post-parameter)
+$captcha_id = "no";
+
+# has this round failed?
+$captcha_fail = "";
+
+# -- blcaptcha part
+
+# where we store generated captchas
+my $time = time();
+
+
+
+# --------------------------------
+
+use CGI qw/:standard/;
+
+sub start {
+    # startup checks
+
+    # check existance and permissions
+    if ( -e $statedir and (!-d $statedir or !-w $statedir )) {
+        warn "blosxom: blcaptcha \$statedir is lacks correct rights!\n";
+        return 0;
+    }
+
+    if ( !-e $statedir ) {
+        my $mkdir_r = mkdir("$statedir", 0777);
+        warn "blosxom: blcaptcha > created statedir $statedir\n";
+    }            
+    
+
+    # cleanup our state dir.
+    if (0 == int(rand $cleanup)) {
+        @files = glob($statedir . "/*");
+        for $file (@files) {
+            $fullname = $file;
+            $_ = $file;
+            m,/([^/]*)$,;
+            m,^(\d+),;
+            $file = $1;
+            $clifetime = 0+$file + $lifetime*60;
+            if ($time > $clifetime) {
+                warn "blosxom: blcaptcha > removing $fullname $time $clifetime $file\n" if $debug;
+                unlink $fullname or
+                    warn "blosxom: wbcaptcha > clean-removing $fullname failed: $!\n";
+            }
+        }
+    }
+
+    # Only spring into action if POSTing to the writeback plug-in
+    # BECAUSE this is changing state and we don't want stupid bots
+    # DDoS:ing our server.
+    if ( request_method() ne 'POST' ) {
+        return 1;
+        
+    }
+    if (param('wbcaptcha') eq 'gen') {
+        my ($fname, $output) = &gen_in_file(4, 'random');
+        $image = $output;
+        $captcha_id = $fname;        
+    }
+    if (param('plugin') eq 'writeback') {
+        $fid = param('captcha_id');
+        $entered_text = param('captcha_in');
+        if ( ! &check_from_file($fid, $entered_text) ) {
+            # mismatch. start cleaning variables.
+            warn "wbcaptcha > failed match $fid $entered_text\n" if $debug;
+            $captcha_fail = "You entered text '$entered_text', that didn't" .
+                          "match presented image. Retry by hitting 'back' and " .
+                          "writing bot-test text again. Thank you.";
+            CGI::delete('plugin');
+            # don't kill captcha, if it was a typo, client may
+            # retry.
+        } else {
+            # check was ok, so kill this captcha.
+            warn "wbcaptcha > success, removing $statedir/$fid\n" if $debug;
+            unlink "$statedir/$fid" or
+                warn "wbcaptcha > wb-removing $statedir/$fid failed: $!\n";
+        }
+    }
+    1;
+}
+
+# check entered text against text saved in file_id.
+# return boolean of test
+sub check_from_file {
+    my ($fid, $ctext) = @_;
+    # check for bad characters, filename has only [a-zA-Z0-9-]
+    return 0 if ( $fid =~ /[^\w-]/ ); 
+    open (CFILE, "<$statedir/$fid") or return 0; # doesn't exist, so fail.
+    my $etext = <CFILE>;
+    chomp($etext);
+    close CFILE;
+    warn "wbcaptcha > cff 1$fid 2$etext 3$ctext\n" if $debug;
+    return lc($etext) eq lc($ctext);
+}
+
+# save supplied text in a file.
+# return filename (which will work as captcha id/file_id)
+sub save_in_file {
+    my ($ctext) = @_;
+    my $randstr = &generate_random_string(4);
+    my $fname = "${time}-${randstr}";
+    open (CFILE, ">$statedir/$fname") or return 0; # failed, so fail
+    print CFILE "${ctext}\n";
+    warn "wbcaptcha > Saving $ctext in $fname\n" if $debug;
+    close CFILE;
+    return $fname;    
+}
+
+# generate captcha using supplied length and fontname.
+# default to 4 characters and 'standard' fontname. fontname 'random'
+# will use supplied list of random fontnames.
+# returns string to be entered and same string captcha'd
+sub generate {
+    my ($len, $font) = @_;
+    $len ||= 4;
+    $font ||= 'standard';
+    $font = $fonts[rand @fonts] if $font == 'random';
+    my $text = &generate_random_string( $len );
+    $command = $figprog . " -f \"$font\" -- \"$text\"";
+    # generate the CAPTCHA 'image'
+    $output = `$command`;
+    # print $output;
+    return ($text, $output);
+}
+
+# in: same as generate()
+# returns file_id and generated captcha
+sub gen_in_file {
+    my ($len, $font) = @_;
+    my ($text, $output) = &generate($len, $font);
+    my $fname = &save_in_file($text);
+    # return generated figlet and filename-id to check against.
+    return ($fname, $output);
+}
+
+###############
+# found off the web.
+sub generate_random_string {
+    my $length_of_randomstring=shift; # the length of
+    # the random string to generate
+    
+    my @chars = @random_chars;
+    my $random_string;
+    foreach (1..$length_of_randomstring) 
+    {
+        # rand @chars will generate a random 
+        # number between 0 and scalar @chars
+        $random_string.=$chars[rand @chars];
+    }
+    return $random_string;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: wbcaptcha
+
+=head1 SYNOPSIS
+
+Provides CAPTCHA checking for writebacks (and some related) plugins.
+CAPTCHA checking is done with ASCII text generated by figlet 
+<http://www.figlet.org/>.
+
+=head2 QUICK START
+
+Drop this plug-in file into your plug-ins directory 
+(whatever you set as C<$plugin_dir> in blosxom.cgi).
+Name it so that it will be loaded by blosxom before writebacks
+plugin. For example if writebacks is called F<1writebacks>, name
+F<wbcaptcha> as F<05wbcaptcha>.
+
+Modify your F<story.html> so that it will load itself via POST method,
+with parameter C<wbcaptcha> set to gen. F.ex:
+ <!-- show 'post comment' button -->
+ <p>
+   <form action="$url$path/$fn.html" method="POST">
+     <input type="hidden" name="wbcaptcha" value="gen">
+     <input type="submit" value="Add comment">
+   </form>
+ </p>
+
+Modify your F<story.html> so that in writeback form it has variable
+C<captcha_id> with value C<$wbcaptcha::captcha_id> . F.ex:
+ <input type="hidden" name="captcha_id" value="$wbcaptcha::captcha_id" />
+
+Modify your F<story.html> so that in writeback form it has variable
+C<captcha_in>, in which user can type in text he sees. Example:
+ <input name="captcha_in" size=10 value="" />
+
+You can show generated image with:
+ <pre class="wbcaptcha">$wbcaptcha::image</pre>
+
+C<$wbcaptcha::captcha_id> has value of "no" when no captcha is generated,
+you can use it with F<interpolate_fancy> to hide forms when input isn't
+possible.
+
+=back
+
+=head2 VARIABLES
+
+
+C<$wbcaptcha::image> Contains ASCII image of generated text.
+
+C<$wbcaptcha::captcha_id> Contains captcha identifier by which user-typed
+text will be identified.
+
+C<$wbcaptcha::captcha_fail> Contains verbose description of captcha
+operation status. (Mostly says 'Inputted text mismatch' when user
+mistypes captcha text)
+
+=head2 SAMPLE story.html
+
+This uses F<interpolate_fancy>. It's much simplified for easy
+comprehending.
+
+ - -
+ <h4>$title</h4>
+ <p> $body
+ <p><a href="$url$path/$fn.html" title="Write a comment">
+ Comments .$writeback::count.</a>      
+
+ <!-- Only show following if path has .html ending -->
+ <?$path_info unlike="(^[^\.]+/?$)|(^$)|(index\.\w+$)">
+
+ <p><b>Comments...</b></p>
+
+ <!-- WriteBacks for this story -->
+
+ <p style="font-weight:bigger; color:red">$writeback::writeback_response
+ </p>
+
+ <!-- wbcaptcha message (failure..) -->
+ <p>$wbcaptcha::captcha_fail</p>
+
+ $writeback::writebacks
+
+ <!-- show following only if wbcaptcha hasn't yet generated captcha-id -->
+ <?$wbcaptcha::captcha_id eq="no">
+   <!-- show 'post comment' button -->
+   <p>
+     <form action="$url$path/$fn.html#addcomment" method="POST">
+       <input type="hidden" name="wbcaptcha" value="gen">
+       <input type="submit" value="Add comment">
+     </form>
+ </?>
+
+ <!-- show form only if captcha has been generated -->
+ <?$wbcaptcha::captcha_id ne="no">
+ <p id="addcomment"><b>comment...</b></p>
+
+ <!-- A simple comments form -->
+
+ <form method="POST" action="$url/$path_info">
+
+ <table>
+ <tr><td>Name:</td><td><input name="name" size="35" value="$writeback::pref_name" /></td></tr>
+ <tr><td>URL/Email:</td><td><input name="url" size="35" value="$writeback::pref_url" /> [http://... or mailto:you@wherever] (optional)</td></tr>
+ <tr><td>Title:</td><td><input name="title" size="35" /> (optional)</td></tr>
+ <tr><td>Comments:</td><td><textarea name="comment" rows="5" cols="60"></textarea></td></tr>
+ <tr><td colspan="2">
+ <input type="checkbox" name="save_preferences" value="1" checked /> Save my Name and URL/Email for next time
+ </td></tr>
+ <tr><td colspan="2">
+ <input type="hidden" name="plugin" value="writeback" />
+
+ <!-- *** here goes captcha_id *** -->
+ <input type="hidden" name="captcha_id" value="$wbcaptcha::captcha_id" />  
+ </td></tr>
+ </table>
+
+ <!-- here we show the image -->
+ <p><pre class="wbcaptcha">$wbcaptcha::image</pre>
+ <!-- here we input text that user sees -->
+ <p><input name="captcha_in" size=10 value="" /> Please enter text that
+ you see to identify yourself as non-bot. Upper-/lowercase does not matter.
+
+ <input type="submit" value="Post Comment" />
+
+ </form>
+
+ </?>
+
+ </?>
+ - -
+
+=end text
+
+=back
+
+=head1 INSTALLATION
+
+Drop wbcaptcha into your plug-ins directory (C<$blosxom::plugin_dir>).
+Name it so that it will be loaded by blosxom before writebacks
+plugin. For example if writebacks is called F<1writebacks>, name
+F<wbcaptcha> as F<05wbcaptcha>.
+
+=head1 CONFIGURATION
+
+=head2 (REQUIRED) MODIFYING story.flavour
+
+Do things described in QUICK START. You most likely will want to
+operate on F<story.html> (Or whichever story.flavour that holds you
+writebacks) 
+
+=head2 (OPTIONAL) TUNE VARIABLES IN wbcaptcha
+
+F<wbcaptcha> contains several variable that can be tuned for your
+site. Defaults are sane, so this isn't strictly required.
+
+
+=head1 AUTHOR
+
+Pasi Savolainen <psavo+wbcaptcha@iki.fi>, http://iki.fi/psavo/
+
+=head1 SEE ALSO
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to <psavo+wbcaptcha@iki.fi>.
+
+=head1 LICENSE
+
+GNU General Public License v2.0, <http://www.gnu.org/licenses/gpl.html>

@@ -1,0 +1,58 @@
+# Blosxom Plugin: push_if_first
+# Author(s): Kyo Nagashima <kyo@hail2u.net>
+# Version: 2005-10-16
+# Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+package push_if_first;
+
+use strict;
+use vars qw($data $is_first);
+
+# --- Configurable variables -----------
+
+$data = <<"_DATA_";
+<div class="adsense">
+<script type="text/javascript"><!--
+google_ad_client = "pub-8712792805045949";
+google_alternate_ad_url = "http://hail2u.net/google_adsense_script.html";
+google_ad_width = 468;
+google_ad_height = 60;
+google_ad_format = "468x60_as";
+google_ad_type = "text";
+google_ad_channel ="";
+google_color_border = "990000";
+google_color_bg = "F9F6F0";
+google_color_link = "990000";
+google_color_url = "661B1B";
+google_color_text = "333333";
+//--></script>
+<script type="text/javascript"
+  src="http://pagead2.googlesyndication.com/pagead/show_ads.js">
+</script>
+</div>
+_DATA_
+
+# --- Plug-in package variables --------
+
+$is_first = 0;
+
+# --------------------------------------
+
+sub start {
+  return 1;
+}
+
+sub story {
+  if ($data and $is_first) {
+    $is_first = 0;
+    $data = '';
+    return 0;
+  } elsif (!$data and !$is_first) {
+    return 0;
+  } else {
+    $is_first = 1;
+    return 1;
+  }
+}
+
+1;

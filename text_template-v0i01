@@ -1,0 +1,25 @@
+# Blosxom Plugin: text-template
+# Author(s): David Raynes <rayners@rayners.org>
+# Version: 0.01
+
+package text_template;
+
+sub start {
+  1;
+}
+
+sub interpolate {
+  return sub {
+  package blosxom;
+  require Text::Template;
+  my $template = shift;
+  my $obj = new Text::Template ( TYPE => 'STRING', SOURCE => $template );
+
+  $blog_url = $url;
+  $blog_url =~ s/$0//g;
+
+  return $obj->fill_in ();
+  };
+}
+
+1;

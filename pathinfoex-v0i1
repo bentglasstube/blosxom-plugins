@@ -1,0 +1,36 @@
+# Blosxom Plugin: PathInfo-Ex
+
+package pathinfoex;
+
+use strict;
+use CGI;
+
+sub start {
+    
+    my %month2num = (nil=>'00', Jan=>'01', Feb=>'02', Mar=>'03', Apr=>'04', May=>'05', Jun=>'06', Jul=>'07', Aug=>'08', Sep=>'09', Oct=>'10', Nov=>'11', Dec=>'12');
+    my @num2month = sort { $month2num{$a} <=> $month2num{$b} } keys %month2num;
+    
+    my @path_info = split m{/}, path_info() || param('path'); 
+    shift @path_info;
+    
+    $blosxom::path_info = '';
+    while ($path_info[0] and $path_info[0] =~ /.*[\D].*$/ and $path_info[0] !~ /(.*)\.(.*)/) { $blosxom::path_info .= '/' . shift @path_info; }
+    
+    if ( $path_info[$#path_info] =~ /(.+)\.(.+)$/ ) {
+      $blosxom::flavour = $2;
+      $1 ne 'index' and $blosxom::path_info .= "/$1.$2";
+      pop @path_info;
+    } else {
+      $blosxom::flavour = param('flav') || $blosxom::default_flavour;
+    }
+    
+    $blosxom::path_info =~ s!(^/*)|(/*$)!!g;
+    $blosxom::path_info =~ s/([()])/\\$1/g;
+    
+    ($blosxom::path_info_yr,$blosxom::path_info_mo,$blosxom::path_info_da) = @path_info;
+    $blosxom::path_info_mo_num = $blosxom::path_info_mo ? ( $blosxom::path_info_mo =~ /\d{2}/ ? $blosxom::path_info_mo : ($month2num{ucfirst(lc $blosxom::path_info_mo)} || undef) ) : undef;
+    
+    1;
+}
+
+1;

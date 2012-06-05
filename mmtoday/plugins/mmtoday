@@ -1,0 +1,235 @@
+# ---------------------------------------------------------------------
+# mmtoday: MM/Memoをエントリ化する
+# Author: Fukazawa Tsuyoshi <fukaz55@fo.main.jp>
+# Version: 2005-04-12
+# ---------------------------------------------------------------------
+package mmtoday;
+
+use strict;
+use XML::RSS;
+use LWP::UserAgent;
+use HTML::Template;
+use FileHandle;
+use Time::Local;
+
+# --- Configurable variables -----------
+my $mm_user = 52;						# MM/Memoの自分のID
+my $OUT_DIR = "$blosxom::datadir/mm";				# メモ出力用ディレクトリ名 (entriesの下に作成)
+
+my $agent_name = 'mmtoday (http://fukaz55.main.jp/)';		# LWP::UserAgentにつけるUA名
+my $timedout = 10;						# LWP::UserAgentのタイムアウト時間
+my $EXPIRE = 1;							# キャッシュ取得間隔（単位：時間）
+
+my $CACHE_DIR = "$blosxom::plugin_state_dir/mm";		# キャッシュ用ディレクトリ
+my $TEMPLATE = "$blosxom::plugin_state_dir/mmtoday.tmpl";	# 出力用テンプレートファイル名
+my $SAVE_FILE = $CACHE_DIR . "/mmtoday.dat";			# 前回処理エントリ保存用
+
+# --- Plug-in package variables --------
+my $fd = new FileHandle;
+my $today;
+
+# ---------------------------------------------------------------------
+sub start {
+# キャッシュディレクトリを作成
+	if (!-e $CACHE_DIR) {
+		my $mkdir_r = mkdir($CACHE_DIR, 0755);
+		if (!$mkdir_r) {
+			warn "blosxom : mm plugin > mkdir $CACHE_DIR missed:$!";
+			return 0;
+		}
+	}
+
+# メモ出力用ディレクトリ作成
+	if (!-e $OUT_DIR) {
+		my $mkdir_r = mkdir($OUT_DIR, 0755);
+		if (!$mkdir_r) {
+			warn "blosxom : mm plugin > mkdir $OUT_DIR missed:$!";
+			return 0;
+		}
+	}
+
+# 作成処理
+# 05/04/12: 1470.netの文字コード変換ゲートウェイを使用し、UTF-8に変換
+	my $RSS_URL = "http://1470.net/api/rss2utf8.php/http://1470.net/mm/mylist.html/$mm_user?mode=rss";
+	makeMemo($RSS_URL);
+
+	1;
+}
+
+# ---------------------------------------------------------------------
+sub makeMemo
+{
+	my $url = shift;
+	my $text = undef;
+
+	# RSSを再取得する必要があるなら取得
+	my $file = $CACHE_DIR . "/" . tmpfile($url);
+	if (!-e $file || ((-e $file) && (-M $file > $EXPIRE/24))) {
+		return if (!getRSS($url, $file));
+	}
+
+	# もし前回実行時からRSSファイルが変わっているのであれば、エントリを生成
+	RSStoMemoFile($file) if (!-e $SAVE_FILE || (-M $file < -M $SAVE_FILE));
+}
+
+# ---------------------------------------------------------------------
+# RSS取込
+sub getRSS
+{
+	my ($url, $file) = @_;
+
+	my $ua = new LWP::UserAgent;
+	$ua->agent($agent_name);
+	$ua->timeout($timedout);
+	my $res = $ua->mirror($url, $file);
+
+	return (-e $file) ? 1 : 0;
+}
+
+# ---------------------------------------------------------------------
+sub readText {
+	my $filename = shift;
+	$fd->open($filename, "r");
+	my $content = join('', <$fd>);
+	$fd->close();
+
+	return $content;
+}
+
+# ---------------------------------------------------------------------
+# RSSから bloxsom のエントリを作成
+sub RSStoMemoFile 
+{
+	my $xml = shift;
+	my $rss;
+	my $lastdate = undef;		# 前のエントリの日付
+	my $last_resource;		# 前回実行時の最後のlink
+	my $first_resource = undef;	# 今回実行時の最後のlink
+	my $term_flg = 0;		# 前回実行時のエントリを見つけたので終わりフラグ
+	my @items;			# 出力する中身
+
+        # ---------------------------------------------------------------------
+	# RSS解析
+	my $rss = new XML::RSS;
+	$rss->add_module(
+		prefix => 'content',
+		uri => 'http://purl.org/rss/1.0/modules/content/',
+	);
+	eval { $rss->parsefile($xml); };
+	if ($@) {
+		warn "$@";
+		return ;
+	}
+
+        # ---------------------------------------------------------------------
+	# 前回処理の記録を取得
+	$fd->open($SAVE_FILE);
+	$last_resource = <$fd>;
+	$fd->close();
+
+        # ---------------------------------------------------------------------
+	# テキスト生成
+	foreach my $item (@{$rss->{items}}) {
+		my ($dated, $content) = ($item->{dc}->{date}, $item->{content}->{encoded});
+		my %data;
+		my $nowdate = parseDate($dated);	# yyyy/mm/dd形式に変換
+		# 最新日付をセット
+		$lastdate = $nowdate if (!$lastdate);
+
+		# 最新のアイテムのリンク先を保存しておく
+		my $resource = $item->{link};
+		if (!$first_resource) {
+			$first_resource = $resource;
+
+			# もし前回実行時から内容が変わっていない場合、何もしないで終了
+			if ($first_resource eq $last_resource) {
+				$term_flg = 1;
+				last;
+			}
+		}
+
+		# 前回作成したアイテムを見つけたら終了フラグを立てる
+		$term_flg = 1 if ($last_resource ge $resource);
+
+		# 日付が変わったらファイルを生成
+		if ($lastdate ne $nowdate) {
+			createMemoFile(getTodayFileName($lastdate), $lastdate, @items);
+
+			# おしまい？
+			last if ($term_flg);
+
+			# 次の日へ
+			$lastdate = $nowdate;
+			@items = ();
+		}
+
+		# 今回のアイテムを追加
+		$data{description} = $content;
+		push(@items, \%data);
+	}
+
+	# 残りものを出力
+	if (!$term_flg && @items) {
+		createMemoFile(getTodayFileName($lastdate), $lastdate, @items);
+	}
+
+        # ---------------------------------------------------------------------
+	# 今回処理の記録を取得
+	$fd->open($SAVE_FILE, "w");
+	print $fd $first_resource;
+	$fd->close();
+	return ;
+}
+
+# ---------------------------------------------------------------------
+sub createMemoFile 
+{
+	my ($outfile, $date, @items) = @_;
+	my $fh;
+
+# テキストファイル作成
+	open $fh, "<:utf8", $TEMPLATE;	# 文字化け回避
+	my $tmpl = HTML::Template->new(filehandle => $fh);
+	$tmpl->param(date => $date, items => \@items);
+
+	$fd->open($outfile, "w");
+	binmode $fd, ":utf8";
+	print $fd $tmpl->output();
+	$fd->close();
+	close $fh;
+
+# 更新時刻を00:00に変更（一番最後に表示するため）
+	my ($yy, $d1, $mm, $d2, $dd) = unpack("A4A1A2A1A2", $date);
+	my $mtime = timelocal(0, 0, 0, $dd, $mm - 1, $yy);
+	utime(time, $mtime, $outfile);
+}
+
+# ---------------------------------------------------------------------
+sub tmpfile {
+	$_ = shift;
+	s|http://(.*)$|$1|;
+	tr|a-zA-Z0-9_| |cs;
+	s| ||g;
+	return $_;
+}
+
+# ---------------------------------------------------------------------
+sub parseDate 
+{
+	my $dcdate = shift;
+	my $dt = HTTP::Date::str2time($dcdate);
+	my ($ss, $mi, $hh, $dd, $mm, $yy, $wd, $yd, $tz) = localtime($dt);
+	$yy += 1900; $mm++;
+	return sprintf("%04d/%02d/%02d", $yy, $mm, $dd);
+}
+
+# ---------------------------------------------------------------------
+# yyyy/mm/dd を yyyy_mm_dd に変換するだけ
+sub getTodayFileName 
+{
+	$_ = shift;
+	s|/|_|g;
+	return "$OUT_DIR/$_.txt";
+}
+
+1;

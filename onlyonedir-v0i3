@@ -1,0 +1,165 @@
+# Blosxom plug-in: onlyonedir
+# Author: Stu MacKenzie <http://groups.yahoo.com/group/blosxom/messages>
+# Version: v0.3 2005-05-10
+# License: MIT/Public Domain
+# onlyonedir home: http://www.enilnomi.net/download.html
+
+# Limits blosxom's display to only those entries which are
+# located in the directory specified in the URL. For example,
+# with these directories:
+#   /animals
+#   /animals/mammals
+#   /animals/mammals/rodents
+#   /animals/mammals/rodents/porcupines
+# a browser pointed to
+#   www.example.com/blosxom.cgi/animals/mammals
+# will display only the stories located directly in the
+# /mammals directory; nothing from /rodents or /porcupines
+# will be displayed. Similarly, if you call:
+#   www.example.com/blosxom.cgi/index.html
+# only entries located directly in your datadir will display;
+# nothing from /animals, /mammals, /rodents, or /porcupines
+# will appear.
+
+# -- NOTE -----
+# If the specified directory contains *no* entry files,
+# blosxom will produce an empty page. You should think
+# about using the nixie plugin or emptymessage plugin
+# to guard against this condition.
+#
+
+package onlyonedir;
+
+# = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
+#
+#  Configuration Section
+#
+# = = = = = = = = = = = = = = = =
+#
+# -- No configuration required -----
+#
+# = = = = = = = = = = = = = = = =
+
+use strict;
+use vars qw { $onlyonedir_on };
+
+sub start {
+  1;
+}
+
+$onlyonedir_on = 1 unless defined $onlyonedir_on;
+
+sub filter {
+  my ($pkg, $files_ref, $others_ref) = @_;
+
+  $onlyonedir_on or return 0;
+                                            # leave one trailing slash on called path
+  (my $path = "$blosxom::datadir/$blosxom::path_info") =~ s/\/*$/\//;
+  foreach (keys %$files_ref) {              # delete paths that aren't in the called dir
+    $_ =~ m/^$path[^\/]+?\.$blosxom::file_extension$/ or delete $files_ref->{$_};
+  }
+}
+
+1;
+
+__END__
+
+
+=head1 SYNOPSIS
+
+Displays entries from *only* the directory specified in the URL. 
+For instance, if you have a path: /animals/mammals/rodents, and 
+you point your browser to: example.com/blosxom.cgi/animals/mammals, 
+*only* the entries from /mammals will be displayed; no entries from 
+/rodents will appear.
+
+
+=head1 INSTALLATION
+
+No configuration is needed; just drop this file into your blosxom 
+plugins folder. Blog on.
+
+
+=head1 CONFIGURATION
+
+No configuration is needed.
+
+
+=head1 USAGE
+
+Here's an example of using onlyonedir, exclude, and config to 
+create a customized "welcome page":
+
+Let's say that you'd prefer visitors see one or two "introductory" 
+entries when they first hit your site, instead of the normal display 
+of blog entries. Here's your directory structure:
+ /blosxom
+     /Welcome.txt
+     /Terms and Conditions.txt
+     /Life
+         /College Life
+         /Married Life
+         /Next Life
+     /Death
+         /Death of a Salesman
+         /Death of a Dream
+         /Death to Smoochy
+
+Now, you want folks to see the "intro" entries *only* when they hit 
+the root level of the blog; they should be hidden at all other times. 
+And, you want folks to see *only* the "intro" entries when they first 
+hit the blog; no other entries should display. Here's what to do ---
+
+1) Set up the exclude plugin to never display the intro entries. Your 
+   exclude file, stored at the top level of your blog, will be:
+     Welcome.txt
+     Terms and Conditions.txt
+
+2) Set up onlyonedir to load in standby mode, by naming it:
+     onlyonedir_
+
+3) Create a top-level configuration file (or edit your existing file) 
+   with these settings:
+     $path_info eq "" and $path_info_yr eq "" and $plugins{onlyonedir} = 1;
+     $path_info eq "" and $path_info_yr eq "" and $plugins{exclude} = 0;
+
+That's it. When folks first hit your blog, they'll get your "intro" 
+articles. If they enter a date-based URL, they'll get anything *but* 
+your "intro" articles.
+
+(Cavaet: for this to work, your config plugin must run during filter(), 
+not head(). If you use Rael's version of config, change "sub head {" to 
+"sub filter {", and you're good to go.)
+
+To disable onlyonedir via config file, use this line:
+ $onlyonedir::onlyonedir_on = 0;
+
+
+=head1 VERSION
+
+ 2005-05-10 (v0.3)   - dox
+ 2004-09-09 (v0.2)   - it's alive
+
+
+=head1 LICENSE
+
+this Blosxom Plug-in
+Copyright 2005, Stu MacKenzie
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

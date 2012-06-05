@@ -1,0 +1,35 @@
+package category_desc;
+
+use strict;
+use vars qw{ $description };
+
+# in head and/or story flavour(s), call $category_desc::description
+
+# ideally, you want one description for each directory
+# in the blog (including the "top level", as '/')
+my %descriptions = ( 
+  '/'     => "This is the whole blog", 
+  'genl'  => "This is the description for category 'General'", 
+  'tech'  => "This is the description for category 'Technical'"
+);
+
+sub start { 1; }
+
+sub head {
+  my $pi = $blosxom::path_info;
+  $pi =~ s/\/?[^\/]+\..+$//;     # remove file name
+  $pi =~ s/.*\/([^\/]*)$/$1/;    # retain last dir
+  $pi ||= '/';                   # can't have empty hash key
+  $description = $descriptions{$pi};
+  1;
+}
+
+sub story {
+  my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+  $path =~ s/.*\/([^\/]*)$/$1/;  # retain last dir
+  $path ||= '/';                 # can't have empty hash key
+  $description = $descriptions{$path};
+  1;
+}
+
+1;

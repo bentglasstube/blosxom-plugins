@@ -1,0 +1,208 @@
+# Blosxom Plugin: wikiwordish
+# Author(s): Rael Dornfest <rael@oreilly.com>, DJ Adams <dj.adams@pobox.com>
+# Version: 2.0b4
+# Documentation: See the bottom of this file or type: perldoc wikiwordish
+# Changes:
+# 2003-03-21 dja regex fix from Todd Larason
+
+package wikiwordish;
+
+# --- Configurable variables -----
+
+# What appearing right after the wikiwordish-style text should I take
+# to mean "Leave as is" (i.e. an escape sequence)?
+
+my $escape = "<!>";
+
+# Name of your Wiki 'intermap' text file of interwiki data
+my $intermap = "/usr/local/share/moin/mywiki/data/intermap.txt";
+
+# Additional 'personal' Wiki links (in case you can't add data for your
+# own Wiki to your Wiki's intermap file). Leave as an empty list if you
+# don't have any personal links to add.
+my @myinterwiki = (
+  'PipeSpace' => 'http://www.pipetree.com/space/',
+);
+
+# URL of 'interwiki' icon (leave empty for none)
+my $iconurl = "/~dj/moin-inter.gif";
+
+# --------------------------------
+
+use FileHandle;
+
+my %files;
+my %interwiki;
+
+sub start {
+
+  # Gather interwiki data
+  %interwiki = (readIntermap($intermap), @myinterwiki);
+  1;
+}
+
+sub filter {
+  my($pkg, $files_ref) = @_;
+
+  %files = %$files_ref;
+
+  1;
+}
+
+sub story {
+  my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+  $$body_ref =~ s#\[{2}([:\w-]+?)(?:\s+(.+?))?\]{2}(?!$escape)#&link($1,$2)#emg;
+
+  1;
+}
+
+sub link {
+  my($regex, $word) = @_;
+
+  # Handle an interwiki link
+  $regex =~ m/^(\w+?):(.*)$/
+    and exists $interwiki{$1}
+      and return qq{<a href="$interwiki{$1}$2" title="$1">} .
+                 ($iconurl ? qq{<img src="$iconurl" alt="[$1]" border="0"/>}
+                           : "") .
+                 ($word||$2) .
+                 qq{</a>};
+
+  my @words;
+  my $last;
+
+  foreach my $file ( keys %files ) {
+    $file =~ s/$blosxom::datadir//;
+    $file =~ m!$regex! 
+      and $file =~ m!(.*?)([^/]+)\.$blosxom::file_extension! 
+        and $last = $1.$2
+          and push @words, 
+            qq{<a href="$blosxom::url$1$2.$blosxom::default_flavour">$2</a>};
+  }
+   
+  return 
+    ( scalar @words > 1 && ($word||$regex) . ' [' . join(', ', @words) . ']' )
+    ||
+    ( scalar @words == 1 && qq{<a href="$blosxom::url$last.$blosxom::default_flavour">} . ( $word || $regex ) . qq{</a>} )
+    ||
+    ( $word || $regex );
+
+}
+
+
+sub readIntermap {
+
+  # Attempt to read the intermap data
+  my $intermap = shift;
+  my @links = ();
+  if (-r $intermap) {
+    my $fh = new FileHandle;
+    if ($fh->open("<$intermap")) {
+      while (<$fh>) {
+        chomp;
+        my ($name, $url) = split(/\s/, $_, 2);
+        push(@links, $name, $url) if $name and $url;
+      }
+      $fh->close;
+    }
+  }
+  return @links;
+
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: wikiwordish
+
+=head1 SYNOPSIS
+
+Provides WikiWord-like functionality.  Intercepts [[someword]] style
+wikiwordish notation and looks for matches in weblog entry filenames.
+
+=over 4
+
+=item * Should it find a match, [[someword]] is replaced with a hyperlink: 
+
+=back
+
+<a href="$blosxom::url/path/to/someword.$blosxom::default_flavour">someword</a>.
+
+=over 4
+
+=item * Since it does substring searches on wikiwordish words, it very well may find more than one match.  In this case, [[someword]] is replaced with:
+
+=back
+
+someword [<a href="$blosxom::url/path/to/someword.$blosxom::default_flavour">someword</a>, <a href="$blosxom::url/another/path/to/someword_or_other.$blosxom::default_flavour">someword_or_other</a>]
+
+=over 4
+
+=item * If no matches are found, [[someword]] is not hyperlinked, but rendered as a regular: 
+
+=back
+
+someword
+
+You can optionally specify a friendlier word or words after the wikiwordish 
+word, separated by a space.  E.g. [[someword some words are better]]
+In each of the cases above, "someword" will be replaced with 
+"some words are better".
+
+If you wish to actually have [[someword]] appear as is in a weblog entry,
+postfix it with a magic escape sequence, <!> by default.
+
+=over 4
+
+=item * It also supports InterWiki links, of the form [[InterWikiName:WikiWord]]
+
+
+=head1 VERSION
+
+2.0b4
+
+Version number coincides with the version of Blosxom with which the 
+current version was first bundled.
+
+=head1 AUTHORS
+
+Rael Dornfest  <rael@oreilly.com>, http://www.raelity.org/
+DJ Adams <dj.adams@pobox.com>, http://www.pipetree.com/qmacro
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Blosxom and this Blosxom Plug-in
+Copyright 2003, Rael Dornfest 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

@@ -1,0 +1,106 @@
+# Blosxom Plugin: clicktrack
+# Author: Nelson Minar <nelson@monkey.org>
+# Version: 20030524
+# http://www.nelson.monkey.org/~nelson/weblog/
+# License: Public Domain
+# Thanks to Todd Larason http://molelog.molehill.org/blox/
+
+# The clicktrack plugin helps you track clicks to offsite links.
+# It does two things:
+#
+# The start method looks for urls of the form blosxom.cgi?redirectURL=...
+# If this URL is present it overrides Blosxom's normal blog behaviour
+# and instead tells the browser to redirect to the specified URL.
+#
+# The story method scans your stories for offsite URLs and replaces
+# them with links to the blosxom redirect URL. The links have
+# a bit of Javascript to keep the status window tidy. Example:
+# <a href="http://www.nelson.monkey.org/cgi-bin/test.cgi?redirectURL=http%3A%2F%2Fmolelog.molehill.org%2Fblox%2F" 
+#   onMouseOver="window.status='to http://molelog.molehill.org/blox/'; return true;" 
+#   onMouseOut="window.status=''; return true;">Todd</a>
+#
+# To install simply drop it in your plugins dir. This script wants to
+# run early, so in most cases you should name it "00clicktrack". I encourage
+# you to disclose you're running this on your blog - let users know!
+# By default we don't escape URLs - breaks the CGI standard, but makes
+# prettier URLs. You can turn on escaping below.
+#
+# Possible features:
+#   Log the clicks. I find it simpler to just look at my access.log
+#   Option to set a cookie to opt out of this tracking
+
+package clicktrack;
+
+# Configurable option - escape URLs. Escaping is more correct, but ugly.
+$escapeURLs = 0;
+
+use CGI qw/:standard/;
+
+$query;
+
+# If the query contains redirectURL, override Blosxom and send the 302
+sub start {
+    $query = new CGI;
+
+    # Hunt for &redirectURL= in the query string
+    if ($escapeURLs) {
+        $url = $query->param('redirectURL');
+    } else {
+        if ($ENV{QUERY_STRING} =~ m/redirectURL=(.*)$/) {
+            $url = $1;
+        }
+    }
+
+    # Issue redirect
+    if ($url) {
+        print "Status: 302 Moved Temporarily\r\n",
+              "Location: $url\r\n",
+              "Content-Type: text/html\r\n\r\n",
+              "<a href=\"$url\">$url</a>\r\n";
+
+        exit 0;         # Not using skip because we're subverting Blosxom
+    }
+    1;
+}
+
+# Rewrite the href of the anchor to route through our click tracking
+sub rewriteHref {
+    my ($tag) = @_;
+
+    # Extract the href (skip if we don't find one)
+    if (!($tag =~ m/^(.*)href="([^"]+)"(.*)$/is)) {
+        return $tag;
+    }
+    $prehref = $1;
+    $href = $2;
+    $posthref = $3;
+
+    # Check that the href goes to an offsite http URL
+    return $tag if !($href =~ m/^http/i);
+
+    $msg = $href;
+    $msg =~ s%^http://%%;
+    $msg = "to $msg";
+    if ($escapeURLs) {
+        $redirURL = CGI::escape($href);
+    } else {
+        $redirURL = $href;
+    }
+    # Rewrite the link to include our own clicktrack URL
+    return $prehref . 
+           "href=\"" . $query->url() .
+           "?redirectURL=" . $redirURL . "\" " . 
+           "onMouseOver=\"window.status='" . $msg . "'; return true;\" " .
+           "onMouseOut=\"window.status=''; return true;\"" .
+           "$posthref";
+}
+
+# Modify the body of stories by rewriting offsite hrefs to our own redir
+sub story {
+    my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    # Rewrite any <a> tag in the post body
+    $$body_ref =~ s/(<a\s[^>]+>)/rewriteHref($1)/geis;
+    1;
+}
+
+1;

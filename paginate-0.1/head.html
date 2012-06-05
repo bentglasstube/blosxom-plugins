@@ -1,0 +1,19 @@
+<html>
+
+  <head>
+    <title>News</title>
+  </head>
+
+  <body bgcolor="#ffffff" class="news">
+
+    <script language="JavaScript">
+    function findSelectValue(selectEle) {
+        var optionArr = selectEle.options;
+        for (var i=0; i<optionArr.length; i++)
+            if (optionArr[i].selected == true)
+                return optionArr[i].value;
+        return null;
+    }
+    </script>
+
+    <form class="newsNav">$paginate::prev_link $paginate::link_list $paginate::next_link</form>

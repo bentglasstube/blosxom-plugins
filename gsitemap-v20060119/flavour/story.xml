@@ -1,0 +1,4 @@
+  <url>
+    <loc>$url$path/$fn.$default_flavour</loc>
+    <lastmod>$yr-$mo_num-$da</lastmod>
+  </url>

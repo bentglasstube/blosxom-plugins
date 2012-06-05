@@ -1,0 +1,41 @@
+# Blosxom Plugin: crop_path
+# Author(s): Tony Williams <tonyw@honestpuck.com> http://honestpuck.com/
+# Version: 1.0b
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+# Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+# Copyright 2003 Tony Williams
+# Released under the same License as Blosxom
+
+package crop_path;
+
+use CGI qw/:standard/;
+
+# --- Configurable variables -----
+
+# the number of bits you want
+$length = 1;
+
+# what you want at the start
+$prefix = '/';
+
+# what you want between bits
+$path_sep = '/';
+
+# --------------------------------
+
+$path; # use as $crop_path::path in flavour templates
+
+sub start {
+  1;
+}
+
+sub date {
+  my ($pkg, $date_ref, $mtime, $dw,$mo,$mo_num,$da,$ti,$yr) = @_;
+
+  @bits = split('/', $blosxom::path);
+  @pbits = splice(@bits, 0 - 1, 1);
+  $path = $prefix . join($path_sep, @pbits);  
+}
+
+1;

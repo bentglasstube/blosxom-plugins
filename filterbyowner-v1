@@ -1,0 +1,34 @@
+# Blosxom Plugin: filterbyowner
+# Author(s):
+# Version:
+# Documentation: See the bottom of this file or type: perldoc filter
+
+package filterbyowner;
+
+# --- Configurable variables -----
+
+# --------------------------------
+
+$fullname;
+$username;
+
+use CGI qw(param);
+
+sub start {
+  1;
+}
+
+sub filter {
+    my $self = shift;
+    my ($files, $others) = @_;
+    if (param('user')) {
+        foreach (keys %$files) {
+            delete $files->{$_} if
+                getpwuid((stat($_))[4]) ne param('user');
+        }
+    }
+}
+
+1;
+
+__END__

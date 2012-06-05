@@ -1,0 +1,65 @@
+# plugin:  sortz_special
+# author:  stu
+# support: experimental
+
+# Very crude; just a proof-of-concept, really
+
+# Purpose: blosxom normally sorts by mtime, and also uses 
+# mtime to display a post's date. This plugin assumes that 
+# you'd rather sort by file name, with filenames indicating 
+# the entry dates; e.g. 20040815.txt". To that end, this plugin 
+# sorts your entries by name, and then runs through the file 
+# names, converting them to mtimes, which it then uses to replace 
+# the actual mtimes in blosxom's list of files.
+
+# In order for this thing to work, your files must be named in 
+# one of two formats: yyyymmdd.ext or yymmdd.ext NOTE: it's up 
+# to you to comment/uncomment the correct lines in the code below 
+# that correspond to your format.
+
+package sortz_special;
+
+use File::Basename;
+use Time::Local;
+
+sub start {1;}
+
+sub fname_to_date {
+  my $fname = shift;
+
+  $fname =~ s/^.+\/([^\/]+)\..+$/$1/;     # just the file name, minus ext
+
+  if ($fname =~ m/^\d*$/) {
+    my ($y, $m, $d) = ($fname =~ m/(\d\d\d\d)(\d\d)(\d\d)/);    # 4-digit year
+    #my ($y, $m, $d) = ($fname =~ m/(\d\d)(\d\d)(\d\d)/);        # 2-digit year
+    #$y += 2000;                                                 # 2-digit year
+
+    return timelocal(0,0,0,$d,$m-1,$y);
+  }
+}
+
+sub filter {
+  my ($pkg,$files_ref,$others_ref) = @_;
+
+  my $temp;
+  foreach my $key (keys %$files_ref) {        # swap filename-as-mtime for real mtime
+    $temp = fname_to_date($key) and $temp or next;
+    $$files_ref{$key} = $temp;
+  }
+
+1;
+}
+
+sub sort {
+  return sub {
+    my($files_ref) = @_;
+    map { $_->[1] }
+      sort { $b->[0] cmp $a->[0] || $b->[1] cmp $a->[1] }
+        map { [ basename( $_ ), $_ ] }  # use dirname to sort by category by name
+          keys %$files_ref;            # use basename to sort by file name
+  };
+}
+
+1;
+
+__END__

@@ -1,0 +1,215 @@
+package index_override;
+use strict;
+
+=head1 NAME
+
+index_override - Blosxom plugin to optionally override index pages.
+
+=head1 VERSION
+
+This describes version B<0.01> of index_override.
+
+=cut
+
+our $VERSION = '0.01';
+
+=head1 DESCRIPTION
+
+The default "index" page for blosxom displays all the (matching)
+stories for that category.  This plugin allows a particular
+story-file to be used as the sole content for that category page (like a 
+traditional index page).  Unlike the "index" plugin, this plugin
+doesn't just go and load that file, it enables it to be treated
+as a normal story, by simply filtering out all other files
+except the designated file.  This enables other story-related plugins
+to act on this index file in the usual manner.
+
+Note that this only acts when the current path is the main page
+or a category page.
+
+This checks to see whether a "find" parameter exists (as used by the "find"
+plugin) in which case it reverts to the normal default behaviour, so that find
+can do its thing.
+
+=head1 INSTALLATION
+
+=head2 Installation
+
+Drop the index_override plug-in into your Blosxom plugins folder.
+Do this fairly early, before other filter plugins act.
+
+=head2 Configuration
+
+The following configuration variables can be set by editing the
+plugin file.
+
+=over
+
+=item B<indexfile>
+
+The name of the story-file to use for an index.
+(default: '0intro')
+
+=cut
+
+our $indexfile = '0intro';
+
+=item B<clear_date>
+
+If we *are* overriding the index, do you want us to make sure that
+the 'date' header is empty?
+(0 = No, 1 = Yes) (default: 1)
+
+=cut
+
+our $clear_date = 1;
+
+=over
+
+=cut
+
+use CGI qw/:standard/;
+
+# the types of pages that can be overriden.
+# It only makes sense for main or category pages to
+# be overridden, since this on a per-directory basis.
+my $override_types = qr/(main|category)/;
+
+# remember whether we're static or dynamic
+my $static;
+
+# remember if we are in index-override mode or not
+my $override;
+
+=head1 PLUGIN FUNCTIONS
+
+=head2 start
+
+Check if there is a "find" parameter; if so, then don't act.
+Always act in static mode.
+
+=cut
+
+sub start {
+    $static = ($blosxom::static_or_dynamic eq 'static');
+    return 1 if $static;
+    return (CGI::param('find') ? 0 : 1);
+} # start
+
+=head2 filter
+
+Check if there is an index-story file and we are in a "category"
+page; if so, make that the sole file in the files list.
+
+=cut
+sub filter {
+    my ($pkg, $files_ref) = @_;
+
+    my $pagetype = page_type();
+    if ($pagetype !~ /$override_types/)
+    {
+	$override = 0;
+	return 1; # skip
+    }
+
+    # check if there is an index-story file in the current directory
+    my $myroot = $blosxom::datadir ."/" . $blosxom::path_info;
+    $myroot =~ s/\/$//;
+    $myroot =~ s/\/[^\/]+\.[^\/]+$//;
+    my @files_list = sort keys %{$files_ref};
+    my $full_indexfile = '';
+    foreach (@files_list)
+    {
+	# look in the files in the current category
+	if (/$myroot([^\/]*\/[^\/]*){0,1}$/) {
+	    if (/$indexfile/) {
+		$full_indexfile = $_;
+		last;
+	    }
+	}
+    }
+    # if we found one, delete all the others
+    if ($full_indexfile) {
+	$override = 1;
+	foreach (@files_list) {
+	    if ($_ ne $full_indexfile) {
+		delete $files_ref->{$_};
+	    }
+	}
+    }
+
+    return 1;
+}
+
+=head2 date
+
+If we are in index-override mode, then make the "date" header empty
+if $clear_date is true.
+
+=cut
+sub date {
+    my ($pkg, $currentdir, $date_ref, $mtime, @date) = @_;
+
+    if ($override && $clear_date) {
+	$$date_ref = '';
+    }
+    return 1;
+} # date
+
+=head2 page_type
+
+Return the page type of the current page.
+Types are: chrono, main, category, story
+
+(code taken from the pagetype plugin)
+
+=cut
+sub page_type {
+    my $pagetype = '';
+
+    if ($blosxom::path_info_yr ne '' )
+    {$pagetype = 'chrono' ; }
+    elsif ($static && ( $blosxom::path_info =~ m!^(\d{4})!))
+    {$pagetype = 'chrono' ; }
+    elsif ((($blosxom::path_info =~ /$blosxom::flavour$/) && !$static) or (($blosxom::path_info =~ /$blosxom::file_extension$/) && $static))
+    {$pagetype = 'story' ; }
+    elsif ($blosxom::path_info eq "")
+    {$pagetype = 'main' ; }
+    else
+    { $pagetype = 'category';};
+
+    return $pagetype;
+} # page_type
+
+=head1 REQUIRES
+
+Perl 5.6.0
+CGI
+Fcntl
+
+=head1 SEE ALSO
+
+Meta, Markdown, textile
+
+=head1 BUGS
+
+Please report any bugs or feature requests to the author.
+
+=head1 AUTHOR
+
+    Kathryn Andersen (RUBYKAT)
+    perlkat AT katspace dot com
+    http://www.katspace.com
+
+=head1 COPYRIGHT AND LICENCE
+
+Copyright (c) 2004 by Kathryn Andersen
+
+This program is free software; you can redistribute it and/or modify it
+under the same terms as Perl itself.
+
+=cut
+# vim: ft=perl ts=8 sw=4 sts=4 ai cinkeys="0{,0},0),!,o,O,e"
+
+1; # End of index_override
+__END__

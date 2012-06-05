@@ -1,0 +1,128 @@
+#!/usr/bin/perl -w
+# Blosxom Plugin: warCounter
+# Author: David Zwarg (david@zwarg.com)
+# Version: 0.1a
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/blosxom
+# Documentation: See the bottom of this file.
+
+package warCounter;
+
+# --- Configurable Variables ---
+# Set to whatever you want your HTML to be indented with.
+my $indent="\t";
+
+# Set to whatever you want the list items to be indented with.
+my $lvl_1="&nbsp\;&nbsp\;";
+# ------------------------------
+
+$AllCounters = '';
+$SecondCounter = '';
+$MinuteCounter = '';
+$HourCounter = '';
+$DayCounter = '';
+$MonthCounter = '';
+$YearCounter = '';
+
+use Time::Local;
+
+sub start {
+    return 1;
+}
+
+sub head {
+	my ($pkg, $currentdir, $head_ref)=@_;
+
+	# march 20th, 2003 is the start of the war
+	# 0234 GMT is the time
+	@war_start = ( 0, 34, 02, 20, 2, 2003 );
+	$start = timegm( $war_start[0], $war_start[1], $war_start[2], $war_start[3], $war_start[4], $war_start[5] );
+
+	# today's date
+	$now = time();
+	@present = gmtime($now);
+
+	$sec = $now - $start;
+	$min = ($now - $start)/60;
+	$hrs = ($now - $start)/(60*60);
+	$day = ($now - $start)/(60*60*24);
+	#$yrs = (($present[5] + 1900) - $war_start[5]);
+	$mon = (($present[5] + 1900) - $war_start[5]) * 12 + ($present[4] - $war_start[4]);
+	$yrs = int( $mon / 12 );
+
+	$SecondCounter = sprintf "%s%sSeconds:&nbsp;%d", $indent, 
+	  $lvl_1, $sec;
+	
+	$MinuteCounter = sprintf "%s%sMinutes:&nbsp;%d", $indent, 
+          $lvl_1, $min;
+
+	$HourCounter = sprintf "%s%sHours:&nbsp;%d", $indent, 
+          $lvl_1, $hrs;
+
+	$DayCounter = sprintf "%s%sDays:&nbsp;%d", $indent, 
+          $lvl_1, $day;
+
+	$MonthCounter = sprintf "%s%sMonths:&nbsp;%d", $indent, 
+	  $lvl_1, $mon;
+
+	$YearCounter = sprintf "%s%sYears:&nbsp;%d", $indent,
+	  $lvl_1, $yrs;
+
+	$AllCounters = "<p>\n";
+	$AllCounters .= $SecondCounter.'<br/>'."\n";
+	$AllCounters .= $MinuteCounter.'<br/>'."\n";
+	$AllCounters .= $HourCounter.'<br/>'."\n";
+	$AllCounters .= $DayCounter.'<br/>'."\n";
+	$AllCounters .= $MonthCounter.'<br/>'."\n";
+	$AllCounters .= $YearCounter.'<br/>'."\n";
+	$AllCounters .= "</p>\n";
+}
+
+1;
+
+__END__
+
+=head1 Name
+
+warCounter - plugin for Blosxom which calculates the elapsed time since the war has begun in Iraq (March 20, 2003).
+
+=head1 Synopsis
+
+  # display seconds, minutes, hours, days, months, and years
+  $warCounter::AllCounters
+
+  # display seconds "Seconds: XXXXXX"
+  <p>$warCounter::SecondCounter</p>
+
+  # display minutes "Minutes: XXXXX"
+  <p>$warCounter::MinuteCounter</p>
+
+  # display hours "Hours: XXXX"
+  <p>$warCounter::HourCounter</p>
+
+  # display days "Days: XXX"
+  <p>$warCounter::DayCounter</p>
+
+  # display months "Months: XX"
+  <p>$warCounter::MonthCounter</p>
+
+  # display years "Years: X"
+  <p>$warCounter::YearCounter</p>
+
+=head1 Description
+
+The counters available count from the beginning of the war with Iraq.  The date used is 00:00, March 20, 2003.
+
+The variable AllCounters is a combination of the other counters, and contains paragraph formatting and line breaks.
+
+=head1 Download
+
+The source is available here: L<http://www.zwarg.com/blosxom/plugins/warCounter>
+
+=head1 Note
+
+The other counter variables are all from the beginning of the war.  Each time denomination is the total timer.  No attempt is made to display the time in HH:MM:SS format.
+
+=head1 Author
+
+David Zwarg
+david@zwarg.com

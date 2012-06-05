@@ -1,0 +1,32 @@
+
+<hr size="1" noshade />
+
+<a name="wikieditish"></a>
+<p class="path_info">edit this blog...</p>
+
+<!-- The wikieditish plug-in's response when saving -->
+
+<p>
+<font color="red">$wikieditish::response</font>
+</p>
+
+<!-- wikieditish form -->
+
+<form method="POST" action="$url/$path_info#wikieditish">
+
+<table border="0" cellspacing="3" cellpadding="0">
+<tr><td>Title:</td><td><input name="title" size="35" value="$wikieditish::title" /></td></tr>
+<tr valign="top"><td>Body:</td><td><textarea name="body" rows="25" cols="60">$wikieditish::body</textarea></td></tr>
+?{$wikieditish::require_password=1 <tr><td>Password:</td><td><input name="password" size="15" value="$wikieditish::password" type="password" /></td></tr>}
+<tr><td colspan="2">
+<input type="hidden" name="plugin" value="wikieditish" />
+<input type="submit" value="Save" />
+</td></tr>
+</table>
+</form>
+
+<!-- The rest of your foot -->
+
+</body>
+
+</html>

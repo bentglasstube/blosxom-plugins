@@ -1,0 +1,59 @@
+
+# Blosxom Plugin: urltranslate
+# Author: Randall Hand
+# Version: 1.1
+#
+
+package urltranslate;
+
+use CGI::Carp qw( fatalsToBrowser );
+
+"$ENV{HTTP_HOST}" =~ m!(.*):(.*)!i;
+if ($2 ne "") {
+    $portnum = ":$2";
+}
+
+# Translation table
+%translate = (
+    "/view/" => "http://twiki.z-kat.com/view/");
+
+# List of hosts to add the port number to.
+@addportnum = ( "bugzilla.z-kat.com", 
+                "twiki.z-kat.com", 
+                "mrbs.z-kat.com",
+                "ldap.z-kat.com", 
+                "cvs.z-kat.com" );
+
+sub start {
+    1;
+}
+
+sub head {
+    my ($pkg, $currentdir, $head_ref) = @_;
+    $$head_ref = translate ($$head_ref);
+    1;
+}
+
+sub foot {
+    my ($pkg, $currentdir, $foot_ref) = @_;
+    $$foot_ref = translate ($$foot_ref);
+    1;
+}
+sub story {
+    my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    $$body_ref = translate ($$body_ref);
+    1;
+}
+
+sub translate {
+    my $text = shift;
+    for $find ( keys %translate ) {
+	$text =~ s!(href|src)=("?)$find!$1=$2$translate{$find}!g;
+    }
+    foreach (@addportnum) {
+        $text =~ s!(href|src)=("?)(http|https|ftp)://$_/!$1=$2$3://$_$portnum/!g;
+    }
+    return $text;
+}
+
+1;

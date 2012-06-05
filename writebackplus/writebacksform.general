@@ -1,0 +1,67 @@
+<!-- TrackBack auto-discovery bits -->
+
+<!--
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+  xmlns:dc="http://purl.org/dc/elements/1.1/"
+  xmlns:trackback="http://madskills.com/public/xml/rss/module/trackback/">
+
+  <rdf:Description
+    rdf:about="$url$path/$fn.$flavour"
+    dc:identifier="$url$path/$fn.$flavour"
+    dc:title="$title"
+    trackback:ping="$url$path/$fn.trackback" />
+
+</rdf:RDF>
+-->
+
+
+<br><br>
+
+<p><b>Leave a comment...</b></p>
+
+<!-- A simple comments form -->
+
+<form method="POST" action="$blosxom::$url/$blosxom::path_info?seewritebacks=y">
+
+<table class="standardtext" border="0" cellspacing="3" cellpadding="0">
+	<tr>
+		<td>&nbsp;</td>
+	</tr>
+	<tr>
+		<td>Name:</td>
+		<td><input name="name" size="35"
+		value="$writeback::pref_name" /></td>
+	</tr>
+	<tr>
+		<td>URL/Email:</td>
+		<td><input name="url" size="35" value="$writeback::pref_url" 
+/> [http://... or mailto:you@wherever] (optional)</td>
+	</tr>
+	<tr>
+		<td>Title:</td>
+		<td><input name="title" size="35" /> (optional)</td>
+	</tr>
+<tr><td>Comments:</td><td><textarea name="comment" rows="5" 
+cols="60"></textarea></td></tr>
+<tr><td colspan="2">
+<input type="checkbox" name="save_preferences" value="1" checked /> Save my 
+Name and URL/Email for next time
+</td></tr>
+<tr><td colspan="2">
+<input type="hidden" name="plugin" value="writeback" />
+<input type="submit" value="Post" />
+</td></tr>
+</table>
+
+
+</form>
+
+<p><b>Trackback</b></p>
+
+<!-- The right URL for a TrackBack ping; notice the flavour is trackback -->
+
+<p>TrackBack ping me at:</p>
+
+<p>$url$writeback::trackback_path_and_filename.trackback</p>
+
+

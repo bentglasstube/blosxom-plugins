@@ -1,0 +1,86 @@
+# Blosxom Plugin: smiley
+# Author: Jeff Stoner
+# Version 0.1
+
+# Replace smiley tags with appropriate images
+#
+# Available smiley tags:
+#  <happy>
+#  <sad>
+#  <angry>
+#  <frustrated>
+#  <confused>
+#  <tired>
+
+# To create a smiley image, create an appropriate sized image and name it the same as the tag
+# eg. the <happy> tag would use the happy.gif image, <angry> would use angry.gif, etc.
+
+package smiley;
+
+#### Configure
+#
+#
+# $smiles - a quoted list of all available smileys
+my @smiles = (
+	'happy',
+	'sad',
+	'angry',
+	'frustrated',
+	'confused',
+	'tired',
+);
+#
+# $smiley_img_dir - the relative URL where your smiley images are located
+my $smiley_img_dir = "/images/smiley";
+#
+# $smiley_img_ext - the extension to your smiley images (ie. gif, jpg, png, tiff, bmp, etc.)
+my $smiley_img_ext = "gif";
+#
+#
+#### Nothing below this line needs changed
+
+sub smile_ize {
+    my ($text_ref) = @_;
+    my $qp;
+    
+    foreach $qp (@smiles) {
+        $$text_ref =~ s{<$qp>}{<img src="$smiley_img_dir/$qp.$smiley_img_ext">}mg;
+    }
+
+	1;
+}
+
+sub start {
+    # umm...yeah
+	1;
+}
+
+sub head {
+    # take care of any smileys in the page head
+	my ($pkg, $currentdir, $head_ref) = @_;
+
+	smile_ize($head_ref);
+	
+	1;
+}
+
+sub story {
+    # take care of smiles in the story itself
+	my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+	smile_ize($body_ref);
+	smile_ize($title_ref);
+	smile_ize($story_ref);
+
+	1;
+}
+
+sub foot {
+    # catch any smiles in the footer
+	my($pkg, $currentdir, $foot_ref) = @_;
+	smile_ize($foot_ref);
+
+	1;
+}
+
+1;

@@ -1,0 +1,104 @@
+NAME
+    Blosxom Plug-in: paginate
+
+DESCRIPTION
+    Provide a simple page navigation capability in a Blosxom blog, allowing
+    a reader to flip through ranges of stories with a previous link, next
+    link, and a list of available pages. Page length is defined by the
+    `$num_entries' setting in the main blosxom config.
+
+    The following variables are available for display in Blosxom templates:
+
+    * $paginate::prev_link
+        Contains link to previous page, is empty if a this link is not
+        valid.
+
+    * $paginate::link_list
+        Contains the entire list of links to available pages.
+
+    * $paginate::next_link
+        Contains link to next page, is empty if a this link is not valid.
+
+    The display of previous, next, and page links is customizable via
+    flavoured templates (each with a .$flavour extension):
+
+    * paginate_prev_link
+        Used to build a previous page link.
+
+        Default: <a href="$prev_url">&lt;&lt;- prev</a>
+
+    * paginate_next_link
+        Used to build a next page link.
+
+        Default: <a href="$next_url">next -&gt;&gt;</a>
+
+    * paginate_list_start
+        Placed at the start of the page list.
+
+        Default: " [ "
+
+    * paginate_list_join
+        Placed in between page list items.
+
+        Default: " | "
+
+    * paginate_list_item
+        Used to display page list items other than the current page.
+
+        Default: <a href="$curr_url">$curr_number</a>
+
+    * paginate_list_curr_item
+        Used to display the current page in the list.
+
+        Default: <b>$curr_number</b>
+
+    * paginate_list_end
+        Placed at the end of the page list.
+
+        Default: " ] "
+
+    By default, these templates construct simple links to blog pages. In
+    customizing these templates, many other forms of page navigation are
+    possible. For example, with a little bit of Javascript, the prev/next
+    links can become buttons and the page list can become a drop-down
+    selector. An example of this is included with the distribution archive
+    for this plugin.
+
+VERSION
+    v0.01
+
+AUTHOR
+    l.m.orchard <deus_x@pobox.com> http://www.decafbad.com
+
+SEE ALSO
+    Paginate: http://www.decafbad.com/twiki/bin/view/Main/BlosxomPaginate
+
+    Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+    Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+BUGS
+    Address bug reports and comments to the author.
+
+LICENSE
+    This Blosxom Plug-in is Copyright 2003, l.m.orchard
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the
+    "Software"), to deal in the Software without restriction, including
+    without limitation the rights to use, copy, modify, merge, publish,
+    distribute, sublicense, and/or sell copies of the Software, and to
+    permit persons to whom the Software is furnished to do so, subject to
+    the following conditions:
+
+    The above copyright notice and this permission notice shall be included
+    in all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+    OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+    CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+    TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+    SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+

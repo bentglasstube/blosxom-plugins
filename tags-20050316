@@ -1,0 +1,64 @@
+# Blosxom Plugin: tags
+# Author(s): Beat Bolli <bbolli@ewanet.ch>
+# Version: 2005-03-16
+# Documentation:
+#   Generates a <span> containing links to the tag pages
+#   of the tags defined by the meta-tags variable.
+#   The div can be inserted in the story template with $tags::tags.
+#   Requires the meta plugin.
+#
+
+package tags;
+
+# ---- configurable variables ----
+
+# The default tag prefix you'd like to use
+$prefix_default = 'http://technorati.com/tag/';
+
+# A hash of other prefixes you use sometimes. Select one of
+# these by writing: "meta-tags: del:delicious-tag fli:flickr-tag" etc.
+# The part before the colon corresponds to the part to
+# the left of the => symbol below.
+%prefixes = (
+  del => 'http://del.icio.us/tag/',
+  fli => 'http://flickr.com/photos/tags/',
+  # Add more here
+);
+
+# HTML text at the beginning of the tag list
+$tag_preamble = "<br />Tags:\n";
+
+# HTML element wrapping the tag list (including $tag_preamble)
+$tag_element = 'span';
+
+# CSS class of tag list
+$tag_class = 'blosxomTags';
+
+# --------------------------------
+
+$tags = '';
+
+sub start {
+  1;
+}
+
+sub story {
+  $tags = '';
+  if ($meta::tags ne '') {
+    for (split(/ +/, $meta::tags)) {
+      if (/^(.+?):(.+)$/ && defined $prefixes{$1}) {
+        $pref = $prefixes{$1};
+        $_ = $2;
+      }
+      else {
+        $pref = $prefix_default;
+      }
+      $tags .= "<a rel=\"tag\" href=\"$pref$_\">$_</a>\n";
+    }
+    $tags = "<$tag_element class=\"$tag_class\">$tag_preamble$tags</$tag_element>\n";
+  }
+  
+  1;
+}
+
+1;

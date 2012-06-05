@@ -1,0 +1,57 @@
+# Blosxom Plugin: flavfix
+# Author: JonahC (http://www.theblankline.net)
+# Version: 2005-3-6
+# Blosxom Home/Docs/Licensing: http://www.blosxom.com
+
+package flavfix;
+
+$oldPath = $ENV{PATH_INFO};
+
+sub start {
+    if ($ENV{PATH_INFO} eq $ENV{SCRIPT_NAME}) {
+        $blosxom::flavour = $blosxom::default_flavour;
+        $blosxom::path_info = "";
+        }
+    1;
+}
+
+sub end {
+    1;
+}
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: FlavFix
+
+=head1 SYNOPSIS
+
+Thanks to misconfigured cgiwrap and/or virtual redirection on Apache, some webservers pass bogus PATH_INFO variables to the Blosxom script. This makes Blosxom display the infamous "Error: I'm afraid this is the first I've heard of a cgi flavoured Blosxom" message.  Joey Gibson (http://www.joeygibson.com/blog) released a diff patch to address this issue, but it breaks if you rename blosxom.cgi or put it in a subfolder.
+
+FlavFix takes a different approach to this problem.  It compares the web server's PATH_INFO environment variable against the SCRIPT_NAME environment variable. If they match, the plugin takes action-- clearing the $blosom::path_info variable and setting the $blosxom::flavour variable to the default flavour value.
+
+=head1 INSTALLATION AND CONFIGURATION
+
+Drop the plugin into your $blosxom::plugin directory. No additional configuration should be required. The $oldpath variable is used for debugging purposes-- put it in one of your templates if you want to see what crazy PATH_INFO stuff your webserver is passing to Blosxom.
+
+=head1 VERSION
+
+2005-3-6
+
+=head1 AUTHOR
+
+Jonah Chanticleer (jonahc@theblankline.net)
+
+=head1 BUGS
+
+I'm not aware of any, but if you find any I hope you will contact me
+and let me know about it.
+
+=head1 ACKNOWLEDGEMENTS
+
+Rael Dornfest (for making Blosxom)
+Joey Gibson (for the explanation about PATH_INFO and the first patch effort)
+Bernie Simon (for putting up with all my novice Perl questions)
+Lisa and Greg at www.vivapodcast.com (for listening
+stimulation/inspiration while coding)

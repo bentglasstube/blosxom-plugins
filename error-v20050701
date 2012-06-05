@@ -1,0 +1,90 @@
+# Blosxom Plugin: captcha -*- CPerl -*-
+# Author(s): Bill Ward <bill@wards.net>
+# Version: 2005-07-01
+# Documentation: See the bottom of this file or type: perldoc captcha
+
+# --------------------------------
+
+package error;
+
+use CGI::Carp qw(fatalsToBrowser set_message);
+
+my $flavour_dir = "$blosxom::datadir/../flavours";
+
+our $msg;
+BEGIN {
+    sub handle_errors
+    {
+        $msg = shift;
+        open IN, "$flavour_dir/error.html";
+        my $out = join("", <IN>);
+        $out =~ s/\$error::msg/$msg/g;
+        print $out;
+    }
+    set_message(\&handle_errors);
+}
+
+sub start { 1 };
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: error
+
+=head1 SYNOPSIS
+
+Uses CGI::Carp to generate errors so "die" is useful in Blosxom.
+
+Required by the captcha plugin.  Requires CGI::Carp to be installed.
+
+=head1 INSTALLATION AND CONFIGURATION
+
+Drop the error plug-in into your Blosxom plugins folder, and name it
+"00error" so it is loaded before any other plugins.  No other
+configuration is needed.  Once installed, the "die" command will
+trigger the contents of the "error.html" flavour file to be displayed.
+
+=head1 VERSION
+
+2005-07-01
+
+=head1 AUTHOR
+
+William R. Ward  bill@wards.net, http://bill.wards.net/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Not intended to work with any flavours besides html.
+
+Must be loaded before any other plugins; use the filename "00error" in
+your plugins folder to ensure this.
+
+=head1 LICENSE
+
+This Blosxom Plug-in is Copyright 2005, William R. Ward
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
+USA
+
+A copy can also be found at: http://www.gnu.org/copyleft/gpl.html

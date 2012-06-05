@@ -1,0 +1,260 @@
+# Blosxom Plugin: pictureindex -*- CPerl -*-
+# Author: Bill Ward <billbloxsompictureindex@wards.net
+# Version: 2005-07-01 (v0.02)
+# License: GPL
+# Blosxom Home/Docs/Licensing: http://www.blosxom.com
+
+# --- Configurable variables -----
+
+# None.
+
+# --------------------------------
+
+#  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# The pictureindex plugin creates a gallery, supporting images hosted
+# locally or on other servers.
+
+package pictureindex;
+
+use strict;
+my $package = "pictureindex";
+
+sub start {
+    while (<DATA>) {
+        last if /^(__END__)?$/;
+        my ($flavour, $comp, $txt) = split ' ',$_,3;
+        $txt =~ s:\\n:\n:g;
+        $blosxom::template{$flavour}{"$package.$comp"} = $txt;
+    }
+    1;
+}
+
+use vars qw/ $desc $alt_text $image_url $index_url $link_url $name
+             $next_name $next_url $prev_name $prev_url
+             $short_desc $thumb_url $width $height /;
+
+sub get
+{
+    my ($self, $attr, $content) = @_;
+
+    my @entries = split /(^\S+):\s*/m, $content;
+    shift @entries;             # remove leading empty entry
+    my @thumbs;
+
+    if ($blosxom::path_info !~ m:\.:)
+    {
+        ($name, $desc) = @entries[0, 1];
+        ($short_desc = $desc) =~ s/\..+\w+//;
+        undef $short_desc if $short_desc eq $desc;
+
+        $alt_text = $short_desc || $desc;
+        $alt_text =~ s/".*/.../s;
+
+        $thumb_url = $attr->{thumb};
+        $thumb_url =~ s/\$1/$name/g;
+
+        $link_url = _get_link_url($blosxom::path);
+
+        my $thumb = (&$blosxom::template($blosxom::path,
+                                         "$package.preview",
+                                         $blosxom::flavour));
+        return &$blosxom::interpolate($thumb);
+    }
+
+    $name = CGI::param("image");
+    if ($name)
+    {
+        my %entries = @entries;
+        $desc = $entries{$name} || $name;
+        $desc =~ s:^{(.+?)}\s*:<b>$1</b><br />:;
+
+        $alt_text = $1 || $desc;
+        $alt_text =~ s/".*/.../s;
+
+        for (my $i = 0; $i < @entries; $i+=2)
+        {
+            next unless $entries[$i] eq $name;
+
+            $image_url = $attr->{image};
+            $image_url =~ s/\$1/$name/g;
+
+            my $prev_i = $i-2;
+            if ($prev_i >= 0)
+            {
+                $prev_name = $entries[$prev_i];
+                $prev_url  = _get_link_url($blosxom::path, $prev_name);
+            }
+
+            my $next_i = $i+2;
+            if ($next_i >= 0)
+            {
+                $next_name = $entries[$next_i];
+                $next_url  = _get_link_url($blosxom::path, $next_name);
+            }
+
+            last;
+        }
+        $index_url = _get_index_url($blosxom::path);
+
+        ($height, $width) = imgsize($image_url) if -f $image_url;
+
+        my $image = (&$blosxom::template($blosxom::path,
+                                         "$package.image",
+                                         $blosxom::flavour));
+
+        return &$blosxom::interpolate($image);
+    }
+
+    else
+    {
+        for (my $i = 0; $i < @entries; $i+=2)
+        {
+            ($name, $desc) = @entries[$i, $i+1];
+            if ($desc =~ s/^{(.+?)}\s*//)
+            {
+                $short_desc = $1 . " ";
+            }
+            else
+            {
+                ($short_desc = $desc) =~ s:((?<=\.)\s+|<(p|br)\b).*\w.*: :s;
+            }
+            undef $short_desc if $short_desc eq $desc;
+
+            $alt_text = $short_desc || $desc;
+            $alt_text =~ s/".*/.../s;
+
+            $thumb_url = $attr->{thumb};
+            $thumb_url =~ s/\$1/$name/g;
+
+            $link_url = _get_link_url($blosxom::path, $name);
+
+            my $thumb = (&$blosxom::template($blosxom::path,
+                                             "$package.thumb",
+                                             $blosxom::flavour));
+            $thumb = &$blosxom::interpolate($thumb);
+            push @thumbs, $thumb;
+        }
+
+        return join("",
+                    '<p style="clear:both">&nbsp;</p>',
+                    @thumbs,
+                    '<p style="clear:both">&nbsp;</p>');
+    }
+}
+
+sub _get_link_url
+{
+    my($path, $name) = @_;
+    my $url = _get_index_url($path);
+    return $name ? "$url?image=" . CGI::escape($name) . "#pic" : $url;
+}
+
+sub _get_index_url
+{
+    my($path) = @_;
+    return "$blosxom::url$path/$blosxom::fn.$blosxom::flavour";
+}
+
+1;
+__DATA__
+error thumb <div class="GalleryPhoto"><a href="$pictureindex::link_url"><img src="$pictureindex::thumb_url" alt="$pictureindex::alt_text" /></a><p> <?$pictureindex::short_desc>$pictureindex::short_desc<a href="$pictureindex::link_url">[more]</a></?> <?!$pictureindex::short_desc>$pictureindex::desc</?> </p></div>
+error preview <div><a href="$pictureindex::link_url"><img src="$pictureindex::thumb_url" alt="$pictureindex::alt_text" /></a><br /><a href="$pictureindex::link_url">[more]</a></div>
+error image <p>Click the image to go to the next in the series. <br /></p><table border="0" cellpadding="0" cellspacing="5"><tr><td style="width:160px"> <?$pictureindex::prev_url><a href="$pictureindex::prev_url">Previous</a></?> </td><td align="center" style="width:160px"><a href="$pictureindex::index_url">Return to Thumbnails</a></td><td align="right" style="width:160px"> <?$pictureindex::next_url><a href="$pictureindex::next_url">Next</a></?> </td></tr><tr><td colspan="3" align="center" style="width:480px"><a id="pic"></a><a href="$pictureindex::next_url"><img src="$pictureindex::image_url" alt="$pictureindex::alt_text" <?$pictureindex::width>width="$pictureindex::width"</?> <?$pictureindex::height>height="$pictureindex::height"</?> /></a></td></tr><tr><td colspan="3" style="width:480px">$pictureindex::desc</td></tr><tr><td style="width:160px"> <?$pictureindex::prev_url><a href="$pictureindex::prev_url">Previous</a></?></td><td align="center" style="width:160px"><a href="$pictureindex::index_url">Return to Thumbnails</a></td><td align="right" style="width:160px"> <?$pictureindex::next_url><a href="$pictureindex::next_url">Next</a></?></td></tr></table>
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: pictureindex
+
+=head1 SYNOPSIS
+
+The pictureindex plugin is yet another kind of gallery plugin for Blosxom.
+
+This plugin requires the interpolate_fancy plugin.
+
+=head1 INSTALLATION AND CONFIGURATION
+
+Drop the pictureindex plug-in into your Blosxom plugins folder.
+No further configuration is necessary.
+
+To use this plugin, create a blog entry that contains something like this:
+
+<@pictureindex.get output="yes"
+ thumb="http://$1_t.jpg"
+ image="http://$1.jpg">
+photosNN.flickr.com/xxxx_yyyy: {Title of Picture} Description
+photosNN.flickr.com/xxxx_yyyy: {Title of Picture} Description
+photosNN.flickr.com/xxxx_yyyy: {Title of Picture} Description
+photosNN.flickr.com/xxxx_yyyy: {Title of Picture} Description
+</@pictureindex.get>
+
+The above example assumes you host your images on Flickr but you can
+actually host them anywhere on the Internet, as long as there is both
+a thumbnail and regular size image available.  The "image" and "thumb"
+arguments define the URL pattern to load, and the part represented by
+$1 should be common between the thumbnail and full-size images' URL's.
+
+The GalleryPhoto class should be defined by your cascading style sheet
+(via your head.html flavour file).  For example these are the class
+definitions from the author's site (http://bill.wards.net):
+
+.GalleryPhoto
+{
+  float: left;
+  display: inline;
+  position: relative;
+  width: 160px;
+  height: 240px;
+  text-align: center;
+  vertical-align: bottom;
+}
+.GalleryPhoto P
+{
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.GalleryPhoto IMG
+{
+  margin: .5em;
+}
+
+=head1 VERSION
+
+2005-07-01
+
+=head1 AUTHOR
+
+William R. Ward  bill@wards.net, http://bill.wards.net/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the author or to the Blosxom
+mailing list [http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+This Blosxom Plug-in is Copyright 2004, William R. Ward
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
+USA
+
+A copy can also be found at: http://www.gnu.org/copyleft/gpl.html

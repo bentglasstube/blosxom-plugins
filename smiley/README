@@ -1,0 +1,18 @@
+Smiley
+v 0.1
+
+by Jeff Stoner <leapfrog@freeshell.org>
+
+This Blosxom plugin is based on John Slee's 'googletag' plugin.
+
+Install:
+copy the smiley script to your plugins directory.
+copy/move the images to a location on your docroot
+configure the script according to the comments at the top
+
+You can add more smiley tags and images if you so desire.
+
+The images included were shamelessly ripped from www.deadcat.net (the
+Big Brother script archive) because I have no abilities as an artist.
+I've included the readme.txt from the author of the original images
+so as to give him the credit he deserves.

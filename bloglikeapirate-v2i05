@@ -1,0 +1,137 @@
+#!/usr/bin/env perl
+# Blog-Like-A-Pirate for Blosxom, by Rob Hague -*-perl-*-
+# See http://www.rho.org.uk, http://www.blosxom.com and
+# http://talklikeapirate.com/. Aar!
+
+package bloglikeapirate; 
+
+# --- Configurable variables -----
+
+# The English-to-Pirate Dictionary
+@substitutions = (['\bis\b','be'],
+                  ['\b(([Ii]t)|([Tt]here))\'s\b','$1 be'],
+                  ['\. ','. ','. ','. Avast, '],
+                  ['<p>','<p>','<p>',
+                   '<p>Shiver me timbers. ','<p>Yar. ',
+                   '<p> Avast, me hearties. '],
+                  ['</p>','</p>','</p>',
+                   ' Yo ho ho and a bottle of rum.</p>', ' Aarr!</p>'],
+                  ['\bYes\b','Aye'], ['\byes\b','aye'],
+                  ['\bbeer\b','grog'],
+                  ['\bHello\b','Ahoy'],['\bhello\b','ahoy'],
+                  ['\bfriend'],['shipmate'],
+                  ['\bmy\b','me']);
+
+# --------------------------------
+
+sub start { 1; }
+
+sub story {
+    my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    if ($meta::scurvey) { return 1; };
+    srand $$title_ref;
+    filter_text($title_ref);
+    filter_text($body_ref);
+    return 1;
+}
+
+sub filter_text {
+    my ($text_ref) = shift;
+    foreach $s (@substitutions) {
+        $$text_ref =~ s/$s->[0]/'"' . $s->[1+int(rand ($#{$s}))] . '"'/eeg;
+    }
+}
+
+# Act like a normal Unix command if invoked on the command line
+if ($0 =~ /bloglikeapirate/) {
+    srand "Shiver Me Timbers"; # Ensure consistent output
+    while (<>) {
+        filter_text(\$_);
+        print;
+    }
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: Blog-Like-A-Pirate
+
+=head1 SYNOPSIS
+
+Purpose: Turns your posts into pirate-speak. Aar!
+
+Description
+
+    Just drop it in your plugin directory. Also works from the command
+    line; provide filenames as arguments, or data on standard input.
+
+Configuration
+
+    Customise the english-to-pirate dictionary as you see fit; each
+    entry is a list, the first item of which is a regular expression
+    to match, the others being substitution terms. One of these is
+    chosen at pseudorandom for each match.
+
+Additional Bits Required 
+
+Category
+
+    /display/stupid
+
+Date
+
+    2003-09-18
+
+Todo list
+
+
+
+=head1 VERSION
+
+2.0rc5
+
+Version number coincides with the version of Blosxom with which the 
+current version was first bundled.
+
+=head1 AUTHOR
+
+Rob Hague <rob@rho.org.uk> http://www.rho.org.uk/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+Blosxom Plugin Docs: http://www.blosxom.com/plugin
+
+International Talk Like a Pirate Day: http://www.talklikeapirate.com
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+This Blosxom Plug-in
+Copyright 2003, Rob Hague
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

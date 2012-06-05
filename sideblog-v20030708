@@ -1,0 +1,72 @@
+# Blosxom Plugin: sideblog
+# Author: infozo <infozo@infozo.info> http://infozo.info
+# Version: 20030708
+# License: caveat emptor
+# Purpose: to read the first handful of lines from a sideblog file containing
+# not-quite-ready-for-prime-time blog material (be it uncommented links,
+# simple verbal quips, or unformulated thoughts) into a variable made available
+# to the head/foot files.
+
+# Things to work on (in addition to the fact that sideblog might very
+# well go against everything that blosxom stands for...):
+# 1. sideblog should check the date of the sideblog file and compare it against
+# the date of its last cache; it should only bother with the big ol' file
+# if it's newer. Did I mention it should have a cache? Like maybe based on 
+# the first x lines or so of the real file...
+# 2. sideblog should make sure that the last thing it grabs is a complete entry
+# 3. structure of the sideblog file itself; perhaps use something more creative 
+# than four hyphens between items?
+# Currently, the source file must be highly structured to ensure sideblog works.
+# No breaklines within lines are allowed at this point.
+# line 1: link
+# line 2: source link (how I found it)
+# line 3: entry title (text gets linked)
+# line 4: comments
+# line 5: ---- (entry separator)
+# 4. some type of either archiving system or incorporation of datestamps for 
+# individual sideblog entries
+# 5. rss syndication of sideblog
+# 6. oooh. I could do subject-specific sideblogs. Save 'em as separate files
+# and include only the sideblog files corresponding to current and child 
+# topic directories... but that would mean having to open more files
+# when I post, and deciding where crap belongs, which are some of the
+# things I wanted to avoid in the first place...
+
+package sideblog;
+
+# --- Configurable variables -----
+# create your sideblog data file and point to its full path location
+my $sideblog_file = "$blosxom::plugin_state_dir/sideblog";
+
+# how many entries would you like to be displayed in the sideblog? 
+my $number_entries = 25;
+# --------------------------------
+
+my $sideblog_data;
+
+sub start {
+	# get the first 25 lines (5 entries) from the sideblog file
+	open(SIDEBLOG, "$sideblog_file") || die "Can't open $sideblog_file: $!";
+	$. = 0;
+	do {$sideblog_data .= <SIDEBLOG>} until $. == $number_entries*5 || eof;
+	close(SIDEBLOG);
+	chomp($sideblog_data);
+	my @sb_entries = split /----\n/, $sideblog_data;
+	$sideblog = "<ul class=\"sideblog\">\n";
+	foreach my $sb_entry (@sb_entries) {
+		(my $sb_link, my $sb_source, my $sb_title, my $sb_comment) = split /\n/, $sb_entry;
+		$sideblog .= "<li class=\"sideblog\">";
+		if ($sb_link && $sb_link ne "#") {
+			$sideblog .= "<a href=\"$sb_link\"><span class=\"sideblog_title\">$sb_title</span></a>\n";
+		} else {
+			$sideblog .= "<span class=\"sideblog_title\">$sb_title</span>\n";
+		}
+		if ($sb_source && $sb_source ne "#") {
+			$sideblog .= "<span class=\"sideblog_source\"> [<a href=\"$sb_source\">s</a>]</span>\n";
+		}
+		$sideblog .= "<br /><span class=\"sideblog_comment\">$sb_comment</span></li>\n";
+	}
+	$sideblog .= "</ul>";
+	1;
+}
+1;

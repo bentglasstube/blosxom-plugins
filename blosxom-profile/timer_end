@@ -1,0 +1,24 @@
+package timer_end;
+%t = ();
+
+sub t {
+  $t{$_[0]} += Time::HiRes::tv_interval($timer_start::t{$_[0]});
+  1;
+}
+sub report {
+    print STDERR 
+	"TIMER: ",
+	(join ' ', map {sprintf "%s:%f", $_, $t{$_}} sort keys %t),
+	"\n";
+}
+
+sub start  { t("start");  1; }
+sub filter { t("filter"); 1; }
+sub head   { t("head");   1; }
+sub date   { t("date");   1; }
+sub story  { t("story");  1; }
+sub foot   { t("foot");   1; }
+sub end    { t("end");    
+             report();
+             1; }
+1;

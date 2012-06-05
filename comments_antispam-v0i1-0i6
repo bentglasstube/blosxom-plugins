@@ -1,0 +1,813 @@
+# Blosxom Plugin: comments_antispam
+# Author(s): Axel Beckert <abe@deuxchevaux.org> based on work of
+#            Kevin Lyda <kevin@ie.suberic.net> and
+#            Rael Dornfest <rael@oreilly.com>
+# Version: 0.1+0.6
+# Documentation: See the bottom of this file or type: perldoc comments
+
+package comments_antispam;
+
+use Net::hostent;
+use Mail::Send;
+
+# --- Configurable variables -----
+
+# Where is the old writeback hierarchy?
+#
+# NOTE: By setting this variable, you are telling the plug-in to go ahead
+# and create a comments directory for you.
+#my $writeback_dir = "$blosxom::plugin_state_dir/writeback";
+my $comments_dir = "$blosxom::plugin_state_dir/comments";
+
+# What flavour should I consider an incoming trackback ping?
+# Otherwise trackback pings will be ignored!
+my $trackback_flavour = "trackback";
+
+# What file extension should I use for writebacks? 
+# Make sure this is different from that used for your Blosxom weblog
+# entries, usually txt.
+my $writeback_file_ext = "wb";
+my $comments_file_ext = "comments";
+
+# max comment indent depth
+my $max_level = 5;
+
+# time configs
+my $time_approx_prefix = "some point before ";
+# time as described by the strftime man page.  aAbBcdHIjmMpSUwWxXyYZ%
+my $time_fmt           = "%a, %d %b %Y %H:%M";
+my $time_unknown       = "some point unknown";
+
+my $reply_prefix       = "Re: ";
+
+my @count_noun         = ("comments",   # if there are no comments
+                          "comment",    # if there is only 1 comment
+		          "comments");  # all the rest
+
+# What fields were used in your writeback form and by trackbacks?
+my @fields = qw! cname url title comment excerpt blog_name parent time !;
+
+my $to_mail   = 'blog-owner@example.com';
+my $from_mail = 'blog-server@example.com';
+my $blacklist_file = "$blosxom::datadir/comments_blacklist";
+
+# --- Export variables -----
+ 
+# Comments for a story; use as $comments_antispam::comments in flavour templates
+$comments;
+
+# Count of writebacks for a story; use as $comments_antispam::count in flavour templates
+$count;
+$count_noun;
+
+# parent id and title fields of replies
+$parent = "";
+$title = "";
+
+# The path and filename of the last story on the page (ideally, only 1 story
+# in this view) for displaying the trackback URL;
+# use as $comments_antispam::trackback_path_and_filename in your foot flavour templates
+$base_url;
+$trackback_path_and_filename;
+
+# Response to comments; use as $comments_antispam::comment_response in 
+# flavour templates
+$comment_response;
+
+$pref_name;
+$pref_url;
+
+# Response to a trackback ping; use as $writeback::trackback_response in
+# head.trackback flavour template
+$trackback_response =<<"TRACKBACK_RESPONSE";
+<?xml version="1.0" encoding="iso-8859-1"?>
+<response>
+<error></error>
+<message></message>
+</response>
+TRACKBACK_RESPONSE
+ 
+# --- Utility routines -----
+
+use CGI            qw/:standard/;
+use FileHandle;
+use Data::Dumper;  $Data::Dumper::Indent=1;
+use POSIX          qw/strftime/;
+
+my $fh = new FileHandle;
+
+# Strip potentially confounding bits from user-configurable variables
+$writeback_dir =~ s!/$!!; $file_extension =~ s!^\.!!;
+$comments_dir =~ s!/$!!;
+
+# Save Name and URL/Email via cookie if the cookies plug-in is available
+$cookie;
+$errormsg;
+
+sub save_comment {
+    my($path, $filename, $new) = @_;
+
+    open(BL, "< $blacklist_file") 
+        or die "Can't open blacklist file $blacklist_file: $!";
+    my @blacklist = ();
+    while (my $line = <BL>) {
+	next if $line =~ /^#/; # strip unix like comments
+	$line =~ s/^\s*(.*?)\s*$/$1/; # strip leading and trailing blanks
+	push(@blacklist, split(/\s+/s, $line));
+    }
+    close(BL);
+
+    foreach my $v (values %$new) {
+	foreach my $crit (@blacklist) {
+	    if ($v =~ m($crit)is) {
+		$errormsg = "<br/><br/>Something in your post was on the blacklist. Use the back button and try changing the post to look less like comment spam. It also may be that your hostname or webbrowser is on the blacklist. Bad luck, if that's the case.<br /><br />Sorry for the inconvenience.";
+		return 0;
+	    }
+	}
+    }
+
+    my($rc) = 0;
+    my($p) = "";
+    foreach ("", split(/\//, $path)) {
+	$p .= "$_/";
+	-d "$comments_dir$p" or mkdir "$comments_dir$p", 0755;
+    }
+
+    # lock and read in comments
+    # TODO: lock file in nfs-safe way - see LockFile::Simple
+    if ($fh->open("$comments_dir$path/$filename.$comments_file_ext")) {
+	eval join("", <$fh>);
+	$fh->close;
+    } else {
+	$saved_comments = {};
+    }
+
+    # determine if this is a reply
+    if (exists($new->{"parent"})) {
+	if (!exists($saved_comments->{$new->{"parent"}})) {
+	    # TODO: unlock file in nfs-safe way
+	    return 0;
+	}
+	$prefix = $new->{"parent"}. "-";
+	delete($new->{"parent"});
+    } else {
+	$prefix = "";
+    }
+    $id = 0;
+    while (exists($saved_comments->{$prefix. $id})) {
+	$id++;
+    }
+    $id = $prefix. $id;
+
+    my $message = '';
+    foreach (keys %{$new}) {
+	$saved_comments->{$id}->{$_} = $new->{$_};
+	$message .= "$_: $new->{$_}\n";  #append data in parallel to flatfile.
+    }
+    $saved_comments->{$id}->{"time"} = time();
+
+    #------------Begin sendmail routine -------------
+    my $msg = Mail::Send->new;
+    $msg->to($to_mail);
+    $msg->set('From', $from_mail);
+    $msg->subject("Comment to $path/$filename by $new->{cname}");
+    $mfh = $msg->open;
+    print $mfh $message;
+    $mfh->close;
+    #--------------------------------------------------
+
+    if ($fh->open(">$comments_dir$path/$filename.$comments_file_ext")) {
+	$fh->print(Data::Dumper->Dump([$saved_comments], ["saved_comments"]));
+	$fh->close;
+	$rc = 1;
+    }
+    # TODO: unlock file in nfs-safe way
+    return $rc;
+}
+
+sub print_comments {
+    my($path, $filename, $id_limit) = @_;
+
+    # lock and read in comments
+    if ($fh->open("$comments_dir$path/$filename.$comments_file_ext")) {
+	eval join("", <$fh>);
+	$fh->close;
+    } else {
+	$count_noun = $count_noun[$count = 0];
+	$comments = "";
+	return 0;
+    }
+
+    my($last_level, $this_level) = (0, 0);
+    my($push) = &$blosxom::template($path, "comments-push", $blosxom::flavour)
+			or "<blockquote>";
+    my($pop) = &$blosxom::template($path, "comments-pop", $blosxom::flavour)
+			or "</blockquote>";
+    my($comment) = &$blosxom::template($path, "comments", $blosxom::flavour)
+			or '<p><b>Name:</b> '.
+			   '$comments_antispam::cname<br /><b>URL:</b> '.
+			   '$comments_antispam::url<br /><b>Title:</b> '.
+			   '$comments_antispam::title<br /><b>Comment:</b> '.
+			   '$comments_antispam::comment</p>';
+    my($trackback) = &$blosxom::template($path, "trackback", $blosxom::flavour)
+			or '<p><b>Blog:</b> '.
+			   '$comments_antispam::blog_name<br /><b>URL:</b> '.
+			   '$comments_antispam::url<br /><b>Title:</b> '.
+			   '$comments_antispam::title<br /><b>Excerpt:</b> '.
+			   '$comments_antispam::excerpt</p>';
+
+#    print STDERR "Comment Template:\n'$comment'\n";
+
+    my(@id);
+    if (defined($id_limit)) {
+	@id = ($id_limit);
+    } else {
+	my($i);
+	@id = sort {
+		     @aa = split(/-/, $a); @bb = split(/-/, $b);
+		     $i = 0;
+		     while ($i <= $#aa
+				and $i <= $#bb and $aa[$i] == $bb[$i]) {
+			 $i++;
+		     }
+		     $aa[$i] = -1 if ($i > $#aa);
+		     $bb[$i] = -1 if ($i > $#bb);
+		     return $aa[$i] <=> $bb[$i];
+		   } (keys(%{$saved_comments}));
+    }
+    foreach $id (@id) {
+	$this_level = split(/-/, $id) - 1;
+	$this_level = $max_level if ($max_level < $this_level);
+	if ($this_level > $last_level) {
+	    $tmp = $push x ($this_level - $last_level);
+	} else {
+	    $tmp = $pop x ($last_level - $this_level);
+	}
+	$last_level = $this_level;
+	if (exists($saved_comments->{$id}->{"blog_name"}) or
+	    exists($saved_comments->{$id}->{"excerpt"})) {
+	    $tmp .= $trackback;
+	} else {
+	    $tmp .= $comment;
+	}
+	if (exists($saved_comments->{$id}->{"time"})) {
+	    if ($saved_comments->{$id}->{"time"} =~ /^a(.*)/) {
+		$time = $1;
+		$saved_comments->{$id}->{"time"} = $time_approx_prefix;
+	    } else {
+		$time = $saved_comments->{$id}->{"time"};
+		$saved_comments->{$id}->{"time"} = "";
+	    }
+	    $saved_comments->{$id}->{"time"}
+				.= strftime($time_fmt, localtime($time));
+	} else {
+	    $saved_comments->{$id}->{"time"} = $time_unknown;
+	}
+	$saved_comments->{$id}->{"parent"} = $id;
+	$saved_comments->{$id}->{"reply_title"} =
+	    ($saved_comments->{$id}->{"title"} =~ /^$reply_prefix/ ?
+	     '' : $reply_prefix) . $saved_comments->{$id}->{"title"};
+
+	$saved_comments->{$id}->{"reply_title_escaped"} = 
+	    $saved_comments->{$id}->{"reply_title"};
+	
+	$saved_comments->{$id}->{"reply_title_escaped"} =~
+	    s([^a-zA-Z0-9_:./])(sprintf('%%%02X', ord($&)))ge;
+
+	$saved_comments->{$id}->{"base_url"} = $base_url;
+	$parent = $saved_comments->{$id}->{"parent"};
+#	print STDERR "tmp1 ($id):\n$tmp";
+	$tmp =~ s/\$comments_antispam::([_\w]+)/$saved_comments->{$id}->{$1}/ge;
+#	print STDERR "tmp2 ($id):\n$tmp";
+	$comments .= $tmp;
+    }
+
+    $comments .= $pop x $last_level;
+    $count = scalar(keys(%{$saved_comments}));
+    $count_noun = $count_noun[$count < 2? $count: 2];
+
+#    use Data::Dumper;
+#    print STDERR 'Comments: '.
+#	Dumper(\@id,$comments,$count,$count_noun,$saved_comments,$tmp);
+#    print STDERR $comments;
+
+}
+
+sub convert_writebacks {
+    my($path, $filename) = @_;
+
+    # read in old writebacks
+    if ($fh->open("$writeback_dir$path/$filename.$writeback_file_ext")) {
+	$saved_comments = {};
+	$id = 0;
+	$time = (stat("$writeback_dir$path/$filename.$writeback_file_ext"))[9];
+	foreach my $line (<$fh>) {
+	    $line =~ /^(.+?):(.*)$/ and $saved_comments->{$id}->{$1} = $2;
+	    $field = $1;
+	    $saved_comments->{$id}->{$field} =~ s/^ *//;
+	    $saved_comments->{$id}->{$field} =~ s/ *$//;
+	    if ($saved_comments->{$id}->{$field} eq "") {
+		delete $saved_comments->{$id}->{$field};
+	    }
+	    if ( $line =~ /^-----$/ ) {
+		if (!exists($saved_comments->{$id}->{"time"})) {
+		    $saved_comments->{$id}->{"time"} = "a$time";
+		}
+		$id++;
+	    }
+	}
+	$fh->close;
+
+	# make sure comments dir exists.
+	my($p) = "";
+	foreach ( ("", split /\//, $path) ) {
+	    $p .= "$_/";
+	    -d "$comments_dir$p" or mkdir "$comments_dir$p", 0755;
+	}
+	if ($fh->open(">$comments_dir$path/$filename.$comments_file_ext")) {
+	    $fh->print(Data::Dumper->Dump([$saved_comments],
+					    ["saved_comments"]));
+	    $fh->close;
+	} else {
+	    warn "blosxom: comments: convert_writeback: ".
+		    "couldn't open comment file '".
+		    "$comments_dir$path/$filename.$comments_file_ext\n";
+	}
+    } else {
+	warn "blosxom: comments: convert_writeback: ".
+		"couldn't open writeback file '".
+		"$writeback_dir$path/$filename.$writeback_file_ext'\n";
+    }
+}
+
+# --- Plugin Exports -----
+
+sub start {
+
+    # $comments_dir must be set to activate writebacks
+    unless ($comments_dir) { 
+	warn "blosxom: comments: \$comments_dir".
+	     " is not set; please set it to enable comments.".
+	     " Comments are disabled!\n";
+	return 0;
+    }
+
+    # the $comments_dir exists, but is not a directory
+    if ( -e $comments_dir and ( !-d $comments_dir or !-w $comments_dir)) { 
+	warn "blosxom: comments: \$comments_dir, $comments_dir, must be".
+	     " a writeable directory; please move or remove it and Blosxom".
+	     " will create it properly for you.  Comments are disabled!\n";
+	return 0;
+    }
+  
+    # the $comments_dir does not yet exist, so Blosxom will create it
+    if ( !-e $comments_dir)  {
+	if (mkdir("$comments_dir", 0755)) {
+	    warn "blosxom: comments: \$comments_dir, $comments_dir, created.\n"
+	} else {
+	    warn "blosxom: comments: There was a problem creating".
+	    " \$comments_dir, $comments_dir. Comments are disabled!\n";
+	    return 0;
+	}
+
+	if (chmod(0755, $comments_dir)) {
+	    warn "blosxom: comments: \$comments_dir, $comments_dir, set to".
+		 " 0755 permissions.\n"
+	} else {
+	    warn "blosxom: comments: Problem setting perms on \$comments_dir".
+	         ", $comments_dir. Comments are disabled!\n";
+	    return 0;
+	}
+
+	#warn "blosxom: comments: comments are enabled!\n";
+    }
+
+    $path_info = path_info();
+
+    # Symlink detection
+    my $postfile = "$blosxom::datadir$path_info";
+    $postfile =~ s/$blosxom::flavour$/$blosxom::file_extension/;
+    if (-l $postfile) {
+	my $newpath = readlink $postfile;
+	$path_info =~ s/$blosxom::file_extension$/$blosxom::flavour/;
+
+	if ($newpath =~ m(^/)) {
+	    $newpath =~ s/\Q$blosxom::datadir\E//;
+	    $path_info = $newpath;
+	} else {
+	    $path_info =~ s(/[^/]*$)();
+	    $newpath = "$path_info/$newpath";
+	    while ($newpath =~ m(/\.\./)) {
+		$newpath =~ s(/[^/]+/\.\./)(/)s or last;
+	    }
+	    $path_info = $newpath;
+	}
+    }
+
+    my($path, $filename) = $path_info =~ m!^(?:(.*)/)?(.*)\.$blosxom::flavour!;
+    $path =~ m!^/! or $path = "/$path";
+    $path = "/$path";
+    ($path_info_escaped = $path_info) 
+	=~ s([^-\w/.])(sprintf('%%%02x',ord($&)))ge;
+
+    $base_url = $blosxom::url.$path_info_escaped;
+
+    # Only spring into action if POSTing to the writeback plug-in
+    if (request_method() eq "POST" and
+		(param("plugin") eq "comments"
+		 or $blosxom::flavour eq $trackback_flavour) ) {
+	my(%new);
+	foreach ( @fields ) {
+	    $new{$_} = param($_);
+	    if (!defined($new{$_}) or length($new{$_}) == 0) {
+		delete $new{$_};
+	    } elsif ($_ eq "url" and $new{$_} !~ /:/
+	                         and length($new{$_}) > 2) {
+		$new{$_} = "mailto:". $new{$_};
+	    } elsif ($_ eq "comment") {
+		$new{$_} =~ s/\n?\r\n?/\n/mg;
+		$new{$_} =~ s/\n\n/<\/p><p>/mg;
+		$new{$_} = "<p>". $new{$_}. "</p>";
+	    }
+	}
+
+	$new{referrer} = $ENV{HTTP_REFERER} if $ENV{HTTP_REFERER};
+	$new{host} = $ENV{REMOTE_HOST} if $ENV{REMOTE_HOST};
+	$new{host_ip} = $ENV{REMOTE_ADDR} if $ENV{REMOTE_ADDR};
+	$new{host} ||=	gethost($new{host_ip})->name;
+	$new{user_agent} = $ENV{HTTP_USER_AGENT} if $ENV{HTTP_USER_AGENT};
+
+	if (! -f "$comments_dir$path/$filename.$comments_file_ext"
+		and -f "$writeback_dir$path/$filename.$writeback_file_ext") {
+	    convert_writebacks($path, $filename);
+	}
+	if (save_comment("$comment_dir$path", $filename, \%new)) {
+
+	    $trackback_response =~ s!<error></error>!<error>0</error>!m;
+	    $trackback_response =~ s!<message></message>\n!!s;
+	    $comment_response = "Thanks for the comment.";
+
+	    # Make a note to save Name & URL/Email if save_preferences checked
+	    param("save_preferences") and $cookie++;
+	    # Pre-set Name and URL/Email based on submitted values
+	    $pref_name = param("cname") || "";
+	    $pref_url = param("url") || "";
+
+	} else {
+	    warn "blosxom: comments: start: couldn't >>".
+		    " $comments_dir$path/$filename.$file_extension\n";
+	    $trackback_response =~ s!<error></error>!<error>1</error>!m;
+	    $trackback_response =~ s!<message>trackback error</message>!!m;
+	    $comment_response = "There was a problem saving your comment. $errormsg";
+	}
+	Delete("parent");
+    }
+
+    1;
+}
+
+sub story {
+    my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    
+    $path =~ s!^/*!!; $path &&= "/$path";
+
+    # Symlink detection
+    my $postfile = "$blosxom::datadir$path/$filename.$blosxom::file_extension";
+    if (-l $postfile) {
+	my $newpath = readlink $postfile;
+	$newpath =~ s/\Q$filename.$blosxom::file_extension\E$//;
+
+	if ($newpath =~ m(^/)) {
+	    $newpath =~ s/\Q$blosxom::datadir\E//;
+	    $path = $newpath;
+	} else {
+	    $newpath = "$path/$newpath";
+	    while ($newpath =~ m(/\.\./)) {
+		$newpath =~ s(/[^/]+/\.\./)(/)s or last;
+	    }
+	    $path = $newpath;
+	}
+    }
+
+    # convert those old writebacks!
+    if (! -f "$comments_dir$path/$filename.$comments_file_ext"
+	    and -f "$writeback_dir$path/$filename.$writeback_file_ext") {
+	convert_writebacks($path, $filename);
+    }
+
+    # Prepopulate Name and URL/Email with cookie-baked preferences, if any
+    if ($blosxom::plugins{"cookies"} > 0
+		and my $cookie = &cookies::get("comments") ) {
+	$pref_name ||= $cookie->{"cname"};
+	$pref_url ||= $cookie->{"url"};
+    }
+
+    # print the comments
+    print_comments($path, $filename, param("parent"));
+    if (defined(param("parent"))) {
+	$parent = param("parent");
+	$title = param("title");
+    } else {
+	$parent = "";
+	$title = $blosxom::title;
+    }
+    $title = $reply_prefix.$title if $title !~ /^$reply_prefix/;
+
+    $trackback_path_and_filename = "$path/$filename";
+
+    1;
+}
+
+sub foot {
+    if ($pref_name or $pref_url) {
+	$blosxom::plugins{"cookies"} > 0 and $cookie and &cookies::add(
+	    cookie(
+		-name=>"comments", 
+		-value=>{ "cname" => $pref_name, "url" => $pref_url }, 
+		-path=>$cookies::path,
+		-domain=>$cookies::domain,
+		-expires=>$cookies::expires
+	    )
+	);
+    }
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: comments
+
+=head1 SYNOPSIS
+
+Provides comments and TrackBacks [http://www.movabletype.org/trackback/].
+It will also convert your old writebacks.
+
+This modified version from Axel Beckert also features mail
+notification for the blog owner and a comment and trackback spam
+blacklist.
+
+All comments and TrackBack pings for a particular story are kept in
+$comments_dir/$path/$filename.comment.
+
+=head2 QUICK START
+
+Drop this comments plug-in file into your plug-ins directory 
+(whatever you set as $plugin_dir in blosxom.cgi).
+
+Comments, being a well-behaved plug-in, won't do anything until you
+set $comments_dir.  If you were using writebacks, you need to set
+$writeback_dir.
+
+While you can use the same directory as your blosxom $datadir (comments
+are saved as path/weblog_entry_name.comment), it's probably better to keep
+them separate.
+
+Once set, the next time you visit your site, the comments plug-in will
+perform some checks, creating the $comments_dir and setting appropriate
+permissions if it doesn't already exist.  (Check your error_log for details
+of what's happening behind the scenes.)
+
+Move the contents of the flavours folder included in this distribution 
+into your Blosxom data directory (whatever you set as $datadir in blosxom.cgi).
+Don't move the folder itself, only the files it contains!  If you don't
+have the the sample flavours handy, you can download them from:
+
+FIXME: http://ie.suberic.net/~kevin/blosxom/comments.tar.gz
+
+Point your browser at one of your Blosxom entries, specifying the comments 
+flavour (e.g. http://localhost/cgi-bin/blosxom.cgi/path/to/a/post.comment)
+
+Enjoy!
+
+=back
+
+=head2 BLACKLIST
+
+The blacklist is a list of perl regular expressions separeted by blank
+characters (e.g. space, tab and newline) and supports shell script
+like comment with "#" at the beginning of the line. If any of the
+regexps in the blacklist matches any value (including title, commenty
+body, poster's name, URL, poster's hostname or user agent), the
+comment or trackback will not be accepted. So be careful and wise when
+choosing which words or domains you block. And remember: "." matches
+any character, so escape it as "\.".
+
+Example blacklist:
+
+   ---snip---
+   # Meds
+   acyclovir adipex alprazolam ativan butalbital carisoprodol
+   carisoprodol casino celexa cialis condylox cyclobenzaprine ddrx
+   diazepam didrex diethylpropion diflucan drofa ephedrine ephedrine
+   fioricet flexeril fluoxetine fluoxetine hydrocodone levitra lexapro
+   lipitor lorazepam lortab lrzpm meridia musapuk nextel norvasc paxil
+   penis pharmacy phentermine prilosec propecia prozac renova rkwdl rolex
+   skelaxin tadalafil tenuate tramadol tricyclen triphasil ultracet
+   ultram valium valtrex vaniqa viagra xanax xenical zanaflex zithromax
+   zoloft zovirax zyban
+
+   # Paths
+   ringtones/
+   lotto/
+
+   # Hostnames (used example.com here as an example for real regexps :-)
+   \.example.(com|net)\b
+
+   # Wiki syntax
+   \[(url|link)=
+   ---snap---
+
+=head2 MAIL NOTIFICATION
+
+Set $to_mail to the receipient and $from_mail to the sender
+address. Needs perl module Mail::Send installed.
+
+=head2 FLAVOUR TEMPLATE VARIABLES
+
+Wherever you wish all the comments for a particular story to appear
+in your flavour templates, use $comments_antispam::comments.
+
+A count of WriteBacks for each story may be embedded in your flavour
+templates with $comments_antispam::count.  Based on the @count_noun config array,
+$comments_antispam::count_noun will reflect a $comments_antispam::count of 0, 1, many.
+
+If you'd like, you can embed a "Thanks for the comment." or 
+"There was a problem saving your comment." message after posting with
+$comments_antispam::comment_response.
+
+=head2 SAMPLE FLAVOUR TEMPLATES
+
+I've made sample flavour templates available to you to help with any
+learning curve this plug-in might require.
+
+Take a gander at the source HTML/XML for:
+
+=item * story.comments, a basic example of a single-entry story
+flavour with comments embedded.  You should not use this as your
+default flavour since every story on the home page would have comments
+right there with the story itself.
+
+=item * head.trackback, all you need to provide the right response to
+a TrackBack ping.  Notice in story.comments that the auto-discovery
+and human-readable TrackBack ping URLs point at this flavour.
+
+=item * foot.comments provides a simple comment form for posting to the
+comments plug-in.  NOTE: The comments plug-in requires the presence
+of a "plugin" form variable with the value set to "comments"; this tells
+the plug-in that it should handle the incoming POSTing data rather than
+leaving it for another plug-in.
+
+=item * comments.comments is a sample flavour file for comments themselves. 
+Think of a comments flavour file as a story flavour file for individual 
+comments.
+
+=item * comments-push.comments and comments-pop.comments are sample
+flavour files to handling threads (descending into a thread and coming
+out respectively).
+
+=back
+
+=head2 FLAVOURING COMMENTS
+
+While the default does a pretty good job, you can flavour your comments
+in the comments flavour file (e.g. comments.comments) using the following 
+variables:
+
+=item * $comments_antispam::name$comments_antispam::blog_name - Name entered in comment
+form or weblog name used in TrackBack ping.
+
+=item * $comments_antispam::url - URL entered in comment form or that of writing
+citing your weblog entry via TrackBack ping.
+
+=item * $comments_antispam::title - Title entered into comment form or that of writing citing your weblog entry via TrackBack ping.
+
+=item * $comments_antispam::comment$comments_antispam::excerpt - Comment entered
+into comment form or excerpt of writing citing your weblog entry via
+TrackBack ping.
+
+=item * $comments_antispam::pref_name and $comments_antispam::pref_url are prepopulated
+with the values of the form you just submitted or preferences stored in a
+'comments' cookie, if you've the cookie plug-in installed an enabled.
+
+=back
+
+=head2 INVITING AND SUPPORTING TRACKBACKS
+
+You should provide the TrackBack ping URL for each story so that those
+wanting to TrackBack ping you manually know where to ping.  
+$comments_antispam::trackback_path_and_filename, together with $url and 
+a TrackBack flavour will provide them all they need.
+
+e.g. $url$comments_antispam::trackback_path_and_filename.trackback
+
+You need to provide an XML response to TrackBack pings to let them
+know whether or not the ping was successful.  Thankfully, the plug-in
+does just about all the work for you.  You should, however, create a
+head.trackback flavour file (only the head is needed) containing simply:
+
+$comments_antispam::trackback_response
+
+Be sure that the flavour of the head file (suggested: head.trackback)
+corresponds to the $trackback_flavour configurable setting otherwise
+Blosxom will ignore incoming TrackBack pings!
+
+=head1 INSTALLATION
+
+Drop comments into your plug-ins directory ($blosxom::plugin_dir).
+
+=head1 CONFIGURATION
+
+=head2 (REQUIRED) SPECIFYING A COMMENTS DIRECTORY
+
+Comments, being a well-behaved plug-in, won't do anything until you set 
+$comments_dir, create the directory, and make it write-able by Blosxom.
+Make sure to set $writeback_dir if you were using the WriteBack plugin.
+
+Create a directory to save comments to (e.g. $plugin_state_dir/comments),
+and set $comments_dir to the path to that directory.
+
+While you can use the same directory as your blosxom $datadir (comments
+are saved as path/weblog_entry_name.wb), it's probably better to keep
+them separate.
+
+The comments plug-in will create the appropriate paths to mimick your
+$datadir hierarchy on-the-fly.  So, for a weblog entry in 
+$datadir/some/path/or/other/entry.txt, comments will be kept in
+$comments_dir/some/path/or/other/entry.wb.
+
+=head2 (OPTIONAL) ALTERING THE TRACKBACK FLAVOUR
+
+The $trackback_flavour sets the flavour the plug-in associates with
+incoming TrackBack pings.  Unless this corresponds to the flavour
+associated with your trackback URL, the comments plug-in will ignore
+incoming pings.
+
+=head2 (OPTIONAL) SPECIFYING AN EXTENSION FOR COMMENT FILES
+
+The default extension for comments is comments.  You can change this
+if you wish by altering the $comments_file_ext value.  The default for
+writebacks is wb - changed by changing $writeback_file_ext.
+
+=head2 (OPTIONAL) SPECIFYING WHAT FIELDS YOU EXPECT IN YOUR COMMENTS FORM
+
+The defaults are probably ok here, but you can specify that the comments
+plug-in should look for more fields in your comments form by adding to this
+list.  You should keep at least the defaults in place so as not to break
+anything.
+
+my @fields = qw! name url title comment excerpt blog_name !;
+
+Second part of the version number is the comments plugin version on
+which it is based upon.
+
+=head1 AUTHORS
+
+  Axel Beckert <blosxom@deuxchevaux.org>, http://noone.org/blog
+  Kevin Lyda <kevin@ie.suberic.net>, http://ie.suberic.net/~kevin/cgi-bin/blog
+  Rael Dornfest <rael@oreilly.com>, http://www.raelity.org/
+
+=head DOWNLOAD
+
+Latest version can be found at http://noone.org/blosxom/comments_antispam
+
+=head1 SEE ALSO
+
+  Homepage: http://noone.org/blog?-tags=comments_antispam
+
+  Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+  Blosxom Download: http://blosxom.sourceforge.net/
+  Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+  Blosxom User Group: http://blosxom.ookee.com/blog
+  WriteBack Plugin: http://www.raelity.org/apps/blosxom/downloads/plugins/writeback.zip
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Blosxom and this Blosxom Plug-in
+Copyright 2003, Rael Dornfest 
+Copyright 2005-2006, Axel Beckert
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

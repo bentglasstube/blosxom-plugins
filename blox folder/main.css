@@ -1,0 +1,570 @@
+/* v1r6 enilnomi.net 2004-08-12 */
+
+/* -- Overview of changes from 1r4 --
+= three major container divs define the whole page:
+    linkbar, content_area, footer
+= nav section (#linkbar) position is now 'fixed'; a 
+    child rule keeps IE/Win from screwing it up
+= off-page content links are 'dashed' (default); for 
+    underline use .std or .minor
+= special rules for cgi index page moved to 'index.css'
+= special rules within "sendnote" and "notethanx" 
+    pages moved to 'notes.css'
+= cruft reduction
+*/
+
+/* stuff I always forget
+  length:tb  rl
+  length: t  rl  b
+  length:t  r  b  l
+
+  element>element    child selector
+  element+element    adjacent selector
+  element element    descendent selector
+  element[foo="bar"] attribute selector
+
+  to hide from NS4:
+  start with a: slash, star, slash, star, slash
+  then the rules to hide
+  end with a: slash, start, space, star, slash
+*/
+
+/* Zeldman uses this bit:
+    html>body div#maincontent {
+      margin-left: 12px;
+      min-height: 800px;
+    }
+    noting:                                                        */
+/* Correct value for browsers that don't suffer from IE Win's bugs */
+
+
+/* -- B A S E --
+-----------------------------------------*/
+.upgrade {display:none;}
+
+body {
+  margin:24px 8px; 
+  padding:0px; 
+  font-family:arial,helvetica,verdana,sans-serif; 
+/* Huh...9pt renders the same as 12px */
+/*  font-size:9.5pt; */
+/*  font-family:'Lucida Grande','Lucida Sans Unicode',Lucida,Arial,Helvetica, sans-serif; */
+/*  font-size:11px; */
+  color:#6699ff;
+  background:#0000dd none; 
+/*  background:#37a none; */
+  text-align:left;
+}
+
+/* damn -- this came out of nowhere with "badges" in  */
+/* Firefox; makes me think I erred during cleanup.... */
+img {border:none;}
+
+p {line-height:155%; margin-right:3%;}  /* no margin-right */
+
+blockquote {margin-top:0.3em; line-height:145%; clear:both;}
+
+pre {
+  font-family:monaco,monospace; 
+  font-size:11px; 
+  text-align:left; /* safari needs this */
+  margin:2px 0px 6px 18px;
+}
+
+p+ul, p+ol {margin-top:0px;}
+ol ul, ul ul {margin-top:4px;}
+
+ul ul, ul ul ul, ol ul, ol ul ul {list-style-type:disc; }
+
+li {margin-bottom:0.5em; line-height:134%; width:92%;}  /* width:95% */
+ul.tight li {margin-bottom:0.3em;}
+
+dl {margin-top:0.3em; margin-right:10%; line-height:145%;} /* margin-right:8% */
+dt {font-weight:normal; margin-bottom:2px;}
+dt.term {font-weight:bold;}
+dd {margin-bottom:0.5em; line-height:134%; width:95%;}
+dt+dd {margin-top:-2px;}
+
+q {
+  display:block; 
+  text-align:left; 
+  color:#90c2ff; 
+  font-family:'Lucida Grande','Lucida Sans Unicode',Lucida,Arial,Helvetica, sans-serif; 
+  font-size:140%;
+  font-weight:bold; 
+  margin:1em 5% 0.5em 5%;
+  padding:0.5em 0.1em 0.5em 1.5em;
+  border-top:4px solid #33f;
+  border-bottom:4px solid #33f;
+}
+
+hr {background-color:#33f; color:#33f; border:0; height:2px;}
+
+/* ___ LINKS ___ */
+a:focus, a:focus:hover, a:focus:active {outline-width:0;}
+
+a, a:link {
+  color:#99ccff; 
+  text-decoration:underline; 
+  border:none; 
+  margin:0; 
+  background-color:transparent; 
+  outline-width:0;
+}
+
+a:visited {
+  color:#90c2ff; 
+  text-decoration:underline;   /* when 'none', safari needs this; moz is OK without */
+  border:none; 
+  margin:0; 
+  background-color:transparent; 
+  outline-width:0;
+}
+
+a:hover, a:visited:hover {
+  color:#0000e7; 
+  text-decoration:none; 
+  border:none; 
+  margin:0; 
+  background-color:#6699ff; 
+  outline-width:0;
+}
+
+a:link.badge, a:visited.badge {background-color:transparent;}
+
+#content a.minor, 
+#content a:link.minor, 
+#content a:visited.minor, 
+#content a:active.minor {
+  color:#3bf; 
+  border:none; 
+  text-decoration:underline;
+}
+#content a:hover.minor, 
+#content a:visited:hover.minor {
+  color:#0000e7; 
+  text-decoration:none;
+  }
+
+#footer a:hover, 
+#footer a:visited:hover {text-decoration:none;}
+
+
+/* -- L A Y O U T --
+-----------------------------------------*/
+/* -- home page -- */
+#splash {text-align:center; margin-top:64px; margin-bottom:32px;}
+
+a.home:link, a.home:visited {
+  border:none; 
+  text-decoration:none; 
+  padding:0px;
+}
+
+/* -- content pages -- */
+/* ___ logo ___ */
+#textlogo {display:none; }
+
+#logo {
+/*  width:220px; */
+/*  height:auto; */
+/*  line-height:0px;*/
+  margin:0px; 
+  padding:0px; 
+  text-align:left; 
+  background-color:transparent;
+}
+
+#logo img {
+  display:block; /* keeps mozilla from sticking whitespace between img's */
+  padding:0px;
+}
+#logo img:hover {background-color:#00a;}
+
+#logo a:hover {
+  background-color:#00a; 
+  color:#fff;
+}
+
+/* ___ site nav ___ */
+#linkbar {
+  float:left; 
+  width:224px; 
+  height:auto; 
+  margin:0 auto; 
+  background-color:transparent; 
+  color:#eee; 
+/*  white-space:nowrap;*/
+  font-size:10px;
+}
+
+/* IE6 doesn't like "fixed" position at all... 
+   but it also doesn't like child selectors, 
+   so this rule is effectively hidden from IE6 */ 
+body>div#linkbar {position:fixed;}
+
+ul#linklist {
+  text-align:center; 
+  list-style:none; 
+  padding:0px; 
+  margin:0px; 
+  width:70%;
+}
+
+ul#linklist {
+  margin-top:40px;
+  margin-left:20px; 
+/*  padding:1em 0px; */
+}
+
+ul#linklist li {
+  display:block; 
+  margin:2px 4px; 
+  padding:0px; 
+  color:#000060; 
+  width:100%;
+}
+
+ul#linklist li a {
+  display:block; 
+  font-family:"comic sans ms",chalkboard,tahoma,verdana,sans-serif; 
+  font-size:16px; 
+  line-height:26px; 
+  color:#5088ff; 
+  width:100%; 
+  padding:5px 2px; 
+  text-decoration:none;
+}
+
+#linkbar>ul#linklist li a {width:auto;}
+
+/*ul#linklist li a {text-shadow:-2px 1px 0px #009;}*/
+
+ul#linklist li a:visited {
+  background-color:transparent; 
+  color:#5088ff; 
+}
+ul#linklist li a:hover {
+  background:#00f none; 
+  color:#69f; 
+  text-shadow:none;
+}
+ul#linklist li a.current {
+  color:#7af; 
+  padding:3px 0px; 
+  border:2px solid #58e; 
+  background:transparent none;
+}
+ul#linklist li a:hover.current {
+  background:#00c none;
+}
+
+/* ___ page content ___ */
+div#content_area {
+  background:#00e none; 
+/*  background:#047 none; */
+  color:#6699ff; 
+  margin:48px 6% 60px 232px; 
+  padding:10px 15px 15px 15px; 
+  border:2px solid #33e;
+  min-height:400px;
+}
+
+/* THIS IS NEW */
+.xstory {
+  background:#00d none; 
+/*border-color:#009; 
+border-width:1px; 
+border-style:solid; */
+
+  margin:20px -10px; 
+  padding:0px 16px; 
+
+/*  border-color:#33f; 
+  border-width:0px 0px 4px 0px; 
+  border-style:solid; */
+}
+/* END NEW */
+
+
+#content {color:#90c2ff;}
+
+#content a {
+  font-weight:bold; 
+  padding:0px 2px;
+  text-decoration:none; 
+  border-color:#99ccff; 
+  border-width:0 0 1px 0; 
+  border-style:none none dashed none; 
+}
+
+#content a:visited {
+  border-color:#69f; /* #90c2ff */
+}
+
+#content a:hover, 
+#content a:visited:hover {
+  background-color:#6699ff; 
+  color:#0000e7; 
+  border-color:#6699ff;
+}
+
+#content p {text-align:justify;}
+
+h1+p, h5+p, h6+p {margin-top:0px;}
+h3+p {margin-top:4px;}
+h3.plain+p {margin-top:0px;}
+h5+ul, h6+ul, h5+ol, h6+ol {margin-top:4px;}
+
+/*.monolink a, .monolink a:link {font:bold 13px courier,monospace; padding:0px 2px;}*/
+
+.toplink {text-align:right;}
+.talltoplink {text-align:right; margin-top:35px;}
+#content div.toplink a, div.toplink a:link {color:#6699ff; border-width:0px;}
+#content div.toplink a:hover {background:transparent none;}
+#content div.talltoplink a, div.talltoplink a:link {color:#6699ff; border-width:0px;}
+#content div.talltoplink a:hover {background:transparent none;}
+
+/* ___ anchors ___ */
+a.anchor, 
+a.anchor:link, 
+a.anchor:visited, 
+#content a.anchor, 
+#content a.anchor:link, 
+#content a.anchor:visited {border:none; text-decoration:none;}
+
+a.anchor:hover, 
+a.anchor:visited:hover,
+#content a.anchor:hover, 
+#content a.anchor:visited:hover {background-color:transparent; color:#99ccff;}
+
+#sidebar {
+}
+
+/* ___ footer ___ */
+/* this doesn't help in safari when #linkbar is set to fixed. */
+#footer {clear:both; width:auto;}
+
+.crt {
+  font-family:Times,serif; 
+  font-size:x-small; 
+  color:#efefef; 
+  text-align:left; 
+  margin:0px; 
+  padding:10px 0px 5px 0px;
+}
+
+.button {
+  padding:2px 3px; 
+  border:1px solid #69f; 
+  font-weight:bold;
+}
+/* border-top:2px dotted #33e;*/
+.permwrap {position:relative; top:14px;} /* used to be 'permawrap' */
+.perm {
+  position:relative; 
+  top:-14px; 
+  font-family:verdana,"trebuchet ms",serif; 
+  font-size:small; 
+  color:#6699ff; 
+  text-align:right; 
+  margin:0; 
+  padding:0;
+}
+
+/* ___ seemore ___ */
+#content a.seemore, 
+#content a.seemore:link, 
+#content a.seemore:visited {
+  border:none; 
+  text-decoration:underline;
+}
+
+hr.seemore {background-color:#33f; color:#33f; border:0; height:2px;}
+
+#content a.std , 
+#content a.std:link, 
+#content a.std:visited {
+  border-style:none none solid none; 
+}
+
+
+/* -- H E A D S --
+-----------------------------------------*/
+#content h1 {
+  background:#33f none; 
+  color:#99ccff; 
+  font:bold 16px verdana,helvetica,"trebuchet ms",sans-serif; 
+  margin:8px -16px 5px -16px; 
+  padding:5px 15px 5px 16px; 
+  border:0; 
+  text-align:left; 
+  white-space:nowrap; 
+  letter-spacing:1px;
+}
+h4+h1 {margin-top:8px;}
+
+/* safari-only */
+h1 {text-shadow:4px 3px 0.4em #00a;}
+
+#content h1>a, 
+#content h1>a:link, 
+#content h1>a:visited {border:none;}
+
+/*#content h1>a:hover, 
+#content h1>a:visited:hover {
+  background-color:transparent; 
+  color:#99ccff;
+}*/
+
+h2 {
+  display:block; 
+  right:0px; 
+  width:412px; 
+  background:#8ae url(images/gradient2.jpg) repeat-y top left; 
+  font-family:verdana,helvetica,"trebuchet ms",sans-serif; 
+  font-size:x-large; /*font-size:150%; */ 
+  text-align:right; 
+  letter-spacing:10px; 
+  color:#0000dd; 
+  margin:20px 0px 8px auto; 
+  padding:4px 6px; 
+  white-space:nowrap; 
+  text-transform:uppercase;
+}
+
+h2 a {
+  color:#00d; 
+  text-decoration:none;
+}
+
+h3 {
+  color:#99ccff; 
+  font:bold large verdana,helvetica,"trebuchet ms",sans-serif; 
+  margin:18px 40% 0px 0px; 
+  padding:3px 0px 2px 0px; 
+  border-style:solid; 
+  border-width:0px 0px 1px 0px; 
+  border-color:#99ccff; 
+  text-align:left; 
+  white-space:nowrap;
+}
+
+h3.plain {border:none;}
+
+td.hdr1 h4, td.hdr2 h4,td.hdr3 h4 {
+  color:black; 
+  font-family:helvetica,tahoma,verdana,sans-serif; 
+  margin-bottom:0.3em; 
+  margin-left:12px;
+}
+
+h4 {
+  color:#5af; 
+  font-family:tahoma,helvetica,"trebuchet ms",verdana,sans-serif; 
+  font-weight:bold; 
+  margin-top:1.5em; 
+  margin-bottom:0;
+}
+
+h5 {
+  background:#00b none; 
+  color:#99ccff; 
+  font-family:verdana,helvetica,"trebuchet ms",sans-serif; 
+  font-size:11px; 
+  font-weight:bold; 
+  margin:8px 33% 0px 15px; 
+  padding:5px 10px; border:0; 
+  text-align:left;
+}
+
+h6 {
+  background:#00b none; 
+  color:#99ccff; 
+  font-family:verdana,helvetica,"trebuchet ms",sans-serif; 
+  font-size:11px; 
+  font-weight:bold; 
+  margin:8px 33% 0px -2px; 
+  padding:5px; 
+  border:0; 
+  text-align:left;
+}
+
+/* -- B L O C K S --
+-----------------------------------------*/
+hr.halfleft {margin-right:60%;}
+.thickdash {width:100%; border-bottom:thick dashed #33f; height:4px; margin:0px 0px 1.5em 0px;}
+
+address {
+  display:block; 
+  float:right; 
+  width:50%; 
+  margin:5px 0px 0.8em 20px; 
+  padding:4px 8px; 
+  border-top:2px solid #06f; 
+  border-bottom:2px solid #06f; 
+  line-height:130%; 
+  color:#39f; 
+  font-size:larger;
+}
+/*border-color:#4bf; #00b; #38f; #4be; #cc6; #993; */
+
+blockquote.side {border-left:4px solid #36f; padding-left:10px;} /* #4bd; */
+blockquote.quote {font-family:verdana,geneva,arial,sans-serif; font-size:11px;}
+blockquote.bother {
+  background-color:#0000cc; 
+  font:bold 11px verdana,serif; 
+  color:#cdf; 
+  text-align:center; 
+  margin:1em 3em; 
+  padding:4px; 
+  font-style:italic; 
+  border:3px solid #38d;
+}
+/* border:1px solid #0000bb;*/
+#content blockquote.bother>a, 
+#content blockquote.bother>a:link, 
+#content blockquote.bother>a:visited {border:none; text-decoration:underline;}
+#content blockquote.bother>a:hover, 
+#content blockquote.bother>a:visited:hover {text-decoration:none;}
+
+dd.mono {font-family:monaco,monospace; color:#adf;}
+
+.intro {margin:12px 36px 32px 2.5em; padding:4px 0px 4px 18px; border-left:24px solid #6f8cef;}
+
+.verticalspace12 {margin-top:12px;}
+.verticalspace24 {margin-top:24px;}
+.uptight {margin-top:0px;}
+.downtight {margin-bottom:2px;}
+.alltight {margin-top:0px; margin-bottom:2px;}
+
+table.content_table {background-color:#99ccff;}
+table.content_table tr {background-color:#0000dd;}
+
+
+/* -- I N L I N E --
+-----------------------------------------*/
+
+strong, b {color:#adf; }
+
+code {
+  display:inline; 
+  font-family:monaco,monospace; 
+  font-size:12px; 
+  padding:0px 2px; 
+  color:#bef;
+}
+
+em {padding:0px 3px 0px 1px; font-weight:bold;}
+i {padding:0px 3px 0px 1px;}
+
+tt {font:bold 12px "courier new",courier,monospace; padding:0px 1px;}
+
+.faqtitle {
+  display:block; 
+  margin-bottom:8px; 
+  font-size:120%; 
+  font-family:verdana,helvetica,"trebuchet ms",sans-serif;
+}
+.faqitem1 {margin-left:12px;}
+.faqitem2 {margin-left:6px;}

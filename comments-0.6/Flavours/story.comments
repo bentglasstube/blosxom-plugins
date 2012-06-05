@@ -1,0 +1,38 @@
+<table width="100%"><tr><td class="story-title">
+$title
+</td></tr></table>
+<table width="100%"><tr><td colspan=2>
+$body
+</td></tr><tr><td>
+Posted at: $ti
+</td><td align=right>
+<a href="$url$comments::trackback_path_and_filename.trackback">trackback</a> ::
+<a href="$url$path/$fn.comments">$comments::count
+$comments::count_noun</a></td></tr></table>
+<br />
+
+<p>
+<span class="dateheader">Comments</span>
+</p>
+
+<!-- TrackBack auto-discovery bits -->
+
+<!--
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+  xmlns:dc="http://purl.org/dc/elements/1.1/"
+  xmlns:trackback="http://madskills.com/public/xml/rss/module/trackback/">
+
+  <rdf:Description
+    rdf:about="$url$path/$fn.$flavour"
+    dc:identifier="$url$path/$fn.$flavour"
+    dc:title="$title"
+    trackback:ping="$url$path/$fn.trackback" />
+
+</rdf:RDF>
+-->
+
+<!-- Comments for this story -->
+
+<font color="red">$comments::comment_response</font>
+
+$comments::comments

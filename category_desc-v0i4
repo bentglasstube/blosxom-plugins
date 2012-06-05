@@ -1,0 +1,22 @@
+package category_desc;
+use strict;
+use vars qw{ $description };
+
+# in head flavour(s), call $category_desc::description
+
+my %descriptions = (
+'/'    => 'This is the whole blog',
+'genl' => 'This is the description for category "General"',
+'tech' => 'This is the description for category "Technical"'
+);
+
+sub start { 1; }
+
+sub head {
+  my $pi = $blosxom::path_info;
+  $pi ||= '/';
+  $description = $descriptions{$pi};
+  1;
+}
+
+1;

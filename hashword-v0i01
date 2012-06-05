@@ -1,0 +1,270 @@
+# hashword plugin
+# v 0.01 2004-09-05
+
+# As a plugin, hashword provides a form to generate hashed 
+# passwords from plaintext. As a module, hashword can be 
+# called by other plugins to verify plaintext against a 
+# hashed value.
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# This is all the documentation there is, so read up ;-)
+#
+# This plugin is mainly just an exercise in using blosxom's  
+# skip() routine, so don't expect too much from it.
+# The premise for hashword is that passwords stored inside 
+# plugins (as with wikieditish, entriescache, etc.) should be 
+# "more secure" -- that is, someone should be able to get 
+# their hands on your working copy of a plugin and still not 
+# have access to your password. Silly, perhaps, but you gotta 
+# start somewhere....
+#
+# hashword provides an easy means of generating encrypted 
+# ("hashed") passwords for use in other plugins. You call 
+# hashword from a URL and get a form; you type in your plaintext 
+# password and get a hashed password back; you can then paste 
+# this hashed password into another plugin's password config var, 
+# and that plugin can call hashword to verify your plaintext 
+# password against the stored hashed version. Net effect: your 
+# 'en clair' password is never exposed in a plugin file.
+#
+# Obviously, for this to be effective, other plugins must call 
+# hashword to do the verifying, or else provide their own 
+# verification method. Since no plugins do this, a companion 
+# plugin called 'hashword_tester' provides a demonstration of 
+# password verification. (By itself, however, hashword is still 
+# a great plugin for generating enrypted passwords ;-)
+#
+# USAGE
+# You can just drop hashword into your plugins folder and it's 
+# ready to go. Ditto for the 'hashword_tester' plugin; they're 
+# both preconfigured to just run.
+#
+# To use hashword as a plugin (that is, to have hashword make 
+# encrypted versions of plaintext passwords), you must supply 
+# it with a password. To do this, add a 'hashword' parameter to 
+# a blosxom URL; the value of this parameter is the password 
+# you've chosen for hashword operation. For example, let's say 
+# you've chosen 'pass' as hashword's password. You would then 
+# invoke hashword with something like the following URL:
+#   http://www.example.com/cgi-bin/blosxom.cgi?hashword=pass
+#
+# The first time hashword runs, it will accept whatever pass-
+# word you feed it. It will hash that password, and write it to 
+# a file for future reference. On subsequent invocations, the 
+# plugin will check its reference file to see if the password 
+# you supplied in the 'hashword' parameter matches; if it doesn't, 
+# the plugin stops running. (To change your hashword password, 
+# just throw away the reference file, named 'pwmstr'.)
+
+# To use hashword as a module to create or verify hashes, just 
+# drop it in your plugins folder, and call it from within your 
+# plugin. There are two routines available:
+#   $hashword::make_hash() 
+# which takes one parameter, a plaintext str to hash. Output 
+# is either 0 (failure) or the hashed plaintext.
+# The other routine is:
+#   $hashword::verify_hash()
+# which takes two parameters: a plaintext str to verify, 
+# and the hashed str against which it is checked. Output 
+# is either 0 (failure, no match) or 1 (match).
+#
+# To demonstrate hashword as a plugin, just enter a blosxom 
+# URL as above. To demonstrate hashword as a module, follow 
+# the simple steps in the 'hashword_tester' plugin.
+#
+# REMEMBER -- if you forget the plaintext of a password 
+# that's been hashed, that's it; it's gone.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+package hashword;
+
+use strict;
+use FileHandle;
+use CGI qw/:standard :netscape/;
+
+# --- Configurable variables -----
+#  Password for hashword
+#   location of the file that holds the hashed password for hashword
+#   (leave blank to use your normal plugin state directory)
+my $master_password_dir = ""; 
+# --------------------------------
+
+
+use vars qw/$response $hashed_pw/;
+$response;                    # success/failure message
+$hashed_pw;                   # our output
+my $err_state;                # index to error strings
+my @err_strs = ('', 
+    'password cannot be empty', 
+    'the two input passwords didn\'t match', 
+    'hashing failed!', 
+    'couldn\'t open master password file!', 
+    'couldn\'t write master password file!');
+
+my $run_skip;                 # flag for the skip() sub
+my $done;                     # flag for the respond-ing to a set
+my $master_pw;                # password to run hashword as a plugin
+
+
+# this routine generates a hashed pw by creating a common 
+# salt, then calling the crypt() function to make a hash
+sub make_hash {
+  my $enclair_pw = shift;
+  $enclair_pw or return 0;
+  my $salt = join '', ('.', '/', 0..9, 'A'..'Z', 'a'..'z') [rand 64, rand 64];
+  return crypt($enclair_pw, $salt);
+}
+
+# this routine verifies a plaintext pw by hashing 
+# the incoming pw using the known hash as salt, and 
+# then comparing against the known hash
+sub verify_hash {
+  my $enclair_pw = shift;
+  $enclair_pw or return 0;
+  $hashed_pw = shift;
+  $hashed_pw or return 0;
+  return (crypt($enclair_pw,$hashed_pw) eq $hashed_pw);
+}
+
+
+sub start {
+# only act like a plugin if someone calls us explicitly --
+  # values coming back from the form:
+  if (request_method() eq 'POST' and param('plugin') eq 'hashword') {
+    my $plaintxt_pw1 = param('password_text1');
+    my $plaintxt_pw2 = param('password_text2');
+
+    $plaintxt_pw1 or $err_state = 1;
+    (! $err_state) and (($plaintxt_pw1 eq $plaintxt_pw2) or $err_state = 2);
+    (! $err_state) and ($hashed_pw = make_hash($plaintxt_pw1));
+    (! $err_state) and ($hashed_pw or $err_state = 3);
+    (! $err_state) and ($done = 1) and ($response = "Here's your hashed password: $hashed_pw");
+    $err_state and $response = "Sorry; no hashed password was produced:<br>$err_strs[$err_state]";
+
+    $run_skip = 1;                                # permission for skip() sub to run
+  }
+
+  # initial invocation:
+  $master_password_dir or $master_password_dir = "$blosxom::plugin_state_dir"; 
+  if (param('hashword')) {
+    $master_pw = param('hashword');
+    $master_pw or return 0;
+    my $master_pw_file = "$master_password_dir/pwmstr";
+    my $master_pw_ref;
+    
+    my $fh = new FileHandle;
+    if (-f "$master_pw_file") {                   # if we have a master pw on file, get it,
+      $fh->open("< $master_pw_file") or $err_state = 4;
+      chomp($master_pw_ref = <$fh>);
+      $fh->close;
+      verify_hash($master_pw,$master_pw_ref) or   # and verify it...
+        ($response = "You did not supply the correct password to operate this plugin" and 
+          $done = 1);
+    } else {
+      $master_pw_ref = make_hash($master_pw);     # ...else make a master pw file
+      $fh->open("> $master_pw_file") or $err_state = 5;
+      print $fh $master_pw_ref;
+      $fh->close();
+    }
+
+    $run_skip = 1;                                # permission for skip() sub to run
+  }
+
+  return 1;
+}
+
+
+# skip() is a fun sub! 
+# When it returns true, blosxom stops dead in its tracks; 
+# this allows you to use blosxom as a "shell" for your own 
+# CGIs. It's overkill, but it allows plugins to generate 
+# their own independent pages without putting users through 
+# the potential hassles of installing yet another cgi script.
+sub skip {
+  my $pkg = shift;
+  $run_skip or return 0;         # only run if we're allowed
+
+  # first, get rid of blosxom output
+  $blosxom::output = "";         # appears to be superfulous
+  $blosxom::header = "";         # yes -- clear this blosxom var
+
+  #Now, send our own page --
+  ## first, make a header:
+  print header(
+    -type    => "text/html",
+    -charset => 'iso-8859-1',
+  );
+  ## then make the form:
+print <<"_TOP_";
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Password Encryptor</title>
+</head>
+<body>
+
+<div align="center">
+_TOP_
+
+if ($done) {
+print <<"_MID_";
+<form method="POST" action="$blosxom::url" enctype="application/x-www-form-urlencoded" style="display: inline">
+<table height="100%" width="50%" cellspacing="4" cellpadding="4" border="0">
+<tr height="30%"><td colspan="2"></td></tr>
+<tr>
+  <td colspan="2">
+    $hashword::response
+  </td>
+</tr>
+<tr>
+  <td><input type="submit" value="Return to Blosxom" /></td>
+</tr>
+_MID_
+} else {
+print <<"_FORM_";
+<!--form method="POST" action="?pw=$master_pw" enctype="application/x-www-form-urlencoded" style="display: inline"-->
+<form method="POST" action="" enctype="application/x-www-form-urlencoded" style="display: inline">
+
+<table height="100%" width="50%" cellspacing="4" cellpadding="4" border="0">
+<tr height="30%"><td colspan="2"></td></tr>
+<tr><th colspan="2">Password Hasher</th></tr>
+<tr><td colspan="2"><hr></td></tr>
+<tr>
+  <td>Enter password:</td>
+  <td><input name="password_text1" size="25" value="" type="password"></td>
+</tr>
+<tr>
+  <td>Confirm password:</td>
+  <td><input name="password_text2" size="25" value="" type="password"></td>
+</tr>
+<tr>
+  <td colspan="2">
+    <input type="hidden" name="plugin" value="hashword" />
+    <input type="submit" value="Make Password" />
+  </td>
+</tr>
+<tr>
+  <td colspan="2">
+    $response
+  </td>
+</tr>
+_FORM_
+}
+print <<"_BOT_";
+<tr height="70%"><td colspan="2"></td><tr>
+</table>
+</form>
+</div>
+
+</body>
+</html>
+_BOT_
+
+1;
+}
+
+1;
+
+__DATA__
+
+__END__

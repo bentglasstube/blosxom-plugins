@@ -1,0 +1,41 @@
+# Blosxom Plugin: googlebot
+# Author(s): Kyo Nagashima <kyo@hail2u.net>
+# Version: 1.0
+# Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+package googlebot;
+
+use strict;
+
+# --- Configurable variables -----------
+
+my $sendmail = '/usr/sbin/sendmail';
+my $from     = 'googlebot@example.com';
+my $to       = 'john.doe@example.com';
+my $subject  = 'Welcome Googlebot.';
+
+# --- Plug-in package variables --------
+
+# --------------------------------------
+
+sub start {
+  if (
+    $ENV{'HTTP_USER_AGENT'} = /Googlebot/ and
+    open(MAIL, "| $sendmail -t")
+  ) {
+    print MAIL <<"_MAIL_";
+From: $from
+To: $to
+Subject: $subject
+Content-Type: text/plain; charset=ISO-2022-JP
+
+Googlebot tries to index the following page:
+http://example.com$ENV{'REQUEST_URI'}
+_MAIL_
+    close(MAIL);
+  }
+
+  return 0;
+}
+
+1;

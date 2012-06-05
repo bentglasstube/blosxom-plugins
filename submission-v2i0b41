@@ -1,0 +1,152 @@
+# Blosxom Plugin: submission
+# Author(s): DJ Adams <dj.adams@pobox.com>
+# Version: 2.0b4-1
+# Documentation: See the bottom of this file, or type perldoc submission
+
+package submission;
+
+# --- Configurable variables -----
+
+# What extension should the pending entries have?
+my $pending_extension = "txt-";
+
+# What flavour should be used to display the pending list?
+my $pending_flavour = "html";
+
+# If you want a separate webserver-writable dir for the 
+# pending stuff, specify it here, otherwise leave it empty
+# (and ensure your webserver user can write to your $datadir)
+my $pending_dir = "$blosxom::datadir/submissions/submissions";
+
+# Query keyword allows browse of pending submissions
+# e.g. http://localhost/qmacro?pending
+my $keyword = "";
+
+# Library of formatters (invoke with param '-format')
+my $formatlib = "formatlib";
+
+# --------------------------------
+
+use CGI ":cgi";
+use FileHandle;
+use lib qq{$blosxom::plugin_dir/$formatlib};
+
+my $submission;
+use vars qw/$url $message $category $author $description/;
+my $fh = new FileHandle;
+
+# Pull in any formatters
+my %formatters;
+if ( $formatlib and opendir FORMATTERS, qq{$blosxom::plugin_dir/$formatlib} ) {
+  foreach my $formatter ( grep { /^\w+$/ && -f "$blosxom::plugin_dir/$formatlib/$_"  } sort readdir(FORMATTERS) ) {
+    my($formatter_name) = $formatter =~ /^\d*(\w+)$/;
+    require "$formatlib/$formatter";
+    $formatters{$formatter_name} = 1;
+  }
+  closedir FORMATTERS;
+}
+
+
+sub start {
+
+  my $method = request_method();
+
+  return 0 unless($method eq 'POST' and param('plugin') eq 'submission');
+             #  or ($method eq 'GET' and param('keywords') eq $keyword);
+
+  $pending_dir and $blosxom::datadir = $pending_dir;
+  $blosxom::file_extension = $pending_extension;
+  $blosxom::flavour = $pending_flavour || "pending";
+
+  # Don't try to save anything if just GET
+  return 1 if $method eq 'GET';
+
+  # POST from here ...
+
+  # Pass form data to formatter, falling back on 
+  # default formatter '_format()'
+  my (%form, $submission, $content);
+  my $format = param('-format');
+  $form{$_} = param($_) foreach param();
+  if (exists($formatters{$format})
+      and $format->can('format')) {
+    ($submission, $content) = $format->format(\%form);
+  }
+  else {
+    ($submission, $content) = _format(\%form);
+  }
+
+  # Ensure we don't clobber existing pending submissions
+  $submission .= "_" while -r "$blosxom::datadir/$submission.$pending_extension";
+  if ($fh->open(">$blosxom::datadir/$submission.$pending_extension")) {
+    print $fh $content;
+    $fh->close();
+    $message = "Thank you for your submission.  It will be reviewed and posted to the web site as soon as possible.";
+  }
+  else {
+    $message = "There was a problem saving your submission. Sorry.";
+  }
+
+  return 1;
+
+}
+
+
+# Default formatting routine if no formatters available
+sub _format {
+
+  my ($formref) = shift;
+
+  # Take filename and title from this parameter
+  my $titleparam = 'name';
+
+  my $name = $formref->{$titleparam} || $$;
+  my $content = "$name\n";
+
+  foreach my $field (keys %{$formref}) {
+    next if $field eq $titleparam or $field =~ /^-/;
+    $content .= "<strong>$field : </strong>".$formref->{$field}."<br/>\n";
+  }
+  
+  return ($name, $content);
+
+}
+
+1;
+
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: submission
+
+=head1 DESCRIPTION
+
+Supports the submission of entries, usually to arrive in a 'pending'
+state for review. Sourced from an HTML form POSTed to your main
+weblog URL, this plugin will format the content according to a 
+formatter and place it into a file in Blosxom's datadir ready for 
+you to review it and 'activate' it (this is done by using a 'txt-'
+extension on the file). 
+
+You can define your own formatting routines: create a formatter library
+containing a format() subroutine and put it in the formatlib directory
+(usually below the plugin directory). Specify which formatter you want
+by sending (along with the rest of the HTML form content) a formatter
+name in the '-format' parameter. You can also have the mechanism fall
+back to a default formatter (submission::_format()) if you wish. Look 
+at the 'plugin' formatter in the formatlib too for comparison.
+
+=head1 VERSION
+
+2.0b4-1
+
+=head1 AUTHOR
+
+DJ Adams <dj.adams@pobox.com> http://www.pipetree.com/qmacro
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+Blosxom Plugins Docu: http://www.raelity.org/apps/blosxom/plugin.shtml

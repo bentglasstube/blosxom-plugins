@@ -1,0 +1,421 @@
+# Blosxom Plugin: headlines
+# Author(s): Eric Davis <edavis <at> foobargeek <dot> com>
+# Documentation: See the bottom of this file or type: perldoc headlines
+
+package headlines;
+
+# --- Configurable variables -----
+
+# set this to the file used as the headline cache
+my $cachefile = "$blosxom::plugin_state_dir/headlines.dat";
+
+# if you are going to want writeback counts then set this to 1
+my $want_writeback_counts = 0;
+
+# if you are going to want comment counts then set these to
+# the same values you use for WritebackPlus (note that ONLY
+# WritebackPlus is supported)
+my $writeback_dir            = "$blosxom::plugin_state_dir/writeback";
+my $writeback_file_extension = "wb";
+
+# if you want long dates then set your desired month strings here
+my @monthabbr = qw{Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec};
+
+# --------------------------------
+
+use CGI qw/:standard/;
+
+my $reindex = 0;
+my %blogs;
+
+sub start
+{
+    $reindex = 1 if (CGI::param('reindex'));
+    return 1;
+}
+
+sub filter
+{
+    my ($pkg, $files_ref) = @_;
+
+    # open the $cachefile for reading/writing(append) and create if doesn't exist
+    open(CACHE, "+>>$cachefile");
+    flock(CACHE, LOCK_EX);
+
+    # if the file was just created then force a reindex
+    if ((stat($cachefile))[7] == 0)
+    {
+        $reindex = 1;
+    }
+
+    if ($reindex) # re-cache all the headlines
+    {
+        truncate(CACHE, 0);
+
+	    foreach $key (keys %$files_ref)
+        {
+            # grab the headline for this blog entry
+            open(FILE, "<$key") or next;
+            $headline = <FILE>;
+            close(FILE);
+
+            # get the number of writebacks for this blog entry
+            $wb_count = 0;
+            $wb_count = get_writeback_count($key) if $want_writeback_counts;
+
+            # cache the writeback count and blog headline
+            print(CACHE "$key=wb=>$wb_count=hl=>$headline");
+
+            $blogs->{$key}->{headline} = $headline;
+            $blogs->{$key}->{wb_count} = $wb_count;
+            $blogs->{$key}->{date} = $files_ref->{$key};
+        }
+    }
+    else
+    {
+        seek(CACHE, 0, 0); # seek to the beginning of the cache file
+
+        # grab all the cached headlines
+        while (<CACHE>)
+        {
+            if (/^(.*)=wb=>(.*)=hl=>(.*)$/)
+            {
+                $blogs->{$1}->{headline} = $3;
+                $blogs->{$1}->{wb_count} = $2;
+                $blogs->{$1}->{date} = $files_ref->{$1};
+            }
+        }
+    }
+
+    flock(CACHE, LOCK_UN);
+    close(CACHE);
+
+    return 1;
+}
+
+
+sub get_writeback_count
+{
+    my ($blog_entry) = @_;
+    my $count = 0;
+
+    # convert the full story path to the full writeback path
+    $blog_entry =~ s/^$blosxom::datadir(.*)$blosxom::file_extension$/$writeback_dir$1$writeback_file_extension/;
+
+    # open the WritebackPlus file for reading
+    open(WB_FILE, "$blog_entry") or return 0;
+
+    # count up the number of writebacks
+    while (<WB_FILE>)
+    {
+        $count++ if (/^-----$/)
+    }
+
+    close(WB_FILE);
+
+    return $count;
+}
+
+
+sub get
+{
+    my ($self, $attributes, $content) = @_;
+
+    my $category        = $attributes->{"category"};
+    my $css_class       = $attributes->{"css_class"};
+    my $css_date_class  = $attributes->{"css_date_class"};
+    my $css_item_class  = $attributes->{"css_item_class"};
+    my $css_link_class  = $attributes->{"css_link_class"};
+    my $max_to_show     = $attributes->{"max_to_show"};
+    my $sort_method     = $attributes->{"sort_method"};
+    my $show_dates      = $attributes->{"show_dates"};
+    my $show_long_dates = $attributes->{"show_long_dates"};
+    my $indent          = $attributes->{"indent"};
+    my $show_wb_count   = $attributes->{"show_wb_count"};
+    my $wb_prefix       = $attributes->{"wb_prefix"};
+    my $wb_postfix      = $attributes->{"wb_postfix"};
+
+    my $return_data = '';
+    my $count = 0;
+    my @sorted;
+    my $url;
+    my $hl;
+    my $lastmonth;
+    my $lastday;
+    my $lastyear;
+    my $month;
+    my $day;
+    my $year;
+
+    if ($sort_method eq 'by_path_name')
+    {
+        @sorted = sort keys %$blogs;
+    }
+    if ($sort_method eq 'by_path_name_reverse')
+    {
+        @sorted = reverse sort keys %$blogs;
+    }
+    elsif ($sort_method eq 'by_title')
+    {
+        @sorted = sort { $blogs->{$a}->{headline} cmp $blogs->{$b}->{headline} } keys %$blogs;
+    }
+    elsif ($sort_method eq 'by_title_reverse')
+    {
+        @sorted = reverse sort { $blogs->{$a}->{headline} cmp $blogs->{$b}->{headline} } keys %$blogs;
+    }
+    elsif ($sort_method eq 'by_date_reverse')
+    {
+        @sorted = reverse sort { $blogs->{$b}->{date} <=> $blogs->{$a}->{date} } keys %$blogs;
+    }
+    else # ($sort_method eq 'by_date')
+    {
+        @sorted = sort { $blogs->{$b}->{date} <=> $blogs->{$a}->{date} } keys %$blogs;
+    }
+
+    $return_data .= qq{<ul class="$css_class">\n};
+
+    foreach (@sorted)
+    {
+        # skip this entry if not part of the specified category
+        next if !/^$blosxom::datadir$category.*$/;
+
+        $hl = $blogs->{$_}->{headline};
+
+        my @date  = localtime($blogs->{$_}->{date});
+        $month = $date[4] + 1;
+        $day   = $date[3];
+        $year  = $date[5] + 1900;
+
+        $url = $_;
+        $url =~ s/^$blosxom::datadir(.*)$blosxom::file_extension$/$blosxom::url$1$blosxom::flavour/;
+
+        if ($show_dates)
+        {
+            if (($month != $lastMonth) or ($day != $lastDay) or ($year != $lastYear))
+            {
+                if ($show_long_dates)
+                {
+                    $return_data .= qq{<li class="$css_date_class">@monthabbr[$month-1] $day, $year</li>\n};
+                }
+                else
+                {
+                    $return_data .= qq{<li class="$css_date_class">$month/$day/$year</li>\n};
+                }
+
+                $lastMonth = $month;
+                $lastDay   = $day;
+                $lastYear  = $year;
+            }
+        }
+
+        if ($show_wb_count)
+        {
+            $return_data .= qq{<li class="$css_item_class"><a href="$url">$indent$hl</a> $wb_prefix$blogs->{$_}->{wb_count}$wb_postfix</li>\n};
+        }
+        else
+        {
+            $return_data .= qq{<li class="$css_item_class"><a href="$url">$indent$hl</a></li>\n};
+        }
+
+        last if ($max_to_show and (++$count == $max_to_show));
+    }
+
+    $return_data .= qq{</ul>\n};
+
+    return $return_data;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plugin: headlines
+
+=head1 DESCRIPTION
+
+This plugin provides the ability to present a list of headlines for all the
+stories found by blosxom.  Each headline in the list is a path based permalink
+to the story.  The headlines shown is determined by a function call using
+the B<interpolate_fancy> plugin.  The arguments to this function describe
+which headlines to show and how to show them.  Therefore, you can implement
+multiple calls within your flavour files.  Each call can present a completely
+different set of headlines (i.e. different categories, different sort methods,
+different layout, etc).
+
+You can also configure this plugin to display the number of writeback comments
+with each headline.  Note that ONLY the WritebackPlus plugin is currently
+supported but it should be easy to support other comment type plugins.
+
+The following configuration variables must be configured properly before
+this plugin will work:
+
+B<$cachefile>: set this to the file used as the headline cache
+
+B<$want_writeback_counts>: if you are going to want writeback counts
+tacked on to each headline then set this (1 = on, 0 = off)
+
+B<$writeback_dir>: the location of the writeback data (make sure this
+variable is set to the same location as that configured in the
+WritebackPlus plugin)
+
+B<$writeback_file_extension>: the file extension of a writeback data
+file (make sure this variable is set to the same file extension as that
+configured in the WritebackPlus plugin)
+
+B<@monthabbr>: if you are going to use the long date format, modify this
+array to the month strings you would like to use
+
+Now the details on how to display a set of headlines within your flavour files.
+As already mentioned, you must have the B<interpolate_fancy> plugin installed
+for this to work.  There is no configuration necessary for the
+B<interpolate_fancy> plugin so if you haven't already done so, download it
+and drop it into your plugin directory.  Once you get familiar with
+B<interpolate_fancy> you'll get excited about the endless possibilitees.
+
+The headlines B<interpolate_fancy> function is simply called B<get>.  The
+most basic call is as follows:
+
+    <@headlines.get output="yes" />
+
+This would return an unordered list of all the story headlines on your site.
+There are a number of arguments you can pass to the B<get> function that are
+used to modify the list returned.  Here are the descriptions of each and their
+default setting if not passed to the B<get> function:
+
+B<category>: the category to pull headlines from (default: all categories)
+
+B<sort_method>: how to sort the headlines (default: B<by_date>)
+    The available sort methods are:
+    B<by_date> sorted by date (newest to oldest)
+    B<by_date_reverse> sorted by date (oldest to newest)
+    B<by_path_name> sorted alpha by the story's path
+    B<by_path_name_reverse> sorted reverse alpha by the story's path
+    B<by_title> sorted alpha by headline
+    B<by_title_reverse> sorted reverse alpha by headline
+
+B<max_to_show>: the max number of headlines to show in the list (default: all)
+
+B<show_dates>: show a date string before the headline, headlines occuring on
+the same day fall under the same date headline (1 = yes, 0 = no) (default: 0)
+
+B<showLongDates>: show Apr 8, 1973 instead of 4/8/1973 (1 = yes, 0 = no)
+(default: 0)
+
+B<indent>: indent string inserted before a headline, useful with B<show_dates>
+for contrast between the date and headline strings (default: "")
+
+B<show_wb_count>: show the number of writeback comments after each headline
+(1 = on, 0 = off) (default: 0)
+
+B<wb_prefix>: the string to prefix the writeback comment count
+(default: "")
+
+B<wb_postfix>: the string to postfix the writeback comment count
+(default: "")
+
+B<css_class>: the CSS class identifier to use for the unordered list tag
+(default: "")
+
+B<css_date_class>: the CSS class identifier to use for the date string list
+item (default: "")
+
+B<css_item_class>: the CSS class identifier to use for the headline string list
+item (default: "")
+
+Here are some examples:
+
+  The following will display the last 10 headlines from the "/sports" category
+  with the writeback count for each headline and each count looking like "- N".
+
+    <@headlines.get category="/sports"
+                    show_wb_count="1"
+                    wb_prefix="- "
+                    max_to_show="10"
+                    output="yes" />
+
+  The following will display the last 30 headlines (any category) with the
+  writeback count for each headline and each count looking like "-N-".
+
+    <@headlines.get show_wb_count="1"
+                    wb_prefix="-"
+                    wb_postfix="-"
+                    max_to_show="30"
+                    output="yes" />
+
+
+  The following will display all headlines sorted alphabetically by the title
+  string.
+
+    <@headlines.get sort_method="by_title"
+                    output="yes" />
+
+  The following will display the last 25 headlines (any category) with the
+  date headers.  Also specified are some CSS class identifiers.
+
+    <@headlines.get show_dates="1"
+                    max_to_show="25"
+                    css_class="headlines"
+                    css_date_class="headlines_date"
+                    css_item_class="headlines_item"
+                    output="yes" />
+
+  The following will display the last 100 headlines from the
+  "/computers/software/blosxom" category sorted in reverse date order
+  (i.e. from oldest to newest).  Long date strings will be inserted into
+  the headline list and each headline will be indented four spaces and
+  show a writeback count looking like "(N)".  Also specified are some
+  CSS class identifiers.
+
+    <@headlines.get category="/computers/software/blosxom"
+                    sort_method="by_date_reverse"
+                    show_dates="1"
+                    show_long_dates="1"
+                    indent="&nbsp;&nbsp;&nbsp;&nbsp;"
+                    max_to_show="100"
+                    show_wb_count="1"
+                    wb_prefix="("
+                    wb_postfix=")"
+                    css_class="blosxom_headlines"
+                    css_date_class="blosxom_headlines_date"
+                    css_item_class="blosxom_headlines_item"
+                    output="yes" />
+
+As you can see from the above examples, these B<interpolate_fancy> functions
+are very easy to use and also very powerful.  Hopefully these examples are
+enough to help you on your way to creating an awesome site.
+
+Note that you will want to run this plugin very early (i.e. after the entry
+dates have been set and before any other plugins that might modify the entries
+list during the filter routine).  Rename this plugin to B<01headlines> or
+something similar based on your plugin runtime priority naming scheme.
+
+The cache file is automatically created if it doesn't exist and the CGI
+parameter setting B<?reindex=y> will force the cache file be re-generated.
+Note that the original headline cache file is not compatible with that used
+by this new deviation of the headlines plugin.
+
+=head1 VERSION
+
+2.1 deviation from original headlines v1.10 with lots of changes:
+    almost a complete rewrite, added ability to get headlines on a per
+    category basis, and added ability to show the number of writeback
+    comments per headline
+
+=head1 VERSION HISTORY
+
+2.1 deviation from original headlines v1.10
+
+=head1 AUTHORS
+
+Eric Davis <edavis <at> foobargeek <dot> com> http://www.foobargeek.com
+
+=head1 LICENSE
+
+This source is submitted to the public domain.  Feel free to use and modify it.
+If you like, a comment in your modified source attributing credit for my original
+work would be appreciated.
+
+THIS SOFTWARE IS PROVIDED AS IS AND WITHOUT ANY WARRANTY OF ANY KIND.  USE AT YOUR OWN RISK!
+

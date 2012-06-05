@@ -1,0 +1,339 @@
+# Blosxom Plugin: atomfeed
+# Author(s): Rael Dornfest <rael@oreilly.com>
+# Version: 2005-07-20
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+# Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+# Basic upgrade to Atom 1.0 by Sam Pearson http://sgp.me.uk/
+# Updated 2005-07-21 - see http://sgp.me.uk/sam/2005/07/20/atom-1-beta
+
+package atomfeed;
+
+# --- Configurable variables -----
+
+# $default_auhtor and $feed_yr are important and should be set to meaningful values..
+# The other variables can be safely left alone, or changed as required.
+
+# Who would you like your feed to credit as the default author of each entry? 
+# Leave blank and the atomfeed plugin will attempt to use the whoami and
+# fauxami plugins
+$default_author = '';
+
+# What year was your weblog started?  This will be used 
+# to form part of your weblog's unique ID.
+$feed_yr = '';
+
+# --
+
+# What is the default author's URI?
+# Blank defaults to $blosxom::url
+$author_uri = '';
+
+# What is the default author's email address?
+# Leave blank to exclude.
+$author_email = '';
+
+# Copyright statement:
+# leave blank to exclude.
+$copyright = '';
+
+# What domain should Blosxom use in ID tags?
+# Leave blank if you don't understand or for Blosxom to use the domain in $url.
+$id_domain = '';
+
+# Feed url
+# Set your feed url here.  Defaults to $blosxom::url/index.atom
+$feed_url = '';
+
+# What template placeholder in your flavour template should I replace with feed-level <updated>?
+my $template_placeholder = "{{{updated}}}";
+
+# --- Plug-in package variables -----
+
+$author = '';
+$T = 'T';
+$colon = ':';
+$zerozero = '00';
+
+# URL where an atom.css might reside
+$css_url = "$blosxom::url/atom.css";
+
+# Try to glean the domain from $url
+$id_domain or ($id_domain) = $blosxom::url =~ m#http://(?:www\.)?([^\/]+)#;
+
+# Feed url chacking:
+$feed_url or $feed_url = "$blosxom::url/index.atom";
+
+# Glean year for feed id: now set in configurable variables
+#$feed_yr = (gmtime(time))[5] + 1900;
+
+$utc_date = '';
+
+$feed_utc_date = '';
+use vars qw/$feed_utc_date/;
+
+$category;
+
+$copyright and $copyright = "<rights>$copyright</rights>";
+
+$author_uri or $author_uri = "$blosxom::url";
+$author_uri = "<uri>$author_uri</uri>";
+
+$author_email and $author_email = "\n      <email>$author_email</email>";
+
+# --------------------------------
+
+sub start {
+
+  # Check for the existence of already-loaded flavour templates or theme
+  $blosxom::template{'atom'}{'head'} and return 1;
+
+  # Otherwise, load on-board templates
+  _load_templates();
+
+  eval {use XML::Parser; $parser = new XML::Parser;};
+  %escape = ('<'=>'&lt;', '>'=>'&gt;', '&'=>'&amp;', '"'=>'&quot;');
+  $escape_re  = join '|' => keys %escape;
+
+  1;
+}
+
+sub head {
+  ($blog_title_type, $blog_title) = _parse_markup($blosxom::blog_title);
+  ($blog_description_type, $blog_description) = _parse_markup($blosxom::blog_description);
+  1;
+}
+
+
+sub story {
+  my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+  use File::stat;
+
+  # set up <category>:
+  if ( $path ) {
+    $category = "<category term=\"$path\"/>";
+  }
+
+  # <published>: derive from %blosxom::files
+  my @published_utc = gmtime($blosxom::files{"$blosxom::datadir$path/$filename.$blosxom::file_extension"});
+  $published_utc_date = sprintf("%4d-%02d-%02dT%02d:%02d:00Z",
+				$published_utc[5]+1900,
+				$published_utc[4]+1,
+				$published_utc[3],
+				$published_utc[2],
+				$published_utc[1]);
+
+  # <updated>: derive by stat()ing the file for its mtime:
+  my @updated_utc = gmtime(stat("$blosxom::datadir$path/$filename.$blosxom::file_extension")->mtime);
+  $updated_utc_date = sprintf("%4d-%02d-%02dT%02d:%02d:00Z",
+			      $updated_utc[5]+1900,
+			      $updated_utc[4]+1,
+			      $updated_utc[3],
+			      $updated_utc[2],
+			      $updated_utc[1]);
+
+  # Date/time of most recently-modified story becomes date/time of the feed.
+  $feed_utc_date = $updated_utc_date if $updated_utc_date > $feed_utc_date;
+
+  # use %blosxom::files for the year component of the atom:id element
+  # in case the creation time is cached somewhere.
+  $utc_yr = $published_utc[5]+1900;
+
+  # Set authorship if available, falling back to $atomfeed::author
+  $author = $whoami::fullname || $fauxami::name || $default_author || '';
+
+  # Parse post title:
+  ($title_type, $title) = _parse_markup($$title_ref);
+
+  # Parse the post body:
+  ($body_type, $body) = _parse_markup($$body_ref);
+
+  1;
+}
+
+sub foot {
+    my($pkg, $currentdir, $foot_ref) = @_;
+    $feed_utc_date = "<updated>$feed_utc_date</updated>";
+    $blosxom::output =~ s/$template_placeholder/$feed_utc_date/m;
+    return 1;
+}
+
+sub _parse_markup {
+
+  # Pass in some test to parse, and I'll return a type and the text suitably configured.
+  my $text = shift;
+  my $type;
+
+  # First, check to see if $text appears to contain markup:
+  if ( $text =~ /<[a-zA-Z0-9]+>/ ) {
+    # OK, it contains at least one angle bracket: assume markup.
+    # Now, check to see if it looks well-formed:
+    if ( eval{$parser->parse("<div>$text</div>")}) {
+      # Yes?  XHTML it is, then.  I hope.
+      $type = 'xhtml';
+      $text = "<div xmlns=\"http://www.w3.org/1999/xhtml\">$text</div>";
+    }
+    else {
+      # No?  Good old tag soup.
+      $type = 'html';
+      $text =~ s/($escape_re)/$escape{$1}/g;
+    }
+  }
+  else {
+    # No left brackets at all!  We'll assume it's plaintext then.
+    $type = 'text';
+  }
+
+  # Out go the results:
+  return $type, $text;
+
+}
+
+sub _load_templates {
+  $blosxom::template{'atom'}{'content_type'} = 'application/atom+xml';
+
+  $blosxom::template{'atom'}{'date'} = "\n";
+
+  $blosxom::template{'atom'}{'head'} =<<'HEAD';
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title type="$atomfeed::blog_title_type">$atomfeed::blog_title</title>
+  <subtitle type="$atomfeed::blog_description_type">$atomfeed::blog_description</subtitle>
+  <link rel="self" type="application/atom+xml" href="$atomfeed::feed_url"/>
+  <link rel="alternate" type="text/html" hreflang="$blosxom::blog_language" href="$blosxom::url" />
+  <id>tag$atomfeed::colon$atomfeed::id_domain,$atomfeed::feed_yr$atomfeed::colon/$blosxom::path_info</id>
+  <generator uri="http://www.blosxom.com/" version="$blosxom::version">Blosxom</generator>
+  $atomfeed::copyright
+  {{{updated}}}
+HEAD
+
+  $blosxom::template{'atom'}{'story'} =<<'STORY';
+  <entry>
+    <id>tag$atomfeed::colon$atomfeed::id_domain,$atomfeed::utc_yr$atomfeed::colon$path/$fn</id>
+    <link rel="alternate" type="text/html" href="$blosxom::url$blosxom::path/$blosxom::fn.$blosxom::default_flavour" />
+    <title type="$atomfeed::title_type">$atomfeed::title</title>
+    <published>$atomfeed::published_utc_date</published>
+    <updated>$atomfeed::updated_utc_date</updated>
+    $atomfeed::category
+    <author>
+      <name>$atomfeed::author</name>
+      $atomfeed::author_uri$atomfeed::author_email
+    </author>
+    <content type="$atomfeed::body_type" xml:base="$blosxom::url" xml:lang="$blosxom::blog_language">
+$atomfeed::body
+    </content>
+  </entry>
+
+STORY
+
+  $blosxom::template{'atom'}{'foot'} =<<'FOOT';
+</feed>
+FOOT
+
+  1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: atomfeed
+
+=head1 SYNOPSIS
+
+Provides an Atom feed of your weblog.
+
+The plugin has all you need right on-board, including the appropriate flavour 
+template components and a couple-three configuration directives.
+
+Point your browser/Atom feed reader at http://yoururl/index.atom.
+
+=head1 VERSION
+
+2003-12-11
+
+=head1 AUTHOR
+
+Rael Dornfest <rael@oreilly.com>, http://www.raelity.org/
+Sam Ruby <sam@intertwingly.net>, http://www.intertwingly.net/
+  - contributed the XML::Parser magic
+Frank Hecker <hecker@hecker.org>, http://www.hecker.org/
+  - contributed patches for Atom 0.3 compliance, UTC date/time fix
+
+=head1 INSTALLATION
+
+Drop atomfeed into your plugins directory.
+
+=head1 CONFIGURATION
+
+Drop atomfeed into your plugins directory.
+
+All other configuration is optional.
+
+$default_author is where you specify who you'd like to credit as the default
+author of each entry.  I say "default" since if you leave it blank it'll 
+attempt to use the value provided by the whoami or fauxami plugins if you 
+happen to have them installed.
+
+  e.g. $default_author = 'Rael Dornfest';
+
+Atom associates unique ID tags with the feed itself and individual entries.
+By default it'll attempt to glean your domain from the specified or calculated
+value of $blosxom::url.  But you can override this by setting $id_domain in
+the configuration section above.
+
+  e.g. $id_domain = "raelity.org";
+
+Just be sure it's a domain name sans any http://, slashes, extra path bits, 
+or what-have-you.
+
+=head1 OTHER PLUGINS
+
+The atomfeed plugin assumes you're not running any fancy interpolation plugin
+(e.g. interpolate_fancy) which changes the way variables are specified in a 
+template (e.g. <$foo /> rather than $foo).  
+
+If you are running interpolate_fancy or the like--I am--use the config plugin 
+and a config.atom file in your blosxom $datadir consisting of:
+
+  $blosxom::plugins{"interpolate_fancy"} = 0;
+
+Where "interpolate_fancy" is the name of the interpolation plugin you're
+turning off _just for the atom feed_.
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Blosxom and this Blosxom Plug-in
+Copyright 2003, Rael Dornfest 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

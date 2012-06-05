@@ -1,0 +1,28 @@
+# Blosxom Plugin: absolutize
+# Author(s): Simon Fraser
+# Version: 1.0
+# Documentation: Based on 'absolute' by Rael Dornfest, but fixes relative
+#                image and href links correctly.
+
+package absolutize;
+
+# --- Configurable variables -----
+
+# --------------------------------
+
+sub start {
+  1;
+}
+
+sub story {
+  my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+  # smfr -- replace relative href links
+  $$body_ref =~ s#(<a.+?href\s*=\s*["'])([^\/][^"':]+["'])#$1$path/$2#sig;
+
+  # smfr -- replace relative image links with absolute links
+  $$body_ref =~ s#(<img.+?src=["'])([^\/][^"']+["':])#$1$path/$2#sig;
+  return 1;
+}
+
+1;

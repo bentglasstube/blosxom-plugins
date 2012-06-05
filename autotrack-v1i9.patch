@@ -1,0 +1,42 @@
+===========================================================
+--- autotrack   2005/06/07 17:54:36     1.8
++++ autotrack   2005/06/07 17:59:15     1.9
+@@ -242,19 +242,20 @@
+      return 1;
+  }
+
++my $pinged;
+  sub story {
+      my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = 
+@_;
+      my ($pathname) = 
+"$blosxom::datadir$path/$filename.$blosxom::file_extension";
+      return 1 if ($files->{$pathname} < $last_timestamp);
+      debug(3, "checking $pathname for trackbacks");
+-    my (%pinged, $ping_tries, $ping_succeed);
++    my ($ping_tries, $ping_succeed);
+      my $excerpt = make_excerpt($$body_ref);
+      my $url    = "$blosxom::url$path/$filename.html";
+      defined $meta::tb_ping and
+        ++$ping_tries and
+         ping_trackback($meta::tb_ping, $$title_ref, $excerpt, $url) and
+           ++$ping_succeed and
+-           ++$pinged{$meta::tb_ping};
++           ++$pinged->{$pathname}{$meta::tb_ping};
+      return 1 if (defined $meta::autotrack && $meta::autotrack eq 'no');
+      while ($$body_ref =~
+            m!<a\s [^>]*
+@@ -264,11 +265,11 @@
+                   )!msxg) {
+         my $trackback_url = get_trackback_url(decode_entities($+));
+          next unless defined $trackback_url;
+-       next if $pinged{$trackback_url};
++       next if $pinged->{$pathname}{$trackback_url};
+         $ping_tries++;
+         ping_trackback($trackback_url, $$title_ref, $excerpt, $url) and
+           ++$ping_succeed and
+-           ++$pinged{trackback_url};
++           ++$pinged->{$pathname}{$trackback_url};
+         debug(1, "autotracked: $trackback_url");
+      }
+=====================================

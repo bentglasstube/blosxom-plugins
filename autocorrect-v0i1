@@ -1,0 +1,179 @@
+# Blosxom Plugin: autocorrect                                      -*- perl -*-
+# Author: Todd Larason (jtl@molehill.org)
+# Version: 0+1i
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/blosxom
+# AutoCorrect plugin Home/Docs/Licensing:
+#  http://molelog.molehill.org/blox/Computers/Internet/Web/Blosxom/AutoCorrect/
+
+package autocorrect;
+
+# --- Configuration Variables ---
+
+$debug_level ||= 1;
+# -------------------------------
+
+
+use CGI;
+use FileHandle;
+
+my $package = 'autocorrect';
+my @goodhits = ();
+my $activated = 0;
+my %template = ();
+my $flav_cache;
+
+sub debug {
+    my ($level, @msg) = @_;
+
+    if ($debug_level >= $level) {
+	print STDERR "$package debug $level: @msg\n";
+    }
+}
+
+sub load_template {
+ my ($bit) = @_;
+ my $fh = new FileHandle;
+    
+ return $flav_cache{$bit} ||=
+  ($fh->open("< $blosxom::datadir/$package.$bit.$blosxom::flavour") ?
+    join '',<$fh> : $template{$blosxom::flavour}{$bit}) ||
+  ($fh->open("< $blosxom::datadir/$package.$bit.$blosxom::default_flavour") ?
+    join '',<$fh> : $template{$blosxom::default_flavour}{$bit}) || 
+  ($fh->open("< $blosxom::datadir/$package.$bit.html") ?
+    join '',<$fh> : $template{html}{$bit}) || 
+  '';
+}
+
+
+sub report {
+    my ($bit, $path, $text) = @_;
+
+    my $f = load_template($bit);
+    $f =~ s/((\$[\w:]+)|(\$\{[\w:]+\}))/$1 . "||''"/gee;
+    return $f;
+}
+
+sub start {
+    if ($blosxom::static_or_dynamic eq 'dynamic') {
+	debug(1, "start() called, enabled");
+	while (<DATA>) {
+	    last if /^(__END__)?$/;
+	    my ($flavour, $comp, $txt) = split ' ',$_,3;
+	    $txt =~ s:\\n:\n:g;
+	    $template{$flavour}{$comp} = $txt;
+	}
+	return 1;
+    } else {
+	debug(1, "start() called, but in static mode -- not enabling");
+	return 0;
+    }
+}
+
+sub filter {
+    my ($pkg, $files_ref) = @_;
+    my $datepart;
+    my $path_info = path_info();
+
+    debug(2, "filter() called, path_info = $path_info");
+
+    # handle normal cases as fast as possible -- no path, a category
+    # path, or a category + file that exists
+    return 1 if ($path_info eq '');
+    return 1 if ($path_info !~ s!\.[^.]+$!.$blosxom::file_extension!);
+    return 1 if (defined($files_ref->{"$blosxom::datadir$path_info"}));
+
+    debug(2, "fasttrack failed, splitting path");
+
+    # at this point, $path_info is (category + optional date + filename)
+    # and either the file doesn't exist in that category, or the
+    # date field is being used along with a full filename
+
+    # this is straight from blosxom itself, and should be kept in-sync
+    my @path_info = split '/', $path_info;
+    my $filename = pop @path_info;
+    return 1 if ($filename eq "index.$blosxom::file_extension");
+    shift @path_info; # remove empty '' before first /
+    $path_info = '';
+    while ($path_info[0] and 
+	   $path_info[0] =~ /^[a-zA-Z].*$/ and 
+	   $path_info[0] !~ /(.*)\.(.*)/) { 
+	$path_info .= '/' . shift @path_info; 
+    }
+
+    debug(2, "path_info=$path_info, filename=$filename");
+
+    # @path_info may have date info in it still, but we're not interested
+
+    return 1 if defined($files_ref->{"blosxom::datadir$path_info/$filename"});
+    
+    debug(2, "Still not found, looking for good matches");
+
+    # okay, it doesn't exist -- it's okay to spend some time now, since
+    # slow results are better than no results
+
+    # XXX this should be quite a bit smarter -- 'sounds like', 'typoed like'
+    # look at what mod_speling does
+    $activated = 1;
+    foreach (keys %$files_ref) {
+	my ($this_filename) = m:([^/]+)$:;
+	if ($filename eq $this_filename) {
+	    push(@goodhits, $_);
+	    debug(2, "Found good hit: $_");
+	}
+    }
+    $files_ref->{"$blosxom::datadir$path_info/$filename"} =	
+	$#goodhits == 0 ? $files_ref->{$goodhits[0]} : time;
+    return 1;
+}
+
+sub story {
+    return 1 if !$activated;
+    my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+    if ($#goodhits == -1) {
+	debug(2, "in story(), no good hits");
+	$$title_ref = report('not_found_title');
+	$$body_ref  = report('not_found_body');
+    } elsif ($#goodhits == 0) {
+	debug(2, "in story(), 1 good hit");
+	# just one, easy case to deal with
+	my $fh = new FileHandle;
+	if ($fh->open($goodhits[0])) {
+	    debug(3, "opened $goodhits[0]");
+	    # convert from filename to path+filename (w/o extension)
+	    $goodhits[0] =~ s!$blosxom::datadir(.*)\.[^./]+$!\1!;
+	    chomp(my $title = <$fh>);
+	    $$title_ref = report('found_one_title', $goodhits[0], $title);
+	    $$body_ref = report('found_one_body',$goodhits[0],(join '',<$fh>));
+	} else {
+	    debug(3, "Couldn't open $goodhits[0]: $!");
+	    $goodhits[0] =~ s!$blosxom::datadir(.*)\.[^./]+$!\1!;
+	    $$title_ref = report('error_title', $goodhits[0]);
+	    $$body_ref = report('error_body', $goodhits[0]);
+	}
+    } else {
+	debug(2, "in story(), multiple matches");
+	$$title_ref = report('multi_title');
+	$$body_ref = report('multi_body_head');
+	map {
+	    $_ =~ s!$blosxom::datadir(.*)\.[^./]+$!\1!; 
+	    $$body_ref .= report('multi_body_item', $_)
+	} @goodhits;
+	$$body_ref .= report('multi_body_foot');
+    }
+    return 1;
+}
+
+1;
+__DATA__
+html not_found_title Not Found
+html not_found_body <p>The file you asked for doesn't exist, and I'm afraid I couldn't find a good match for it.  I'm sorry.</p>\n
+html found_one_title $text
+html found_one_body <p>The file you asked for doesn't exist; it may have been moved.  This is actually <a href="$blosxom::url$path.$blosxom::flavour">$path</a>.</p><hr>$text
+html error_title Error
+html error_body <p>The file you asked for doesn't exist, and I thought I'd found a replacement with $path, but I can't open it.  Sorry</p>
+html multi_title Possible Matches
+html multi_body_head <p>The file you asked for doesn't exist.  Some possible matches are:</p><ul>\n
+html multi_body_item <li><a href="$blosxom::url$path.$blosxom::flavour">$path</a></li>\n
+html multi_body_foot </ul>\n
+__END__

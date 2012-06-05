@@ -1,0 +1,195 @@
+# -*- perl -*-
+# Blosxom Plugin: xml_ping_generic
+# Author(s): Axel Beckert <blosxom@deuxchevaux.org>, http://noone.org/blog
+#            Bob Schumaker <cobblers@pobox.com>
+#            Rael Dornfest <rael@oreilly.com> 
+# Version: 0.01-2.0b4
+# xml_ping_generic web page: http://noone.org/blog?-tags=Pinging
+# xml_ping_generic download: http://noone.org/blosxom/xml_ping_generic
+# Blosxom web page: http://www.blosxom.com/
+# Documentation: See the bottom of this file or type: perldoc xml_ping_weblogs
+
+package xml_ping_generic;
+
+$VERSION = '0.01-2.0b4';
+
+# --- Configurable variables -----
+
+# What URL should this plugin ping?
+require LWP::UserAgent;
+use FileHandle;
+use File::stat;
+#use Data::Dumper;
+
+# Keep track of the newest story's mtime
+my $newest = 0;
+
+my @urls_to_ping = 
+    qw(
+
+     http://rpc.technorati.com/rpc/ping
+     http://rpc.weblogs.com/RPC2
+
+       );
+
+sub start {
+
+
+    return 1;
+}
+
+sub filter {
+    my($pkg, $files_ref) = @_;
+
+    my %mtimes = ();
+    foreach my $file (keys %$files_ref) {
+	$mtimes{$file} = stat($file)->mtime;
+    }
+
+    $newest_file = ( sort { $mtimes{$b} <=> $mtimes{$a} } keys %mtimes )[0];
+    $newest = $mtimes{$newest_file};
+
+    return 1;
+}
+
+sub end {
+    my $lockfile = "$blosxom::plugin_state_dir/.ping.lock";
+    my $outfile = "$blosxom::plugin_state_dir/.ping.output";
+
+    #print STDERR "lockfile=".(-e $lockfile)." preview=$preview::is_preview newest=".localtime($newest)." mtime=".localtime(stat($outfile)->mtime)." newest_file=$newest_file\n";
+
+    return 1 if (-e $lockfile or $preview::is_preview );
+
+    # If no timestamped touch-file or newest is newer than the touch-file...
+    if (!-e $outfile or $newest > stat($outfile)->mtime) {
+
+	open(LOCK, ">$lockfile");
+	close(LOCK);
+
+	# Okay, so we can't encode the values, we have to leave the
+	# slashes in and all.
+
+	my $blog_name = $blosxom::blog_title;
+	my $blog_url  = $blosxom::url;
+	
+	my $content = <<EOF;
+<?xml version="1.0"?>
+<methodCall>
+  <methodName>weblogUpdates.ping</methodName>
+  <params>
+     <param><value>$blog_name</value></param>
+     <param><value>$blog_url</value></param>
+  </params>
+</methodCall>
+EOF
+        # Touch the touchfile (creates if doesn't already exist)
+        open TOUCH, "> $blosxom::plugin_state_dir/.ping.output";
+
+        foreach my $url_to_ping (@urls_to_ping) {
+	    $header = new HTTP::Headers;
+	    (my $host = $urls_to_ping) =~ s!http://(.*?)/.*$!$1!;
+	    $header->header( User_Agent => "blosxom/2.0-abe-dev xml_ping_weblogs/$VERSION",
+			     Host => $host,
+			     Content_Type => 'text/xml',
+			     Content_Length => length($content) );
+	
+	    $request = HTTP::Request->new('POST', 
+					  $url_to_ping,
+					  $header,
+					  $content);
+	
+	    $ua = LWP::UserAgent->new;
+	    $response = $ua->request($request);
+
+	    #my $result = $response->{_content};
+	    #$result =~ /Thanks for the ping/ or return 0;
+
+	    my $result = $response->as_string;
+	    my $reqas  = $request->as_string;
+	    print TOUCH "$reqas\n$result\n";
+	}
+	close TOUCH;
+	unlink $lockfile;
+
+    }
+  
+    return 1;
+}
+
+sub encode {
+    my ($string) = @_;
+    
+    $string =~ s/([^-A-Za-z0-9_.!~*\'()])/sprintf('%%%02X', $1)/ge;
+
+    return $string;
+}
+
+1;
+
+__END__
+
+=pod
+
+=head1 NAME
+
+Blosxom Plug-in: xml_ping_generic
+
+=head1 SYNOPSIS
+
+Purpose: Notifies one or more configurable pages via weblogs.com's XML
+RPC API ping that your weblog has been updated upon encountering any
+new story. By default it informs weblogs.com and technorati.com.
+
+Maintains a touch-file ($blosxom::plugin_state_dir/.ping.output) to
+which to compare the newest story's creation date. (In comparsion to
+the original xml_ping_weblogs this point works fine with Rael's
+entries_caching index module, too.) Fills the touch-file with the sent
+HTTP and XML requests and responses of the latest ping.
+
+=head1 VERSION
+
+0.01-2.0b4
+
+Second part of version number coincides with the version of Bob
+Schumaker's xml_ping_weblogs plugin, it's based on.
+
+=head1 AUTHOR
+
+Axel Beckert <abe@deuxchevaux.org>
+
+Based on the xml_ping_weblogs plugin by Bob Schumaker
+<cobblers@pobox.com>, http://www.cobblers.net/blog/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Blosxom and this Blosxom Plug-in
+Copyright 2003, Rael Dornfest 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

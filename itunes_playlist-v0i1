@@ -1,0 +1,98 @@
+#!/usr/bin/perl
+
+# iTunes-Playlist
+# Version: 0.1
+# Author: Victor Ganata <aswang@fatoprofugus.net>
+
+# Works Referenced:
+# - Applescript for extracting playlists by Kimbra Staken 
+#   http://www.xmldatabases.org/files/playlistToBlog.txt 
+# - Amazon.com URI syntax by Nelson Minar
+#   http://www.nelson.monkey.org/~nelson/blosxom-plugins/asin20030301.txt
+# - Google URI syntax by Beni Cherniavsky
+#   http://catb.org/~esr/jargon/jargoogle.html
+# - iTMS search URI syntax by Michael Hanscom
+#   http://www.djwudi.com/longletter/archives/2003/05/01/linking_to_the_itunes_music_store.php
+
+# This script may be distributed under the same license as Perl
+
+# Description:
+# Takes a specified playlist, and creates links to lyrics via Google, to a search of the iTunes Music Store, and to Amazon.com
+
+use Mac::AppleScript qw(RunAppleScript);
+use XML::LibXML;
+use LWP::Simple;
+use URI::Escape;
+
+#-------Configuration--------#
+# developer token from amazon.com
+$dev_token="";
+# associate ID from amazon.com
+$assoc_id="fatoprofugusn-20";
+# exact name of playlist in iTunes
+$playlist_name="Last 5 Songs";
+# tags containing entire markup fragment
+$container_open=qq{<ul class="archives">}; 
+$container_close=qq{</ul>};
+# tags containing each individual element
+$wrapper_open=qq{<li>};
+$wrapper_close=qq{</li>};
+# any additional attributes for <a> tag
+$link_attr=qq{class="inline"};
+#----------------------------#
+
+$getplaylist = <<END_APPLESCRIPT;
+tell application "iTunes"
+    set lf to (ASCII character 10)
+	set thePlaylist to (user playlist "$playlist_name")
+	set allsongs to (get name of every track of thePlaylist)
+	set artists to (get artist of every track of thePlaylist)
+	set albums to (get album of every track of thePlaylist)
+	set playcount to (get played count of every track of thePlaylist)
+	set songs to ""
+	repeat with i from 1 to (count of items in allsongs)
+		set songs to songs & (item i in allsongs) & ":::"
+		set songs to songs & (item i in artists) & ":::"
+		set songs to songs & (item i in albums) & ":::"
+		set songs to songs & (item i in playcount) & lf
+	end repeat
+end tell
+END_APPLESCRIPT
+
+    $parser = XML::LibXML->new();
+
+    $playlist = RunAppleScript($getplaylist);
+    $playlist =~ s/\"(.*)\"/$1/s;
+    print $container_open;
+    while($playlist =~ /^(.*)/mg) {
+       $_ = $1;
+       /(.*?):::(.*?):::(.*?):::(.*?)/;
+       $songname = $1;
+       $artist = $2;
+       $album = $3;
+       $playcount =$4;
+       $songname_escaped=uri_escape($songname);
+       $artist_escaped=uri_escape($artist);
+       $album_escaped=uri_escape($album);
+       print $wrapper_open;
+       print qq{"$songname" by $artist [<a $link_attr href="http://www.google.com/search?client=googlet&btnI=Im+Feeling+Lucky&q=$artist%20$songname_escaped%20lyrics" title="lyrics from Google &quot;I'm feeling lucky&quot;">lyrics</a>][<a $link_attr href="itms://phobos.apple.com/WebObjects/MZSearch.woa/wa/com.apple.jingle.search.DirectAction/advancedSearchResults?artistTerm=$artist_escaped&songTerm=$songname_escaped}, ($album) ? "&albumTerm=$album_escaped" : undef, qq{" title="search iTunes Music Store">iTMS</a>]};
+       if ($album) { 
+	  # warn "Querying Amazon.com for $album";
+	  $query_amazon=get "http://xml.amazon.com/onca/xml?v=1.0&t=webservices-20&dev-t=$dev_token&KeywordSearch=$album_escaped&mode=music&type=lite&page=1&f=xml";
+	  # warn "Query complete";
+	  $amazon_search_results=$parser->parse_string($query_amazon);
+	  $product_info=$amazon_search_results->getDocumentElement;
+	  @asin_list=$product_info->findnodes('//Asin[position()=1]');
+	  print qq{ from };
+	  if (@asin_list) {
+	      $asin=$asin_list[0]->textContent;
+	      print qq{"<a $link_attr href="http://www.amazon.com/exec/obidos/ASIN/$asin/ref=nosim/$assoc_id" title="link to Amazon.com">$album</a>"};
+	  }
+	  else {
+	      print qq{"$album"};
+	  }
+      }
+       print "$wrapper_close";
+     print "\n";
+   }
+print $container_close;

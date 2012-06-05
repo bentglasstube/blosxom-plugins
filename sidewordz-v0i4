@@ -1,0 +1,385 @@
+# Blosxom plugin: sidewordz
+# Author: Stu MacKenzie <http://groups.yahoo.com/group/blosxom/messages>
+# Based on: http://groups.yahoo.com/group/blosxom/message/10621
+# Version: v0.4 2005-06-04
+# License: MIT/Public Domain
+# sidewordz home: http://www.enilnomi.net/download.html
+# Documentation: See the bottom of this file or type: perldoc sidewordz
+
+# Using normal entry files placed in whatever directory you
+# configure, sidewordz builds a "sideblog" available to your
+# head or foot flavours in $sidewordz::output. Entry files
+# are processed by blosxom plugins, just like in a normal
+# blog -- the entries are filtered(), sorted(), story()-ed,
+# and then interpolated() from "sidewordz.story.flavour_name"
+# template files. All of blosxom's normal story() vars are
+# available to your sidewordz flavour files. Plugins that you
+# can't use/don't need can be skipped, through a config var;
+# likewise, plugins "on standby" (plugin name ends with "_")
+# can be enabled through a config var. The number of sideblog
+# entries is set with sidewordz' $num_entries config var.
+#
+
+package sidewordz;
+
+# = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
+#
+#  Configuration Section
+#
+# = = = = = = = = = = = = = = = =
+#
+#  All the files to be processed by sidewordz must
+#  reside in the same directory; here's where you
+#  tell sidewordz what that directory is:
+#      ex: $datadir = "$blosxom::datadir/books"
+ $datadir = "$blosxom::datadir/docs/books" 
+           unless defined $datadir;
+#
+#  How many entries should appear in your sideblog?
+#      ex: $num_entries = 5 
+ $num_entries = 5 
+           unless defined $num_entries;
+#
+#  What plugins should be disabled while the sideblog
+#  is being processed? List plugin names between the
+#  braces, separated by spaces.
+#      ex: @unwanted_plugins = qw { excludez exclude hide }
+ my @unwanted_plugins = qw { excludez exclude hide };
+
+#
+#  What plugins should be enabled while the sideblog
+#  is being processed? List plugin names between the
+#  braces, separated by spaces.
+#      ex: @unwanted_plugins = qw { truncatez }
+ my @wanted_plugins = qw {  };
+
+#
+# = = = = = = = = = = = = = = = =
+
+use strict;
+use FileHandle;
+use File::Find;
+use File::stat;
+use Time::localtime;
+
+use vars qw { $output $datadir $num_entries %files %unwanted_plugins %wanted_plugins };
+
+my($mark, $default);
+
+sub start {
+  while (@unwanted_plugins) { $unwanted_plugins{shift(@unwanted_plugins)} = 1; }
+  while (@wanted_plugins) { $wanted_plugins{shift(@wanted_plugins)} = 1; }
+  while (<DATA>) { last if /^(__END__)$/; $default .= $_; }
+  1;
+}
+
+# wannabe entries() sub gathers up %files from the
+# sidewordz datadir based on name, file extension,
+# and readable-ness; all other readable files are
+# gathered into %others
+sub side_entries {
+  my (%files);
+  find(
+    sub {
+      if ( 
+        $File::Find::name =~ m!^$datadir/(?:(.*)/)?(.+)\.$blosxom::file_extension$!
+            and $2 ne 'index' and $2 !~ /^\./ and (-r $File::Find::name)
+      ) {
+        $files{$File::Find::name} = stat($File::Find::name)->mtime
+      } else {
+        !-d $File::Find::name and -r $File::Find::name 
+            and $blosxom::others{$File::Find::name} = stat($File::Find::name)->mtime;
+      }
+    }, $datadir
+  );
+  return (\%files);
+}
+
+# set a placeholder for  last()'s output
+sub head {
+  my ($pkg, $dir, $head_ref) = @_;
+
+  $mark = rand(7);                # add a (99.999) unique mark to $head
+  while ($$head_ref =~ m/$mark/) {$mark += rand(7);}
+  $mark = "<!-- $mark -->";
+  $output = $mark;
+}
+
+# a wunnerully lazy mini-blosxom...
+sub last {
+  $output = "";                   # start fresh
+  my $fh = new FileHandle;
+
+  %files = %{&side_entries()};    # gather up the sideblog files
+
+  # most/all of the time, $blosxom::path_info is not pointing
+  # to our datadir, which means that the config plugin can't
+  # see our files; priming $blosxom::path_info with our path
+  # fixes that.                          (perilous behavior?)
+  (my $path_info = $datadir) =~ s/^$blosxom::datadir\/*//;
+  my $path_info_store = $blosxom::path_info;
+  $blosxom::path_info = $path_info;
+
+  # FILTER plugins:
+  foreach my $plugin ( @blosxom::plugins ) {
+    ! $unwanted_plugins{$plugin} and 
+      ($blosxom::plugins{$plugin} > 0 or $wanted_plugins{$plugin}) and 
+        $plugin->can('filter') and 
+          $blosxom::entries = $plugin->filter(\%files);
+  }
+
+  my $ne = $num_entries;
+
+  # SORT plugins
+  my($tmp, $sort);
+  foreach my $plugin ( @blosxom::plugins ) {
+    ! $unwanted_plugins{$plugin} and 
+      ($blosxom::plugins{$plugin} > 0 or $wanted_plugins{$plugin}) and 
+        $plugin->can('sort') and 
+          defined($tmp = $plugin->sort()) and $sort = $tmp and last;
+  }
+
+  foreach my $path_file ( &$sort(\%files) ) {
+    last if $ne <= 0;
+    if (-f "$path_file" && $fh->open("< $path_file")) {
+      ($blosxom::path,$blosxom::fn) = $path_file =~ m!^$blosxom::datadir/(?:(.*)/)?(.*)\.$blosxom::file_extension!;
+      $blosxom::path &&= "/$blosxom::path";
+
+      # generate DATE vars
+      ($blosxom::dw,$blosxom::mo,$blosxom::mo_num,$blosxom::da,$blosxom::ti,$blosxom::yr) = &blosxom::nice_date($files{"$path_file"});
+      ($blosxom::hr,$blosxom::min) = split /:/, $blosxom::ti;
+      ($blosxom::hr12, $blosxom::ampm) = $blosxom::hr >= 12 ? ($blosxom::hr - 12,'pm') : ($blosxom::hr, 'am'); 
+      $blosxom::hr12 =~ s/^0//; $blosxom::hr12 == 0 and $blosxom::hr12 = 12;
+
+      # read an ENTRY file
+      chomp($blosxom::title = <$fh>);
+      chomp($blosxom::body = join '', <$fh>);
+      $fh->close;
+      $blosxom::raw = "$blosxom::title\n$blosxom::body";
+    }
+                                  # load flavour file, if any, or default
+    my $story = (&$blosxom::template($blosxom::path,'slidewordz.story',$blosxom::flavour));
+    $story  ||= (&$blosxom::template($blosxom::path,'sidewordz.story','all'));
+    $story  ||= $default;
+
+  # STORY plugins
+    foreach my $plugin ( @blosxom::plugins ) {
+      ! $unwanted_plugins{$plugin} and 
+        ($blosxom::plugins{$plugin} > 0 or $wanted_plugins{$plugin}) and 
+          $plugin->can('story') and 
+            $blosxom::entries = $plugin->story($blosxom::path, $blosxom::fn, \$story, \$blosxom::title, \$blosxom::body)
+    }
+      
+    $story = &$blosxom::interpolate($story);
+
+    $output .= $story;
+    
+    $fh->close;
+    $ne--;
+  }
+
+  $blosxom::path_info = $path_info_store;
+  $blosxom::output =~ s/$mark/$output/;
+}
+
+1;
+
+__DATA__
+<div class="sidewordz">
+  <h4><a name="$fn" href="$url$path/$fn.$flavour">$title</a></h4>
+  $truncatez::body
+</div>
+__END__
+
+
+=head1 NAME
+
+Blosxom Plug-in: sidewordz
+
+
+=head1 SYNOPSIS
+
+sidewordz creates a sideblog, available to head or foot templates 
+via $sidewordz::output. Sideblog entries are processed by blosxom's 
+current filter(), sort(), and story() plugins; sideblog flavours 
+("sidewordz.story.flavour_name") are then interpolated by blosxom. 
+Blosxom variables normally available to "story" flavour files can
+also be used in sidewordz flavour files. Plugins can be de/activated 
+by config vars; the sideblog's $num_entries is also config-able.
+
+
+=head1 INSTALLATION
+
+Enter configuration info as instructed, then drop this file 
+into your blosxom plugins folder. Blog on.
+
+
+=head1 CONFIGURATION
+
+With any luck, the instructions in the "Configuration Section" 
+at the top of this file are sufficient; if more information is 
+needed, see the documentation at:
+  http://www.enilnomi.net/dltext/sidewordz.dl
+
+Also see the USAGE section, below.
+
+
+=head1 FLAVOUR FILES
+
+Flavour files for sidewordz are just like "normal" story flavours, 
+except that you p'bly want to limit the amount of $body you show 
+(via seemore, foreshortened, truncatez, or a host of others). Use 
+any of blosxom's normal "story" variables; use meta-vars, too! The 
+default template identifies page elements with "class='sidewordz'"; 
+you p'bly should, too.
+
+For directory-specific, flavour-specific templates, name your 
+flavour files "sidewordz.story.flavour_name" (no quotes). For 
+directory-specific, generic-flavour templates, name the files 
+"sidewordz.story.all". For a site-wide generic-flavour template 
+(i.e. default flavour), paste a template into the DATA section  
+of the plugin.
+
+All of blosxom's normal "story" variables are available to your 
+flavours and plugins: all the date vars, $default_flavour, $url, 
+$path, $fn, $title, $body, etc.
+
+
+=head1 USAGE
+
+It is presumed that you'll want to keep your sideblog entry files 
+isolated from your blog; the best way to do this is via plugins 
+like exclude, hide, excludez, or others. But, when it comes time 
+to process you sideblog, these plugins *must* be disabled (or the 
+entry files won't be "visible" to blosxom); the easiest way to do 
+this is via the @unwanted_plugins config var. sidewordz is pre-
+configured to "disable" these plugins during its run, and IT IS 
+STRONGLY RECOMMENDED that you leave those three plugins listed 
+in the @unwanted_plugins config var (just to be safe).
+
+Also, if you use "caching" plugins (entries_index, etc.),they 
+should p'bly be turned off for your sideblog (that is, added to 
+@unwanted_plugins); ditto for labor-intense or specialty plugins 
+like calendar, prev_next, etc. -- but then again, there's nothing 
+to keep you from using those plugins in your sideblog, AFAIK. 
+Anyway, the point is that you've p'bly got a plugin or two that 
+could stand to be skipped during sideblog processing...so look ;-)
+
+Let's say you want to run a sideblog of...book reviews ;-) Here's 
+a scenario using this blog structure:
+ /datadir
+   /images    # a pix is worth a kilobyte
+   /flavours  # for flavourdir plugin
+   /entries   # all your entries
+     /books   # *all your sideblog entries*
+     /mind    # directories/entries on the stuff you think about
+     /body    # directories/entries on the stuff you do
+You use the exclude plugin to hide the /books entries from "normal" 
+blog pages; you only want to display snippets of sideblog entries, 
+for which you'll use truncatez; your sideblog entries will provide 
+sales info (ISBN numbers, Amazon links) through the meta plugin.
+
+After configuring a sidewordz $datadir and $num_entries, you'll 
+want to do some plugin adjusting; in particular, the exclude 
+plugin must be turned off (to allow blosxom to "see" your book 
+entries), so you'll make sure that @unwanted_plugins contains 
+"exclude" (no quotes). Don't worry -- exclude is only "turned 
+off" for your sidewordz entries; all the normal blog entries 
+that you normally exclude are still "hidden."
+
+You don't need truncatez to run all the time, just for your book 
+entries, so you'll name the plugin "truncatez_" (no quotes), and 
+add "truncatez" (you guessed it) to @wanted_plugins. And that's 
+it for configuration.
+
+You have a wealth of options for deploying your sidewordz flavour 
+files. To tailor the sideblog to the current "mainblog" view, 
+place "sidewordz.story.flavour_name" files in the appropriate 
+"category" directories; for category-specific templates that work 
+under any flavour, name the flavour files "sidewordz.story.all". 
+For blog-wide flavours, use any of the normal locations, or use 
+the sidewardz datadir.
+
+If one template will work in any situation (or to provide a 
+default template), paste your template into the DATA section 
+of the plugin.
+
+Add the $sidewordz::output variable to your normal head or foot 
+templates, and you're ready to test out your sideblog. If certain 
+plugins seem to cause problems, or are clearly unneeded, add them 
+to the @unwanted_plugins config var. For more fine-grain control 
+of plugins, use the config plugin and configuration files..but 
+only after reading this SPECIAL NOTE: to change unwanted_plugins 
+or wanted_plugins via config, you must access a *hash*, not the 
+*arrays* in sidewordz' Configuration Section. Turn a plugin off 
+with: $sidewordz::unwanted_plugins{'exclude'}=1; 
+ and turn one on with: $sidewordz::wanted_plugins{'truncatez'}=1;
+
+And another SPECIAL NOTE: To be effective, your config plugin 
+should run during filter(), not head().
+
+With this sidewordz.story.html template:
+ <div class="story">
+  <h4><a name="$fn" href="$url$path/$fn.default_flavour">$title</a></h4>
+  ISBN: <code>$meta::sidewordz_isbn</code></br>
+  Link: <a href="$meta::sidewordz_amazon">Amazon</a></br>
+  $truncatez::body<br>
+ </div>
+
+and this entry file (teeth.txt):
+ The Teeth of the Tiger
+ meta-sidewordz_isbn:0-425-19740-9
+ meta-sidewordz_amazon:http://amazon.com/some/damn/path
+
+ The bipolar world of Tom Clancy once again tilts from "doing 
+ what must be done," to "doing what feels good," as post-9/11 
+ yuppies drop the bad guys like rocks, with mandated crew rest 
+ for fast cars, warm beer, and greasy food. The next generation 
+ of American aristocracy records its first cold-blooded kills 
+ while staying internally connected to humanity by pondering the 
+ everyday issues of "working sure is harder than the trust fund,"
+ hey-I-like-this-Hummer, and "How come I'm not getting laid?"
+
+$sidewordz::output is (truncatez set to a max of 130 characters):
+ <div class="story">
+  <h4><a name="tigerteeth" href="sample.net/entries/books/teeth.html">The Teeth of the Tiger</a></h4>
+  ISBN: <code>0-425-19740-9</code></br>
+  Link: <a href="http://amazon.com/some/damn/path">Amazon</a></br>
+  The bipolar world of Tom Clancy once again tilts from "doing what must be done," to "doing what feels good," as post-9/11 yuppies...<br>
+ </div>
+
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list:
+ http://www.yahoogroups.com/group/blosxom
+
+
+=head1 VERSION
+
+ 2005-06-04 (v0.4)   - it's alive
+ 2005-06-02 (v0.1a)  - proof-of-concept
+
+
+=head1 LICENSE
+
+this Blosxom Plug-in
+Copyright 2005, Stu MacKenzie
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

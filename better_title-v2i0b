@@ -1,0 +1,61 @@
+# Blosxom Plugin: better_title
+# Author(s): Tony Williams <tonyw@honestpuck.com> http://honestpuck.com/
+# Version: 2.0b
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+# Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+# Copyright 2003 Tony Williams
+# Released under the same License as Blosxom
+
+package better_title;
+
+use CGI qw/:standard/;
+
+# --- Configurable variables -----
+
+# what is the character(s) between blog name and path or date
+my $name_sep = ' :: ';
+
+# what is the character(s) between parts of the date
+my $date_sep = ' ';
+
+# what is the character(s) between parts of path
+my $path_sep = ' : ';
+
+# --------------------------------
+
+$title; # use as $better_title::title in flavour templates
+
+sub start {
+  1;
+}
+
+sub head {
+  my($pkg, $currentdir, $head_ref) = @_;
+  
+  $title = $blosxom::blog_title;
+ 
+  $our_path = $blosxom::path_info; 
+  if ($our_path && ($our_path ne " ")) {
+          my @title_bits = split('/', $currentdir);
+          if ($currentdir =~ m#(.*?)/?(\w+)\.(\w+)$# and $2 ne 'index') {
+            $file = join('/', $blosxom::datadir, $1, "$2.txt");
+            my $fh = new FileHandle;
+            if (-f "$file" && $fh->open("< $file")) {
+              chomp($i_title = <$fh>);
+              $fh->close;
+              @title_bits[$#title_bits] = $i_title;
+            }
+         }
+         $title = $blosxom::blog_title . $name_sep . join($path_sep, @title_bits); 
+  } elsif ($blosxom::path_info_yr) { 
+        my %num2month = ('01'=>'Jan', '02'=>'Feb', '03'=>'Mar',
+                       '04'=>'Apr', '05'=>'May', '06'=>'Jun',
+                       '07'=>'Jul', '08'=>'Aug', '09'=>'Sep',
+                       '10'=>'Oct', '11'=>'Nov', '12'=>'Dec');
+    
+        $title = $blosxom::blog_title . $name_sep. join($date_sep, ($num2month{$blosxom::path_info_mo}, $blosxom::path_info_da, $blosxom::path_info_yr ));
+  }
+}
+
+1;

@@ -1,0 +1,129 @@
+# Blosxom Plugin: google_highlight
+# Author(s): Rael Dornfest <rael@oreilly.com> 
+#            Allen Hutchison <allen@hutchison.org>
+# Version: 2005-01-04
+# Documentation: See the bottom of this file or type: perldoc google_highlight
+
+package google_highlight;
+
+# --- Configurable variables -----
+
+# Work with the find plugin as well.
+$do_find = 1;
+
+# --------------------------------
+
+my $query;
+
+sub start {
+  my $referer = $ENV{'HTTP_REFERER'};
+  my $qstring = $ENV{'QUERY_STRING'};
+
+  ($query) = $referer =~ m#^http://(?:www\.)?google.*q=([^\&]+)#i or 
+	(($query) = $qstring =~ m#^find=([^\&]+)&plugin=find#i and $do_find == 1) or
+	 return 0;
+
+  $query =~ s#['"]##g;
+  $query = join '|', split /[\s,\+\.]+/, $query;
+  
+  1;
+}
+
+sub story {
+  my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+  $$body_ref =~ s#(?<=>)([^<]+)?\b($query)\b#$1<span class="highlight">$2</span>#gis;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: google_highlight
+
+=head1 SYNOPSIS
+
+Highlights any Google search terms used to find your weblog. 
+
+An adaptation of Dean Allen's [http://www.textism.com/] Google 
+Hilite [http://www.textism.com/tools/google_hilite/].
+
+Modified to also highlight terms for the Find plugin by Allen Hutchison.
+
+=head1 VERSION
+
+2005-01-04
+
+=head1 AUTHOR
+
+Rael Dornfest  <rael@oreilly.com>, http://www.raelity.org/
+Allen Hutchison <allen@hutchison.org>, http://www.hutchison.org/allen/
+
+=head1 INSTALLATION
+
+Drop the interpolate_fancy plug-in into your Blosxom plugins folder.
+
+Add a "highlight" style to your document or CSS style sheet, e.g.:
+
+<html>
+<head>
+<style>
+.highlight { background-color: #FF9; }
+</style>
+</head>
+<body>
+...
+</body>
+</html>
+
+=head1 USAGE
+
+Search Google for something that'll lead you to your weblog.  Follow
+the Google link and notice the terms used in your search are highlighted
+in your weblog.
+
+Use the find plugin to search your weblog and notice that the terms are
+also highlighted.
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+Blosxom Plugin User Docs: 
+  http://blosxom.com/documentation/users/plugins.html
+Blosxom Plugin Developer Docs: 
+  http://blosxom.com/documentation/developers/plugins.html
+
+Dean Allen's Textism [http://www.textism.com/]
+Dean Allen's Google Hilite [http://www.textism.com/tools/google_hilite/]
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Blosxom and this Blosxom Plug-in
+Copyright 2003, Rael Dornfest 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+

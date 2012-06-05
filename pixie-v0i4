@@ -1,0 +1,115 @@
+# Blosxom Plugin: pixie
+# Author: S2
+# Based on: http://groups.yahoo.com/group/blosxom/message/10776
+# Version: v0.4  2005-07-16
+
+package pixie;
+
+# AFAIK, pixie exists to "automatically" insert image tags 
+# into a story when .gif, .jpg, or .png files are:
+# 1) present in the same directory, and 
+# 2) named after an entry file, as in:
+#    /some_story.txt
+#    /some_story.jpg    <- same name as its entry
+#    /other_story.txt
+#    /other_story.gif   <- same name as its entry
+#    /other_story1.jpg  <- same name, plus num
+#    /other_story2.gif  <- same name, plus num
+# Note that an image file named "some_story0.gif" will 
+# displace an image file named "some_story.gif". Note 
+# also that for more than 10 image files, the number 
+# portion must be "sort-savvy", i.e. "some_story01".
+#
+# A plain old entry file will display all qualifying 
+# images at the top of the story. To control image 
+# placement from within the entry text, use "[image]" 
+# (no quotes) as many times as you like; image tags 
+# will be generated in sequence for "some_story.gif", 
+# "some_story1.gif", "some_story2.gif", etc. For example, 
+# an entry file calling three images might look like this:
+#    Three Pictures
+#    Here's a picture:<br>
+#    [image]
+#    Here's another:<br>
+#    [image]
+#    And here's a third picture:<br>
+#    [image]
+#    That's it!
+#
+# The $web_base config var is the only tricky bit; unless 
+# your datadir ends at your web root, you'll have to list 
+# the directories between your web root and the top of 
+# your datadir. For example, if your datadir is:
+#   /var/www/html/sample.net/blosxom
+# you would set $web_base = "/blosxom";
+# As another example, if your OSX datadir is:
+#   /Library/WebServer/Documents/blog
+# and you are serving 127.0.0.1, then $web_base = "/blog";
+#
+# (Put another way, if your datadir and web root end at the 
+# same directory, then $web_base = ""; otherwise $web_base 
+# is the "difference" between your datadir and web root.)
+
+# = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
+#
+#  Configuration Section
+#
+# = = = = = = = = = = = = = = = =
+#
+#  Folder path from web root to "top" dir of blog
+my $web_base = "/blosxom";
+#
+#  Should the plugin add a "break" tag after each image?
+#     0 = no; 1 = yes  (normal is 1)
+my $always_add_break = 1;
+#
+# = = = = = = = = = = = = = = = =
+
+my $br = $always_add_break ? "<br>" : "" ;
+$web_base =~ s/^\/*/\//;  # make sure path bits start with slash
+$web_base =~ s/\/+$//;    # make sure path bits end without slash
+$web_base =~ s/^\/+$//;   # make sure it's not just slash(es)
+
+sub start {
+  1;
+}
+
+sub story {
+  my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+  my %images;
+  my $img_file = "$blosxom::datadir$path/$filename";
+  # gather up all image files named for this entry
+  foreach (keys %blosxom::others) {
+    if ($_ =~ m/^$img_file(\d*)\.(?:gif|jpg|png)/) {
+      my $num = $1 ? $1 : 0 ;
+      s/^$blosxom::datadir/$web_base/;
+      $images{$num} = $_;
+    }
+  }
+
+  my $i = 0;
+  # swap <img> tags for "[image]" placeholders
+  for (;;) {
+    $images{$i} or last;
+    $$body_ref =~ s/\[image\]/<br>\n<img src="$images{$i}">$br\n/ or last;
+    delete $images{$i};
+    $i++;
+  }
+  $i and return 1;
+
+  # if no "[image]" placeholders were swapped, add 
+  # <img> tags for all named images at top of story
+  my $output;
+  foreach (sort keys %images) {
+    $output .= qq|<br>\n<img src="$images{$_}">\n|;
+  }
+
+  $output and $$body_ref = $output . $$body_ref;
+
+  1;
+}
+
+1;
+
+__END__

@@ -1,0 +1,444 @@
+package type_sniffer;
+use strict;
+use warnings;
+
+=head1 NAME
+
+type_sniffer - Blosxom plugin to "sniff" the type of input story files
+
+=head1 VERSION
+
+This describes version B<0.01> of type_sniffer.
+
+=cut
+
+our $VERSION = '0.01';
+
+=head1 DESCRIPTION
+
+This attempts to figure out what type of file the current story is, by
+examining its content.  This then sets variables which can be used
+by other plugins to format the story (such as the Markdown plugin).
+
+This sets the following variable which can be referenced by other
+plugins:
+
+=over
+
+=item B<$type_sniffer::type>
+
+The type of the story data.  Possible values are 'text', 'html'
+and 'blosxom' (for the default blosxom story format).  This is set
+per story in the "story" process.
+
+Note that for a very short blosxom post without any HTML in it, it is
+impossible to distinguish it from a plain text file.  Since formats like
+Markdown also include HTML tags, the chief distinction between them seems
+to be the existance of tags such as <p> or <li>.
+
+=cut
+
+our $type = '';
+
+=item B<$type_sniffer::filetypes>
+
+This is the cached information about the file types (and titles).
+This should ONLY be referenced by other plugin developers, and should
+be read only, not altered.  This is set during the "filter" process.
+
+$type = $type_sniffer::filetypes->{$fullpath}->{type};
+$title = $type_sniffer::filetypes->{$fullpath}->{title};
+$date = $type_sniffer::filetypes->{$fullpath}->{date};
+
+=cut
+
+our $filetypes = {};
+
+=back
+
+To save time, the types (and titles) of the files are cached.  To
+re-sniff all the files, set the 'reindex' parameter ("?reindex=y").
+
+=head1 INSTALLATION
+
+=head2 Installation
+
+Drop the type_sniffer plug-in into your Blosxom plugins folder.
+You will probably have to change its name to something like 02type_sniffer
+so that it gets called early in the processing, since other later plugins
+will depend on its results.  The order needs to be
+
+	0. uselib
+	1. Meta
+	2. type_sniffer
+	3. config/prefs
+	4. formatters (like Markdown)
+	5. post-processors (like toc)
+
+Note that this order means that type_sniffer ignores config/prefs stuff,
+so you may wish to swap their order there.  The important thing is that
+type_sniffer come before other story-processors, especially the ones
+which convert to blosxom format.
+
+=head2 Configuration
+
+The following configuration variables can be set by editing the
+plugin file.
+
+=over
+
+=item B<cachefile>
+
+Set this to the file used as the type_sniffer cache.
+
+=cut
+
+my $cachefile = "$blosxom::plugin_state_dir/type_sniffer.dat";
+
+=item B<plain_text_formatter>
+
+Since there are a number of different plugins which are designed
+to format more-or-less plain text, it would be too difficult to
+detect the subtle differences (if any) between them, it's easier
+to just designate the preferred formatter (so it can be passed on
+to those who follow). (see B<set_meta_markup>)
+
+(default: markdown)
+
+=cut
+
+our $plain_text_formatter = 'markdown';
+
+=item B<set_meta_markup>
+
+If true, sets the $meta::markup variable with the detected type 
+(or the $plain_text_formatter if the type is plain text)
+when doing the "story" processing.
+(default: true)
+
+=cut
+
+our $set_meta_markup = 1;
+
+=item B<set_other_meta>
+
+If true, and the file is a HTML file, sets other $meta variables
+by reading the actual <meta name="" content=""> tags in the HTML header.
+It is up to following plugins to decide what to do with them.
+Note that the meta:: variables can only be used in the "story" template,
+not in the "head" template, since this is done on the level of story
+processing.
+(default: true)
+
+=cut
+
+our $set_other_meta = 1;
+
+=item B<convert_html>
+
+If the 'html' type is detected, do a simple conversion of the data into
+blosxom format (that is, set the title to what's between the <title> tags,
+and set the body to whats betweeen the <body> tags).  (This is configurable
+so that if someone wants to write a more elaborate HTML-to-Blosxom plugin,
+they can).
+
+This is done during the "story" processing, so other plugins which
+expect blosxom format for the story files will be okay if they are
+doing filtering in the "story" processing, but if they do it before
+then (such as the 'headlines' plugin), then they will have problems
+parsing mixed-type files...
+
+(default: true)
+
+=cut
+
+our $convert_html = 1;
+
+=item B<restore_first_line>
+
+If the 'text' type is detected, prepend the title to the body; this
+can be useful if the style of the text has its title on the first
+line and I<does not> repeat it for the body part.
+
+This is done during the "story" processing, so other plugins which
+follow with story processing will get the changed data.
+
+(default: true)
+
+=cut
+
+our $restore_first_line = 1;
+
+=over
+
+=cut
+
+use Fcntl qw(:flock);
+use CGI qw/:standard/;
+
+my $reindex = 0;
+
+=head1 PLUGIN FUNCTIONS
+
+=head2 start
+
+Check if the type-cache needs re-doing; if the parameter 'reindex'
+has been given (?reindex=y) then will do so.
+
+=cut
+
+sub start {
+	$reindex = 1 if (CGI::param('reindex'));
+	1;
+} # start
+
+=head2 filter
+
+Check the types here, rather than later, so as to set them in
+the cache, and so that they can be used by other plugins
+earlier rather than later.
+
+=cut
+sub filter {
+    my ($pkg, $files_ref) = @_;
+
+    # open the $cachefile for reading/writing(append) and create if doesn't exist
+    open(CACHE, "+>>$cachefile") or warn "could not open $cachefile";
+    flock(CACHE, LOCK_EX);
+
+    # if the file was just created then force a reindex
+    if ((stat($cachefile))[7] == 0)
+    {
+        $reindex = 1;
+    }
+    if ($reindex)
+    {
+    	truncate(CACHE, 0);
+	foreach my $key (keys %{$files_ref})
+	{
+	    my $title = '';
+	    my $ft = sniff_type(filepath=>$key, read_file=>1,
+				title_ref=>\$title);
+
+            # cache the type and blog title
+            print(CACHE "$key=ft=>$ft=tl=>$title\n");
+
+	    $filetypes->{$key}->{type} = $ft;
+	    $filetypes->{$key}->{title} = $title;
+	    $filetypes->{$key}->{date} = $files_ref->{$key};
+	}
+    }
+    else
+    {
+    	seek(CACHE, 0, 0); # seek the beginning of the cache file
+        # grab all the cached info
+        while (<CACHE>)
+        {
+            if (/^(.*)=ft=>(.*)=tl=>(.*)$/)
+            {
+                $filetypes->{$1}->{type} = $2;
+                $filetypes->{$1}->{title} = $3;
+                $filetypes->{$1}->{date} = $files_ref->{$1};
+            }
+        }
+    	seek(CACHE, -1, 2); # seek the end of the cache file
+	# then append to the cache any new files which weren't
+	# in the cache
+	foreach my $key (keys %{$files_ref})
+	{
+	    if (!exists $filetypes->{$key}
+		|| !defined $filetypes->{$key})
+	    {
+		my $title = '';
+		my $ft = sniff_type(filepath=>$key, read_file=>1,
+				    title_ref=>\$title);
+		print(CACHE "$key=ft=>$ft=tl=>$title\n");
+		$filetypes->{$key}->{type} = $ft;
+		$filetypes->{$key}->{title} = $title;
+		$filetypes->{$key}->{date} = $files_ref->{$key};
+	    }
+	}
+    }
+    flock(CACHE, LOCK_UN);
+    close(CACHE);
+
+    return 1;
+}
+
+=head2 story
+
+story($pkg, $path, $filename, $story_ref, $title_ref, $body_ref)
+
+Figure out the type, set the variables, and
+optionally convert HTML type to Blosxom type.
+
+=cut
+
+sub story {
+    my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+    my $fullname =
+	($path
+	 ? "$blosxom::datadir$path/$filename.$blosxom::file_extension"
+	 : "$blosxom::datadir/$filename.$blosxom::file_extension");
+    my $this_title = $$title_ref;
+    $type = sniff_type(filepath=>$fullname,
+		       title_ref=>\$this_title);
+    if ($type eq 'html') {
+	if ($set_meta_markup) {
+	    $meta::markup = $type;
+	}
+	# set the meta data from the header
+	if ($set_other_meta) {
+	    $$body_ref =~ m#<head[^>]*>(.*)</head>#is;
+	    my $head = $1;
+	    my %metavars = ($head =~ /<meta\s+name=["'](\w+)['"]\s+content=['"]([^'"]*)['"]\s*\/?>/isg);
+	    while (my($name, $content) = each %metavars)
+	    {
+		no strict 'refs';
+		my $vname = "meta::$name";
+		$$vname = $content;
+	    }
+	}
+	if ($convert_html) {
+	    $$title_ref = $this_title; # we got this earlier
+	    $$body_ref =~ m#<body[^>]*>(.*)</body>#is;
+	    $$body_ref = $1;
+	}
+    }
+    elsif ($type eq 'text') {
+	if ($set_meta_markup) {
+	    $meta::markup = $plain_text_formatter;
+	}
+	if ($restore_first_line) {
+	    $$body_ref = join("\n", ($$title_ref, $$body_ref));
+	}
+    }
+    else {
+	if ($set_meta_markup) {
+	    $meta::markup = $type;
+	}
+    }
+    1;
+} # story
+
+=head2 sniff_type
+
+sniff_type(filepath=>$filepath,
+	read_file=>0,
+	title_ref=>\$title)
+
+Sniffs the type of the file; expects the full name of the file.
+If read_file is true, then reads the file rather than looking
+in the cache.
+If title_ref is defined, then sets the given title with the title info.
+Returns the type.
+
+=cut
+
+sub sniff_type {
+    my %args = (
+    		read_file=>0,
+		title_ref=>undef,
+		@_
+	       );
+    my $read_file = $args{read_file};
+    my $filepath = $args{filepath};
+    my $this_type = '';
+    my $this_title = '';
+    my $get_title = defined $args{title_ref};
+    if (!$read_file) # look in cache
+    {
+    	$this_type = $filetypes->{$filepath}->{type};
+	$this_title = $filetypes->{$filepath}->{title};
+	if (!$this_type)
+	{
+	    $read_file = 1;
+	}
+    }
+    if ($read_file)
+    {
+	open(FILE, "<$filepath") or next;
+	my $first_line = <FILE>;
+	if ($first_line =~ /<html[^>]*>|<!DOCTYPE html/i)
+	{
+	    $this_type = 'html';
+	    if ($get_title)
+	    {
+	    	my $body = join('', <FILE>);
+		if ($body =~ /<title[^>]*>(.*)<\/title>/si)
+		{
+		    $this_title = $1;
+		}
+	    }
+	    close(FILE);
+	}
+	else
+	{
+	    my $line = '';
+	    while (!$this_type && ($line = <FILE>))
+	    {
+		if ($line =~ /<html[^>]*>|<head[^>]*>|<title[^>]*>/i)
+		{
+			$this_type = 'html';
+		}
+	       	elsif($line =~ /(<p[^>]*>)|(<li[^>]*>)|(<h1[^>]*>)/i)
+		{
+			$this_type = 'blosxom';
+		}
+	    }
+	    close(FILE);
+	    if ($get_title)
+	    {
+		open(FILE, "<$filepath") or next;
+	    	my $body = join('', <FILE>);
+	    	close(FILE);
+		if ($body =~ /<title[^>]*>(.*)<\/title>/si)
+		{
+		    $this_title = $1;
+		}
+	    }
+	}
+	$this_type = ($this_type ? $this_type : 'text');
+	$this_title = ($this_title ? $this_title : $first_line);
+    }
+    if (defined $args{title_ref})
+    {
+	chomp $this_title;
+    	${$args{title_ref}} = $this_title;
+    }
+    return $this_type;
+} # sniff_type
+
+=head1 REQUIRES
+
+Perl 5.6.0
+CGI
+Fcntl
+
+=head1 SEE ALSO
+
+Meta, Markdown, textile
+
+=head1 BUGS
+
+Please report any bugs or feature requests to the author.
+
+=head1 AUTHOR
+
+    Kathryn Andersen (RUBYKAT)
+    perlkat AT katspace dot com
+    http://www.katspace.com
+
+=head1 COPYRIGHT AND LICENCE
+
+Copyright (c) 2004 by Kathryn Andersen
+
+This program is free software; you can redistribute it and/or modify it
+under the same terms as Perl itself.
+
+=cut
+# vim: ft=perl ts=8 sw=4 sts=4 ai cinkeys="0{,0},0),!,o,O,e"
+
+1; # End of type_sniffer
+__END__

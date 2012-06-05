@@ -1,0 +1,367 @@
+# Blosxom Plugin: fluffydate
+# Author(s): Pasi Savolainen <psavo@iki.fi>
+# Version: 2004-10-17
+# Documentation: See the bottom of this file or type: perldoc fluffydate
+
+package fluffydate;
+
+# --- Configurable variables -----
+
+# Default language. Supported: English(en), Finnish(fi).
+$default_lang = "en";
+
+
+# Output short dates by default Yes(1), No(0:default)
+$default_short = 0;
+
+# --- Addressable variables ------
+
+$story_age = "nodef";
+$story_date = "nodef";
+
+# --------------------------------
+
+use Time::Local;
+
+$time = time();
+
+# Start plugin
+sub start {
+    1;
+}
+
+# Called for each story
+sub story {
+    # '2 days ago' -text
+    $story_age = &humanize_age($blosxom::yr, $blosxom::mo_num, $blosxom::da,
+                               $blosxom::hr, $blosxom::min);
+    # 'Monday 12:34' -text
+    $story_date = &humanize_date($blosxom::yr, $blosxom::mo_num, $blosxom::da,
+                                 $blosxom::hr, $blosxom::min);
+    1;
+}
+
+#Some localization data.
+%langd = (# English
+          "en" => { "yday" =>    ["Yesterday", "Yday."],
+                    "fmonths" => ['January', 'February', 'March', 'April', 
+                                  'May', 'June', 'July', 'August', 
+                                  'September', 'October', 'November', 'December'],
+                    "months" =>  ['Jan', 'Feb', 'Mar', 'Apr', 
+                                  'May', 'Jun', 'Jul', 'Aug', 
+                                  'Sep', 'Oct', 'Nov', 'Dec'],
+                    "time" => { "min" =>  ["minute", "minutes", "min", "min"],
+                                "hour" => ["hour", "hours", "hr", "hrs"],
+                                "day" =>  ["day", "days", "d", "d"],
+                                "month" => ["month", "months", "mon", "mths"],
+                                "year" => ["year", "years", "yr", "yrs"] },
+                    "wday" =>  ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                    "fwday" => ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
+                                'Saturday', 'Sunday'] },
+          # Finnish
+          "fi" => { "yday" =>    ["Eilen", "Eil."],
+                    "fmonths" => ['Tammikuu', 'Helmikuu', 'Maaliskuu', 'Huhtikuu',
+                                  'Toukokuu', 'Kesäkuu', 'Heinäkuu', 'Elokuu',
+                                  'Syyskuu', 'Lokakuu', 'Marraskuu', 'Joulukuu'],
+                    "months" =>  ['Tammi', 'Helmi', 'Maalis', 'Huhti',
+                                  'Touko', 'Kesä', 'Heinä', 'Elo',
+                                  'Syys', 'Loka', 'Marras', 'Joulu'],
+                    "time" => { "min" => ["minuutti", "minuuttia", "min", "min"],
+                                "hour" => ["tunti", "tuntia", "t", "t"],
+                                "day" => ["päivä", "päivää", "pv", "pv"],
+                                "month" => ["kuukausi", "kuukautta", "kk", "kk"],
+                                "year" => ["vuosi", "vuotta", "v", "v"] },
+                    "wday" =>   ['Ma', 'Ti', 'Ke', 'To', 'Pe', 'La', 'Su'],
+                    "fwday" =>  ['Maanantai', 'Tiistai', 'Keskiviikko', 'Lauantai', 'Perjantai', 
+                                 'Lauantai', 'Sunnuntai'] });
+
+
+# Return (minutes, hours, days, months)
+sub seconds_to_mhdm {
+    $_ = shift;
+    return ($_/60.0, $_/(60.0*60), $_/(60.0*60*24), $_/(60.0*60*24*30.4));
+}
+
+# Round the number and return HTML:ized entity
+sub round_html {
+    my $num = shift;
+    my $rd = int($num); # rounded
+    my $diff = $num - $rd;
+    return "$rd"         if $diff < 0.125; # closer to 0
+    return "$rd&frac14;" if $diff < 0.375; # closer to 1/4
+    return "$rd&frac12;" if $diff < 0.625; # closer to 1/2
+    return "$rd&frac34;" if $duff < 0.875; # closer to 3/4
+    $rd++;  # was really closer to upper bound, 'ceil()'
+    return "$rd";
+}
+
+# shouldn't be here.
+sub get_lang_age_plur {
+    my ($val, $valt, $lang, $shorten) = @_;
+    $lang ||= "en"; # default to English
+    $shorten ||= 0; # default to longer form,
+    $shorten = 2 if $shorten; # use it first as flag, then as offset
+    #return "- $shorten -";
+    # language data.
+    %langh = (
+	      "en" => { "min" => ["minute", "minutes", "min", "min"],
+			"hour" => ["hour", "hours", "hr", "hrs"],
+			"day" => ["day", "days", "d", "d"],
+			"month" => ["month", "months", "mon", "mths"],
+			"year" => ["year", "years", "yr", "yrs"] },
+	      "fi" => { "min" => ["minuutti", "minuuttia", "min", "min"],
+			"hour" => ["tunti", "tuntia", "t", "t"],
+			"day" => ["päivä", "päivää", "pv", "pv"],
+			"month" => ["kuukausi", "kuukautta", "kk", "kk"],
+			"year" => ["vuosi", "vuotta", "v", "v"] });
+    # value difference, used for plurality detection.
+    $diff = $val - int($val);
+
+    if (($val < 1.125) and (($diff < 0.125) or ($diff > 0.875))) {
+	return $langh{$lang}->{$valt}[0+$shorten];
+    }
+    return $langh{$lang}->{$valt}[1+$shorten];
+}
+
+# Make easier human readable version of some date, turn it to 'age'.
+sub humanize_age {
+    # time that we're humanizing.
+    my ($yr, $mo, $day, $hr, $mn, $lang, $short) = @_;
+    my $time_s = timelocal(0, $mn, $hr, $day, $mo-1, $yr);
+    # $time has current time, so calculating time difference, age at $time.
+    my $sdif = $time - $time_s;
+    
+    return 'future' if ($sdif < 0); # can't really handle future.
+    
+    my ($minutes, $hours, $days, $months) = &seconds_to_mhdm($sdif);
+    
+    # this could be data driven, but it's stupid to generate it
+    # only to discard it in a moment.
+    
+    # '32 minutes'
+    return int($minutes)." ". &get_date_data($lang, 'time', $short, $minutes, "min") 
+        if ( $minutes < 56);
+    # '3 1/2 hours'
+    return &round_html( $hours  )." ". &get_date_data($lang, 'time', $short, $hours, "hour")  
+        if ( $hours < 12 );
+    # '4 3/4 days'
+    return &round_html( $days   )." ". &get_date_data($lang, 'time', $short, $days, "day")   
+        if ( $days < 31 );
+    # '2 1/2 months'
+    return &round_html( $months )." ". &get_date_data($lang, 'time', $short, $months, "month") 
+        if ( $months < 12);
+    # '1 1/4 years'
+    return &round_html( $months/12.0 )." ". &get_date_data($lang, 'time', $short, $months/12.0, "year");    
+}
+
+# Make a date human-readable and understandable at a glance.
+sub humanize_date {
+    # what we're humanizing
+    my ($yr, $mo, $day, $hr, $mn, $lang, $short) = @_;
+    my $time_s = timelocal(0, $mn, $hr, $day, $mo-1, $yr); # in seconds since epoch
+    # our time, breakdown to units.
+    my ($n_sec,$n_min,$n_hour,$n_mday,$n_mon,$n_year,$n_wday,$n_yday,$n_isdst) = localtime($time);
+    # we need 'age' of displayable time, as it determines human-context.
+    my $sdif = $time - $time_s;
+    # time difference in various scales.
+    my ($minutes, $hours, $days, $months) = &seconds_to_mhdm($sdif);
+    # basic time-of-day, localizable?
+    $addtime = sprintf("%d:%02d", ${hr},${mn});
+
+    # 'Yesterday 12:34'
+    return sprintf("%s $addtime", &get_date_data($lang, 'yday', $short))
+        if ($minutes - ($n_hour*60 + $n_min) >= 0) and ($hours < (24+$n_hour));
+    # '12:34'
+    return $addtime if ($hours < 24);
+    # 'Mon 12:34' (that is, if it was this week and not yesterday)
+    return sprintf ("%s %s", &get_date_data($lang, 'wday', $short, int($n_wday-$days)), $addtime) 
+        if ($days < $n_wday);
+    # Could have 'Last week, Mon' ?
+    # 'October 14'
+    return sprintf ("%s %d", &get_date_data($lang, 'months', $short, $mo), $day) 
+        if $days < $n_yday;
+    # 'October 14, 2003'
+    return sprintf ("%s %d, %d", &get_date_data($lang, 'months', $short, $mo), $day, $yr)
+        if $months < 24;
+    # 'October 2001'
+    return sprintf ("%s %d", &get_date_data($lang, 'months', $short, $mo), $yr);
+}
+
+# Get 'localized' date data.
+# Why not use the perl-localization, you ask? load time.
+sub get_date_data {    
+    my ($lang, $type, $short, $data, $extdata) = @_;
+    $lang ||= $default_lang;
+    $short ||= $default_short;
+    $type = 'fmonths' if (!$short and $type eq 'months');
+    $type = 'fwday' if (!$short and $type eq 'wday');    
+    if ($type eq 'yday') {
+        # localized 'yesterday'
+        $short = 1 if $short;
+        return $langd{$lang}->{$type}[0+$short];
+    } elsif ($type eq 'months' or $type eq 'fmonths') {
+        # localized month/full-month
+        return $langd{$lang}->{$type}[int($data-1)];
+    } elsif ($type eq 'time') {
+        # localized time units, 'min', 'hour', 'day'..
+        # data has our value.
+        $short = 2 if $short; # use as offset
+        $diff = $data - int($data);
+        # return "- $short - $diff - $data - $extdata -";
+        if (($data < 1.125) and (($diff < 0.125) or ($diff > 0.875))) {
+            return $langd{$lang}->{$type}->{$extdata}[0+$short];
+        }
+        return $langd{$lang}->{$type}->{$extdata}[1+$short];
+    } elsif ($type eq 'wday' or $type eq 'fwday') {
+        # localized weekday and full-weekday
+        return $langd{$lang}->{$type}[int($data)];
+    }
+    return "gdd:baddata($lang,$type,$short,$data,$extdata)";
+}
+
+# interpolate_fancy -callable funtion to transpose story's date to age
+# same parameters as date_to_age.
+sub human_storyage {
+    my ($self, $attr, $content) = @_;
+    # let date_to_age do the work.
+    $content = "$blosxom::mo_num/$blosxom::da/$blosxom::yr ${blosxom::hr}:${blosxom::min}:00";
+    $story_age = date_to_age($self, $attr, $content);
+}
+
+# interpolate_fancy -callable function to transpose date to human readable date.
+# story_age:s parameters.
+sub human_storydate {
+    my ($self, $attr, $content) = @_;
+    # let short_date do the work.
+    $content = "$blosxom::mo_num/$blosxom::da/$blosxom::yr ${blosxom::hr}:${blosxom::min}:00";
+    $story_age = short_date($self, $attr, $content);
+}
+
+sub acquire_date {
+    $data = shift;
+    my @lines = split /\n/, $data;
+    foreach (@lines) {
+        # 2/18/2004 09:44:14
+        if ( m!(\d{1,2}?)/(\d{1,2}?)/(\d{4}?)\s+(\d{1,2}?):(\d{1,2}?):(\d{1,2}?)!) {
+            return ($3, $1, $2, $4, $5);
+        }
+        # 2004/10/10 23:41:24
+        if ( m!(\d{4}?)/(\d{1,2}?)/(\d{1,2}?)\s+(\d{1,2}?):(\d{1,2}?):(\d{1,2}?)!) {
+            return ( $1, $2, $3, $4, $5);
+        }
+    }
+    return undef;
+}
+
+# interpolate_fancy -callable function to shorten date.
+sub short_date {
+    my ($self, $attr, $content)=@_;
+    my @date = &acquire_date($content);
+    # return ""+ 
+    # return "-" .join ":", @date;# &humanize_date( @date);
+    return "$content" if !defined $date[0];
+    # add language and desired length params.
+    push(@date, ($$attr{'lang'}, $$attr{'short'}));
+    #return join ":", @date;# 
+    return &humanize_date( @date);
+}
+
+# interpolate_fancy - callable functionconvert date to age. 
+sub date_to_age {
+    my ($self, $attr, $content)=@_;
+    my @date = &acquire_date($content);
+    return "$content" if scalar(@date) < 2;
+    # add language and desired length params.
+    push(@date, ($$attr{'lang'}, $$attr{'short'}));
+    #return join ":", @date;# &humanize_date( @date);
+    return &humanize_age( @date);
+
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: fluffydate
+
+=head1 SYNOPSIS
+
+Purpose: Produces simplified and more human-readable dates, times and
+ages. For example:
+ Date: 0:02; Yesterday 9:44; Thursday 9:44; February 18; February 18, 2003
+ Age: 20 minutes; 9 1/2 hours; 0 3/4 day; 1 3/4 days; 7 3/4 months; 1 3/4 years
+
+Populates $fluffydate::story_date with story's humanized date and
+$fluffydate::story_age with story's humanized age.
+
+Has interpolate_fancy -usable functions to convert dates to same humanized
+forms (Two formats supported 1: MM/DD/YYYY HH:MM:SS 2: YYYY/MM/DD HH:MM:SS)
+
+Dates and ages are mostly localizable. Currently supported languages are
+English and Finnish.
+
+Dates and ages are available in 'shorter' format (Nov 15; 6 3/4 yrs)
+
+=head1 INTERPOLATE_FANCY
+
+If interpolate_fancy is available, you can use following functions:
+@fluffydate.human_storydate, @fluffydate.human_storyage, @fluffydate.short_date
+and @fluffydate.date_to_age.
+
+All can take two parameters, B<lang> and B<short>, former defines language of
+output date and latter it's length (eg. if longer monthname is used).
+
+@fluffydate.human_storydate and @fluffy.human_storyage are story -specific and
+are intended for use when $fluffydate::story_date would yield wrong
+language. For example:
+ <@fluffydate.human_storydate output="Yes" lang="fi" short="1" />
+
+Yields date of story, in Finnish and short form.
+
+ <@fluffydate.human_storyage output="Yes" lang="en" />
+
+Yields age of current story in English, using fluffydate-default length.
+
+@fluffydate.short_date and @fluffydate.date_to_age are usable most anywhere in
+flavours and will convert passed-in dates to human-readable form.
+
+Examples:
+
+ <@fluffydate.short_date output="Yes">10/15/2004 00:02:14</@fluffydate.short_date>
+ <@fluffydate.date_to_age output="Yes">10/15/2004 00:02:14</@fluffydate.date_to_age>
+
+I use writebacksplus by Fletcher T. Penney and I have in my writeback.html:
+
+ ...
+ <span class="writeback-date" title="$writeback::date">
+   <@humandate.short_date output="Yes" short="1">$writeback::date</@humandate.short_date>
+ </span>
+
+This converts dates from writebacks to more readable form. Please note that
+any extra text is discarded, and only date is placed in it's place.
+
+=head1 VERSION
+
+2004-10-17
+
+=head1 AUTHOR
+
+Pasi Savolainen <psavo+fluffydate@iki.fi>, http://iki.fi/psavo
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Some 'close shaved' moments are likely categorized wrong in plural.
+
+Address bug reports and comments to Pasi Savolainen <psavo+fluffydate@iki.fi>.
+
+=head1 LICENSE
+
+GNU General Public License v2.0, <http://www.gnu.org/licenses/gpl.html>

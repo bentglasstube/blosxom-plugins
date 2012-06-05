@@ -1,0 +1,67 @@
+# Blosxom Plugin: directorybrowse
+# Author(s): Matt Melton
+# Version: 0.1
+# Home/Docs/Licensing: contact at http://my-security.net
+
+package directorybrowse;
+
+# --- Configurable variables -----
+
+# Other parameters for the links
+# my $href_parameters = qq{ target="_blank" };
+my $href_parameters = "";
+
+# There are no more user configurable variables
+
+
+# --------------------------------
+
+use CGI qw/:standard/;
+
+$browseable_path;
+
+
+sub start {
+	1;
+}
+
+sub story {
+	my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+	$browseable_path = '';
+
+	my @tree = split(/\//, $path);
+	my $urlelements = '';
+	my $i = 0;
+
+	foreach my $element (@tree) {
+		next if !$element;
+		$urlelements = join('/', @tree[0..$i]);
+
+        $asdf = $element;
+        $asdf =~ s:([a-z])([A-Z]):\1 \2:g;
+        $asdf =~ s:_: :g;
+        $f =~ s/((\$[\w:]+)|(\$\{[\w:]+\}))/$1 . "||''"/gee;
+
+		$browseable_path .= qq{ / <a href="$blosxom::url$urlelements/$element" $href_parameters>$asdf</a>};
+		$i++;
+	}
+ 	1;
+}
+
+1;
+
+__END__
+
+How to use:
+
+Copy file to your plugin directory, as "directorybrowse", case sensitive.
+
+Find some thing looking similar to, [<a href="$url$path">$path</a>] in your story flavour, and replace with
+[$directorybrowse::browseable_path] instead.
+
+For my story.html flavour, I use the following (with my prettycomment plugin):
+
+<p><a name="$fn"><b>$title</b></a><br />$body</p><p align="right"><a href="$blosxom::url"><img src=http://my-security.net/blog/images/house.gif alt='' border=0 \></a> $directorybrowse::browseable_path - <a href="$url$path/$fn.writeback">$writeback::count $prettycomment::wb_comment</a> - <a href="$url/$yr/$mo_num/$da#$fn">permanent link</a></p>
+
+(please copy the house.gif to your own box :)

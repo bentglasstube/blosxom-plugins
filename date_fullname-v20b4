@@ -1,0 +1,92 @@
+# Blosxom Plugin: date_fullname
+# Author(s): Rael Dornfest <rael@oreilly.com>
+# and Tamara Crowe <tamara@darkglass.org>
+# Version: 2.0b4
+# Documentation: See the bottom of this file or type: perldoc date_fullname
+
+package date_fullname;
+
+# --- Configurable variables -----
+
+# A list of full month names rather than Jan, Feb, ...
+my @months = qw! 00 January February March April May June July August September October November December !;
+
+# A list of full day names rather than Mon, Tue, ...
+my %daysoftheweek = ( Mon=>'Monday', Tue=>'Tuesday', Wed=>'Wednesday', Thu=>'Thursday', Fri=>'Friday', Sat=>'Saturday', Sun=>'Sunday' );
+
+# --------------------------------
+
+$dw; # use $date_fullname::dw for full day-of-the-week name (e.g. Monday)
+$mo; # use $date_fullname::mo for full month name (e.g. January)
+
+sub start {
+  1;
+}
+
+sub date {
+  my ($pkg, $path, $date_ref, $mtime, @date_bits) = @_;
+
+  $dw = $daysoftheweek{$date_bits[0]};
+  $mo = $months[$date_bits[2]];
+
+  1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: date_fullname
+
+=head1 SYNOPSIS
+
+Purpose: Populates $date_fullname::dw (day of the week) and 
+$date_fullname::mo (month name) with full day and month names,
+respectively.
+
+=head1 VERSION
+
+2.0b4
+
+Version number coincides with the version of Blosxom with which the 
+current version was first bundled.
+
+=head1 AUTHORS
+
+Rael Dornfest <rael@oreilly.com> and Tamara Crowe <tamara@darkglass.org>
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Blosxom and this Blosxom Plug-in
+Copyright 2003, Rael Dornfest 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

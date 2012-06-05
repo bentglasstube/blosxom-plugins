@@ -1,0 +1,14 @@
+package storycount;
+
+$count = 0;
+$even = ($count % 2) == 0;
+
+sub start {
+    1;
+}
+
+sub story {
+    $count++;
+    $even = ($count % 2) == 0;
+    1;
+}

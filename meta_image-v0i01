@@ -1,0 +1,87 @@
+# Blosxom Plugin: meta_image
+# Author(s): Jamie Wilson <jamie@blogthing.com>
+# Version: 0.01
+# Documentation: See the bottom of this file or type: perldoc meta_image
+
+package meta_image;
+
+# --- Configurable variables -----
+
+# --------------------------------
+
+sub start {
+  1;
+}
+
+sub story {
+  my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+  $image_html = "";
+
+  if ($meta::imgurl ne "") {
+    $image_html = "<img class=\"storypic\" src=\"" . $meta::imgurl . "\"";
+    if ($meta::imgalt ne "") {
+      $image_html .= " alt=\"" . $meta::imgalt;
+    }
+    $image_html .= "\"/>";
+  }
+
+  1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: meta_image
+
+=head1 SYNOPSIS
+
+Purpose: Populates $meta_image::image with some HTML to generate a link
+to an image for inclusion with a story. Relies on the meta plugin to get
+the "meta-imgurl" and, optionally, the "meta-imgalt" tags from each blog
+entry.
+
+=head1 VERSION
+
+0.00
+
+=head1 AUTHOR
+
+Jamie Wilson <jamie@blogthing.com> - http://www.blogthing.com/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+This Blosxom Plug-in
+Copyright 2003, Jamie Wilson
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

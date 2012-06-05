@@ -1,0 +1,181 @@
+# Blosxom Plugin: allmusic
+# Author: Ben Blackburne (bpb@lysozyme.net)
+package allmusic;
+
+use LWP::Simple;
+use FileHandle;
+
+my $fh = new FileHandle;
+# --- Configurable variables -----
+#directory to cache info in
+my $album_dir = "$blosxom::plugin_state_dir/allmusic";
+
+$albumfile= "$blosxom::datadir/amg";
+
+$imgsize="75";
+# --------------------------------
+
+
+sub start {
+
+        $fh->open("<$albumfile");
+        
+        @albums= <$fh>;
+        chomp @albums;
+        for (my $a=0; $a < @albums; $a++){
+                #remove comments and whitespace;
+                $albums[$a]=~s/\#.*//;
+                if ($albums[$a]=~/^T\ /i){$albums[$a]=~s/^T\ //i; $type{$albums[$a]}="T";}
+                if ($albums[$a]=~/^C\ /i){$albums[$a]=~s/^C\ //i; $type{$albums[$a]}="C";}
+                $albums[$a]=~s/^the\ //i;
+                $albums[$a]=~s/\s//g;
+        }
+
+        $fh->close;
+
+        if ( !-e  $album_dir )  {
+                my $mkdir_r = mkdir("$album_dir", 0755);
+                $mkdir_r or return 0;
+        } 
+
+        foreach $album (@albums){
+                if ( $fh->open("<$album_dir/$album") ) {
+                        $display= $display.<$fh>;
+                        $fh->close;
+                }
+                else {
+                        if ($fh->open(">$album_dir/$album") ){
+                                my $data;
+                                if ($type{$album} eq 'C'){
+                                        $data = get("http://www.allmusic.com/cg/amg.dll?p=amg&sql=$album");
+                                }
+                                else {
+                                        $data = get("http://www.allmusic.com/cg/amg.dll?p=amg&opt1=2&sql=$album");
+                                }
+
+                                if ($data=~/albums with titles like/){#fail
+                                        print STDERR "Album $album not found. Try searching manually\n";
+                                        next;
+                                }
+
+                                ($artist,$title,$image) = amgparse($data);
+
+                               if ($type{$album} eq 'C'){
+                                        $output="<a href=\"http://www.allmusic.com/cg/amg.dll?p=amg&sql=$album\"><img height=\"\$allmusic::imgsize\" width=\"\$allmusic::imgsize\" src=\"$image\"/><br /><div class=\"albumartist\">$artist:</div><div class=\"albumtitle\"> $title</div></a><br />";
+                                }else
+                                {
+                                        $output="<a href=\"http://www.allmusic.com/cg/amg.dll?p=amg&opt1=2&sql=$album\"><img height=\"\$allmusic::imgsize\" width=\"\$allmusic::imgsize\" src=\"$image\"/><br /><div class=\"albumartist\">$artist:</div><div class=\"albumtitle\"> $title</div></a><br />";
+                                }
+                                print $fh $output;
+                                $display=$display.$output;
+                                $fh->close;
+                        }
+                }
+        }
+
+        return 1;
+
+}
+
+sub amgparse {
+        my $data=$_[0];
+        $data=~s/\n//g;
+        my $artist=$data;
+        my $image=$data;
+        my $title=$data;
+
+        $image=~s/(http:\/\/image.allmusic.com\S*.jpg).*/$1/;
+        $image=~s/.*(http:\/\/image)/$1/;
+
+        $title=~s/.*<title>//i;
+        $title=~s/<\/title>.*//i;
+        $title=~s/All\ Music\ Guide://gi;
+        $title=~s/\s*$//gi;
+        $title=~s/^\s//gi;
+
+        $artist=~s/Album\ Title.*//;
+        $artist=~s/.*Artist//;
+        $artist=~s/<.+?>//g; 
+        $artist=~s/\&nbsp;//g;
+        return ($artist,$title,$image);
+}
+
+ 
+
+__END__
+                                                                                                                                       
+=head1 NAME
+                                                                                                                                       
+Blosxom Plug-in: allmusic
+                                                                                                                                       
+=head1 SYNOPSIS
+                                                                                                                                       
+Displays a list of albums that link through to the appropriate allmusic.com page.
+
+=head1 USAGE
+
+Fill $album_file (by default "amg" in your blosxom dir) with a list of album codes from allmusic.com. 
+The required codes can be found by going to an album's page, and extracting the 
+"sql" variable from the URI. For example, for the the URI http://www.allmusic.com/cg/amg.dll?p=amg&uid=MISS70310181612&sql=A3krsa9ugu23k
+add a line reading "A3krsa9ugu23k" to your $album_file. Add one code per line.
+
+Alternatively, you can try inputting album titles. If the title corresponds to only one album, it'll probably work. If not, then it probably won\'t.
+
+Prefix title searches with "T " and amg codes with "C ". You can include comments after a \"\#\". Thus your file might look like:
+
+ C A3krsa9ugu23k 
+ C A3aq5g4sztv8z#helicopter helicopter 
+ T the soft bulletin
+
+In your template, add $allmusic::display to print the list of albums. The plugin
+will display the corresponding album for each line in your $album_file. The
+text descriptions can be styled in your stylesheet. They use class
+"albumtitle" and "albumartist".
+
+As this plugin uses some horrible hacks to parse the amg site, it may go wrong
+on some albums. It may go wrong if AMG change their site. Any enhancements to my awful perl
+will be greatfully accepted. 
+
+=head1 CONFIGURATION
+
+Set $album_file to the location of the list of AMG codes.
+
+Set $album_dir to a location where album info can be cached. Clear this out to
+force the plugin to reparse the AMG site.
+
+Set $imgsize to the height/width of the images. There is only one number, as I
+think it is a good assumption that all album images are square.
+
+=head1 BUGS
+
+Probably lots! This is a first version, so it probably isn't very robust.
+
+Please send any bug reports to bpb@lysozyme.net or as writebacks to my weblog:
+http://weblog.lysozyme.net/computers/software/blosxom/plugins/amg/
+
+=head1 LICENSE
+
+
+Allmusic plugin copyright 2003 Ben Blackburne.
+                                                                                                                                       
+(This license is the same as Blosxom's)
+ 
+Permission is hereby granted, free of charge, to any per- son obtaining
+a copy of this software and associated docu- mentation files (the "Software"),
+to deal in the Software without restriction, including without limitation the
+rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+ 
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+ 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+ 
+

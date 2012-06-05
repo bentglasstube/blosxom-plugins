@@ -1,0 +1,97 @@
+# Blosxom Plugin: categorylist
+# Author: Keith Hudgins
+# Version: 0.2 (Any better ideas on a versioning scheme to be more blosxom-like?)
+# Plugin home: http://www.greenman.org/projects/categorylist
+
+
+package categorylist;
+
+###########################
+##
+## Configurable variables
+##
+##
+###########################
+
+# Set this to 1 if you want the slashes
+# removed from your display menu
+my $iDontWantSlashes = 0;
+
+# Make this equal to what you want the
+# non-leading slashes replaced with.
+my $replacement = ": ";
+
+###########################
+
+
+use vars qw(@categorylist, $display);
+
+use File::Find;
+
+my @categorylist;
+
+
+sub start {
+	find (sub {
+			if (-d $File::Find::name) {
+				my $categoryname = $File::Find::name;
+				$categoryname =~  s/$blosxom::datadir//;
+	
+				push @categorylist, $categoryname if $categoryname;
+			}
+		},	
+			$blosxom::datadir);
+	@categorylist = sort @categorylist;
+	foreach $thing (@categorylist) {
+		my $displayString = $thing;
+		if ($iDontWantSlashes) {
+			print STDERR "Parsing slashes\n";
+			$displayString =~ s!^\/!!;
+			$displayString =~ s!\/!$replacement!g;
+
+		}
+		$display .= "<a href=\"$blosxom::url$thing\">$displayString</a><br />\n";
+	}
+	return 1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plugin: categorylist
+
+=head1 SYNOPSIS
+
+Purpose: Grants $categorylist::display, a list of all category directories with
+appropriate links for the blog sidebar.
+
+=head1 VERSION
+
+0.1 It works, but there's not much here. I'm honestly not going to touch this
+unless someone wants some changes made.
+
+=head1 AUTHOR
+
+Keith Hudgins <greenman@greenman.org> http://www.greenman.org
+
+=head1 BUGS
+
+I don't know of any.
+
+=head1 USAGE
+
+Just drop this into your blosxom plugins directory. Then, you can insert the 
+variable:
+
+$categorylist::display
+
+into your flavour files wherever you want a list of your categories to go. Each
+line holds the name of one category, each one linked to the appropriate place in
+your blosxom weblog.
+
+If you want the directory path slashes removed, just look at the config
+variables. Set $iDontWantSlashes equal to 1, and change $replacement's
+assignment to whatever you want the non-leading slashes to be equal to.

@@ -1,0 +1,89 @@
+#!/bin/bash
+#
+# Proc2Blog.sh
+# A dodgy bash effort by dave kempe dave@swoit.as
+#
+# Inserts an entry in your blossum blog from an incoming email.
+# Uses a secret subject for authentication, so its not really
+# secure. Don't use this is you care about other people posting to your blog.
+# You can also set a valid from address.
+# You will need to have a seperate email address or modifier to use this best.
+# You can get away without a seperate address however.
+# 
+# I use the postfix recipent delimiter:
+# user+blogpost@mydomain.com
+#  
+# I then configure procmail like so:
+# #BLOG ENTRY
+# :0
+# * ^To: user\+blogpost@mydomain.
+# | /home/user/blog/scripts/proc2blog.sh
+#
+# Then I email user+blogpost@mydomain
+# Subject: Password mypass This is me first post!
+# here is the rest of the post.<br>
+# etc. <br>
+# 
+# The subject field is important. The first word has to be 'Password' and 
+# the second word is the password. Lame I know.
+# Released under the GNU GPL.
+#
+# Configure the options below and configure procmail
+# Don't put trailing slashes on directorys
+
+# Blog input password
+PASSWORD=mypassword
+
+# Blog data file location
+BLOGROOT=/home/user/blog
+
+# Blog file extension
+BLOGEXT=txt
+
+# Blog script tempfile location
+BLOGSCRIPT=/home/user/blog/scripts/tmp
+
+#largest size of post in lines
+# set to massive if you want any size
+# uesful to strip disclaimer etc
+MAXLINES=45
+
+# Valid from address
+# set to 'any' if anyone can post (they still need the password)
+FROMEMAIL=myrealemail@my.domain.com
+
+###################
+# Probably don't need to fiddle with bits under here
+##################
+
+DATE=`date +%s`
+LOGFILE=$BLOGSCRIPT/proc2blog.log
+LOGDATE=`date`
+
+MSG=$BLOGSCRIPT/msg$DATE.tmp; cat > $MSG
+
+FROM=`cat $MSG | grep From`
+
+if   echo "$FROM" | grep -q $FROMEMAIL 
+	then echo "New Blog Entry from $FROM" >> $LOGFILE
+	else echo "$LOGDATE Wrong Email - $FROM"  >> $LOGFILE; rm -f $MSG
+fi
+
+PASS=`cat $MSG | grep Subject: | cut -d ' ' -f 3`
+if [ "$PASS" != "$PASSWORD" ]
+	then echo "$LOGDATE Right email, wrong password" >> $LOGFILE; rm -f $MSG; exit
+
+fi
+
+
+
+TITLE=`cat $MSG | grep Subject: | cut -d ' ' -f 4-`
+BODY=`cat $MSG | grep -A $MAXLINES '^$'`
+
+FILE=proc$DATE.$BLOGEXT
+
+echo $TITLE > $BLOGROOT/$FILE
+echo $BODY >> $BLOGROOT/$FILE
+chmod a+r $BLOGROOT/$FILE
+echo Successfully wrote $TITLE entry to Blog >> $LOGFILE
+rm -f $MSG

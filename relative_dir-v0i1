@@ -1,0 +1,61 @@
+# Blosxom Plugin: relative_dir
+# Author: Hironori Azuma <andi@ac.wakwak.com>
+# Version: 0.1 (2004-02-04)
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+package relative_dir;
+use strict;
+
+sub start{
+	package blosxom;
+	*_find = *find;
+	*find = *relative_dir::find;
+	1;
+}
+
+sub find{
+	package blosxom;
+	my $wanted = shift;
+	if(ref($wanted) ne 'HASH'){
+		$wanted = {
+			 wanted   => $wanted
+			,no_chdir => 1
+		};
+	}
+	_find($wanted,@_);
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: relative_dir
+
+=head1 AUTHOR
+
+Hironori Azuma <andi@ac.wakwak.com>, http://park2.wakwak.com/~mono/cgi-bin/blosxom.cgi
+
+=head1 VERSION
+
+0.1
+
+=head1 INSTALLATION
+
+Drop this file into your plug-ins directory ($blosxom::plugin_dir).
+
+=head1 DESCRIPTION
+
+This allows you to use relative data directory ($blosxom::datadir)
+
+  [blosxom.cgi] line 21-22
+    # Where are this blog's entries kept?
+    $datadir = "blosxom/data";
+
+and static directory ($blosxom::static_dir).
+
+  [blosxom.cgi] line 54-55
+    # Where are this blog's static files to be created?
+    $static_dir = "blosxom/blog";
+

@@ -1,0 +1,270 @@
+package paginate;
+
+use vars qw( $prev_link $link_list $next_link $prev_url $next_url
+	     $curr_number $curr_url $curr_link $skip $page $pages 
+	     $curr_path %template $abort);
+
+use CGI qw/param url/;
+use POSIX;
+
+# Grab the templates at start
+sub start { 
+  while (<DATA>) {
+    last if /^(__END__)?$/;
+    my($ct, $comp, $txt) = /^(\S+)\s(\S+)\s(.*)$/;
+    $txt =~ s/\\n/\n/mg;
+    $template{$ct}{$comp} = $txt;
+  }
+
+  return 1;
+}
+
+# Count total stories & calculate # of stories to skip at filter time.
+sub filter {
+  my ($pkg, $files_ref) = @_;
+
+  # How many pages in total?  Only count pages we're going to render.
+  my $num_files = 0;
+  for(keys(%$files_ref)) {
+    ($_ =~ m|^$blosxom::datadir/$blosxom::path_info|) && $num_files++;
+  }
+  # Round up (ceil)
+  $pages = ceil($num_files / $blosxom::num_entries);
+
+  # Make sure the page number param is in the valid range;
+  ($page) = (param("page") =~ /(\d+)/); $page ||= 1;
+
+  # Determine number of entries to skip
+  $skip = $blosxom::num_entries * ($page-1);
+}
+
+# Build previous & next links, as well as a list of available pages.
+sub head {
+  my($pkg, $path, $head_ref) = @_;
+
+  # Set the current path
+  $curr_path = $path;
+
+  #
+  # If we're rendering a page in the current flavour, don't paginate.
+  # Abort! Abort! Abort!
+  #
+  if($curr_path =~ /\.$blosxom::flavour$/) {
+    $abort = 1;
+    return undef;
+  }
+
+  # Provide a previous page link, if needed.
+  $prev_link = "";
+  if ($page > 1) {
+    param("page" => $page - 1);
+    $prev_url = url(-path_info=>1,-query=>1);
+    $prev_link = fill_template('paginate_prev_link');
+  }
+
+  # Construct a list of links to each page
+  my @list = ();
+  push @list, fill_template('paginate_list_start');
+  for $curr_number (1..$pages) {
+    param("page" => $curr_number);
+    $curr_url = url(-path_info=>1,-query=>1);
+    push @list, fill_template( ($curr_number eq $page) ? 
+			       'paginate_list_curr_item' : 
+			       'paginate_list_item' );
+    push @list, fill_template('paginate_list_join')
+      if (($curr_number+1) <= $pages);
+  }
+  push @list, fill_template('paginate_list_end');
+  $link_list = join '', @list;
+
+  # Provide a next page link, if needed.
+  $next_link = "";
+  if ($pages > $page) {
+    param("page" => $page + 1);
+    $next_url = url(-path_info=>1,-query=>1);
+    $next_link = fill_template('paginate_next_link');
+  }
+
+  return undef;
+}
+
+# Perform skipping behavior, if necessary, to display chosen page
+sub sort {
+  ($abort) && return undef;
+
+  return sub {
+    my($files_ref) = @_;
+
+    # Sort entries as normal (TODO: consult other plugins here?)
+    my @sorted = sort { $files_ref->{$b} <=> $files_ref->{$a} } keys %$files_ref;
+
+    my @relevant = ();
+
+    for(@sorted) {
+      ($_ =~ m|^$blosxom::datadir/$blosxom::path_info|) && push(@relevant,$_);
+    }
+
+    # Return the sorted entries, skipping the proper amount
+    return @relevant[$skip .. scalar(@sorted) - 1];
+  };
+}
+
+# Inspired by blosxom's template handling - load and fill template all in one
+sub fill_template {
+  my ($chunk) = @_;
+  my $fh = new FileHandle;
+  my $tmpl = undef;
+
+  do {
+    $tmpl = join '', <$fh> if $fh->open("< $blosxom::datadir/$curr_path$chunk.$blosxom::flavour");
+  } while ($path =~ s/(\/*[^\/]*)$// and $1);
+
+  $tmpl = join '', ($template{$blosxom::flavour}{$chunk} || $template{error}{$chunk} || '')
+    if (!defined $tmpl);
+
+  $tmpl =~ s/(\$[\w:]+)/$1 . "||''"/gee;
+
+  return $tmpl;
+}
+
+1;
+
+__DATA__
+html paginate_prev_link <a href="$prev_url">&lt;&lt; prev</a>
+html paginate_next_link <a href="$next_url">next &gt;&gt;</a>
+html paginate_list_start [ 
+html paginate_list_join  | 
+html paginate_list_item <a href="$curr_url">$curr_number</a>
+html paginate_list_curr_item <b>$curr_number</b>
+html paginate_list_end  ] 
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: paginate
+
+=head1 DESCRIPTION
+
+Provide a simple page navigation capability in a Blosxom blog, allowing a
+reader to flip through ranges of stories with a previous link, next link,
+and a list of available pages.  Page length is defined by the C<$num_entries>
+setting in the main blosxom config.
+
+The following variables are available for display in Blosxom templates:
+
+=over 4
+
+=item * $paginate::prev_link
+
+Contains link to previous page, is empty if a this link is not valid.
+
+=item * $paginate::link_list
+
+Contains the entire list of links to available pages.
+
+=item * $paginate::next_link
+
+Contains link to next page, is empty if a this link is not valid.
+
+=back
+
+The display of previous, next, and page
+links is customizable via flavoured templates (each with a .$flavour 
+extension):
+
+=over 4
+
+=item * paginate_prev_link
+
+Used to build a previous page link.
+
+Default: <a href="$prev_url">&lt;&lt;- prev</a>
+
+=item * paginate_next_link
+
+Used to build a next page link.
+
+Default: <a href="$next_url">next -&gt;&gt;</a>
+
+=item * paginate_list_start
+
+Placed at the start of the page list.
+
+Default: " [ "
+
+=item * paginate_list_join
+
+Placed in between page list items.
+
+Default: " | "
+
+=item * paginate_list_item
+
+Used to display page list items other than the current page.
+
+Default: <a href="$curr_url">$curr_number</a>
+
+=item * paginate_list_curr_item
+
+Used to display the current page in the list.
+
+Default: <b>$curr_number</b>
+
+=item * paginate_list_end 
+
+Placed at the end of the page list.
+
+Default: " ] "
+
+=back
+
+By default, these templates construct simple links to blog pages.  In
+customizing these templates, many other forms of page navigation are
+possible.  For example, with a little bit of Javascript, the prev/next
+links can become buttons and the page list can become a drop-down selector.
+An example of this is included with the distribution archive for this
+plugin.
+
+=head1 VERSION
+
+v0.03
+
+=head1 AUTHOR
+
+l.m.orchard <deus_x@pobox.com> http://www.decafbad.com
+
+Bugfixes by Rob Flickenger <rob@nocat.net> http://nocat.net/~rob/
+
+=head1 SEE ALSO
+
+Paginate: http://www.decafbad.com/twiki/bin/view/Main/BlosxomPaginate
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 CHANGES
+
+v0.03: Use POSIX::ceil instead of int() and only count relevant articles in sort phase.  This fixes page count and subcategory pagination issues.
+
+=head1 LICENSE
+
+This Blosxom Plug-in is Copyright 2003, l.m.orchard 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

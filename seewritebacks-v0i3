@@ -1,0 +1,84 @@
+# Bloxsom Plugin:SeeWritebacks
+# Author: Fletcher T. Penney
+# Version: 0.3
+
+package seewritebacks;
+
+use CGI;
+
+
+$seewritebacks = 0;
+$writebacksform = "";
+
+sub start {
+	1;
+}
+
+sub story {
+	my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+	if ((CGI::param("seewritebacks")) || (CGI::param("plugin") eq 'writeback') || 
+($blosxom::path_info =~ /\./)) {
+		$seewritebacks = 1;
+		$writebacksform = &$blosxom::template($path,'writebacksform',$blosxom::flavour) || &$blosxom::template($path,'writebacksform','general');
+		$writebacksform = &$blosxom::interpolate($writebacksform);
+	}
+
+	1;
+}
+
+1;
+
+
+__END__
+
+
+=head1 NAME
+
+Blosxom Plug-in: seewritebacks
+
+=head1 DESCRIPTION
+
+This plugin makes it easy to have a consistent writebacks interface to your site, that is compatible with multiple themes.  For example, you can create a blue flavor, and a red flavor for your site that change the appearance, but still have writebacks enabled.  With the default writebacks plugin, this gets complicated and requires a separate writebacks flavor for each primary flavor.
+
+Well, say goodbye to that!!
+
+	1) Drop this plugin into your plugins directory.
+	2) Copy the writebacksform.general file to your flavor directory or your datadir.
+	3) Make sure you still have the writeback.$flavour file of your choosing installed
+	4) Put "$seewritebacks::writebacksform" at the end of your story.$flavor file
+	5) Make the following changes to your story.$flavor file:
+Original:
+(<a href="$url$path/$fn.$flavour">$writeback::count Comments</a>)
+
+Modified:
+(<a href="$url$path/$fn.$flavour?seewritebacks=y">$writeback::count Comments</a>)
+
+Note that your story.flavor file may be slightly different.  You are adding the ?seewritebacks=y to the url, which causes this plugin to act.
+
+	6) Repeat steps 4-5 for each flavor that you wish to update.
+	7) If you choose, you can create a writebacksform.$flavor file to customize the appearance for each flavor, but this is unnecessary.
+
+	It sounds complicated, but it's not that bad.  If you have suggestions on how to improve these instructions, let me know.
+
+	The upshot is that you can now have multiple flavors for your site that change the appearance, and all of them can use writebacks, and plugins such as breadcrumbs don't give unexpected results.
+
+ 
+=head1 CHANGES
+
+0.3	Forced interpolation as interpolate_fancy broke the previous interpolation.  Thanks to Andy for this report.
+
+0.2	Added a patch to allow the writebacks plugin to set $seewritebacks to 1 to ensure that a comment is displayed as soon as it is posted
+
+0.1	Initial Release
+
+=head1 AUTHOR
+
+Fletcher T. Penney - http://fletcher.freeshell.org
+
+
+=head1 LICENSE
+
+This source is submitted to the public domain.  Feel free to use and modify it.  If you like, a comment in your modified source attributing credit to myself for my original work would be appreciated.
+
+THIS SOFTWARE IS PROVIDED AS IS AND WITHOUT ANY WARRANTY OF ANY KIND.  USE AT YOUR OWN RISK!

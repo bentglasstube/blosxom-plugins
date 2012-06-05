@@ -1,0 +1,67 @@
+# Blosxom Plugin: followsymlinks
+# Author(s): Randall Hand (yerase@yeraze.com)
+# Version: 1.0
+# Documentation: Just drop it in your plugins directory, and it should work.
+
+package followsymlinks;
+
+# --- Configurable variables -----
+
+# --------------------------------
+
+use File::stat;
+use File::Find;
+use Data::Dumper;
+use CGI qw/:standard/;
+
+sub start {
+  1;
+}
+
+sub entries {
+  return sub {
+    my(%files, %indexes);
+    find({ wanted =>
+      sub {
+        my $d; 
+        my $curr_depth = $File::Find::dir =~ tr[/][]; 
+        return if $blosxom::depth and $curr_depth > $blosxom::depth; 
+     
+        # a match
+        $File::Find::name =~ m!^$blosxom::datadir/(?:(.*)/)?(.+)\.$blosxom::file_extension$!
+
+          # not an index, .file, and is readable
+          and $2 ne 'index' and $2 !~ /^\./ and (-r $File::Find::name)
+
+            # to show or not to show future entries
+            and ( 
+              $blosxom::show_future_entries
+              or stat($File::Find::name)->mtime < time 
+            )
+
+              # add the file and its associated mtime to the list of files
+              and $files{$File::Find::name} = stat($File::Find::name)->mtime
+
+                # static rendering bits
+                and (
+                  param('-all') 
+                  or !-f "$blosxom::static_dir/$1/index." . $blosxom::static_flavours[0]
+                  or stat("$blosxom::static_dir/$1/index." . $blosxom::static_flavours[0])->mtime < stat($File::Find::name)->mtime
+                )
+                  and $indexes{$1} = 1
+                    and $d = join('/', (blosxom::nice_date($files{$File::Find::name}))[5,2,3])
+  
+                      and $indexes{$d} = $d
+                        and $static_entries and $indexes{ ($1 ? "$1/" : '') . "$2.$blosxom::file_extension" } = 1;
+      }, follow => 1 }, $blosxom::datadir
+    );
+
+
+
+    return (\%files, \%indexes);
+  };
+
+}
+
+1;
+

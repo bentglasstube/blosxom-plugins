@@ -1,0 +1,47 @@
+
+package friendentries;
+use strict;
+
+my $recent_friends = 5;
+
+use File::Find;
+use File::stat;
+use FileHandle;
+
+sub start{
+	1;
+}
+
+sub story{
+	my($pkg,$path,$filename,$story_ref,$title_ref,$body_ref) = @_;
+	my($path,$glob,@file,@title,$list);
+
+	if($blosxom::path_info !~ m!\.! || $blosxom::path_info =~ m!index\.$blosxom::flavour$!){
+		return 1;
+	}
+
+	$path = $blosxom::path_info;
+	$path =~ s![^/]+$!!;
+
+	$glob = join("/",$blosxom::datadir,$path,"*.$blosxom::file_extension");
+	$glob =~ s!/+!/!g;
+
+	@file = glob($glob);
+	@file = sort{ stat($b)->mtime <=> stat($a)->mtime } @file;
+	@file = splice(@file,0,$recent_friends);
+
+	foreach my $file (@file){
+		my $title;
+		my $fh = FileHandle->new($file,O_RDONLY) || next;
+		chomp($title = <$fh>);
+		$file =~ s!^$blosxom::datadir/!!g;
+		$file =~ s!$blosxom::file_extension$!$blosxom::flavour!g;
+		$list .= qq{<li><a href="$blosxom::url/$file">$title</a></li>\n};
+	}
+	$list = qq{<h4>“¯‚¶ƒJƒeƒSƒŠ‚ÌÅ‹ß‚Ì‹L–</h4>\n<ul>\n$list</ul>\n} if($list);
+
+	$$story_ref =~ s!\$friendentries::list!$list!;
+	return 1;
+}
+
+1;

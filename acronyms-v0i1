@@ -1,0 +1,255 @@
+# Bloxsom Plugin: Acronyms
+# Author: Axel Beckert, based on autolinks by Fletcher T. Penney
+# Version: 0.1
+# Download: http://noone.org/blosxom/acronyms
+
+package acronyms;
+
+# --- Configurable variables ----
+
+# Where is the definition page
+$link_file = "$blosxom::datadir/acronyms";
+
+
+# -------------------------------
+
+$ignore = 0;
+
+sub start {
+	open (LINKS, $link_file);
+	@abbrlist = <LINKS>;
+	close LINKS;
+	1;
+}
+
+sub story {
+	my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+	if ($$story_ref =~ m/<!-- noacronyms -->/gi || $$body_ref =~ m/<!-- noacronyms -->/gi) {
+		$ignore = 1;
+	}
+
+	if ($ignore == 0) {
+		my %tags = ();
+		my $j = 0;
+
+		# remove other tags
+		$$body_ref =~ s{<\D.*?>}{
+		    do {
+			$tags{++$j} = $&;
+			"<$j>";
+		    };
+		}gse;
+
+		foreach $i (@abbrlist) {
+			chomp($i);
+			next unless $i;
+
+			my ($word, $class, $link);
+
+			if ($i =~ /(.*?)=(.*?)\|(.*)/) {
+				$word  = $1;
+				$class = lc($2);
+				$link  = $3;
+			} elsif ($i =~ /(.*?)=(.*)/) {
+				$word  = $1;
+				$link  = $2;
+				$class = $word =~ /\./ ? 'abbr' : 'acronym';
+			}
+
+			#print STDERR "$word => $class + $link\n";
+
+# By default, autolinks now changes only the first occurence of a given term
+# If you want to change all occurences, 
+# change the end of the following line to '\/a>/ig'
+
+			if ($word) {
+				$word =~ s/\\./<.>/g;
+				$word =~ s/\./\\./g;
+				$word =~ s/<\.>/./g;
+				#print STDERR sprintf "Replaced $word %i times\n",
+				$$body_ref =~ s/\b($word)\b/<$class title="$link">$1<\/$class>/g;
+				$$title_ref =~ s/\b($word)\b/<$class title="$link">$1<\/$class>/g
+				    if $blosxom::flavour eq 'html';
+			}
+		}
+
+		# reinsert tags
+		$$body_ref =~ s{<(\d+)>}{$tags{$1}}gs;
+
+	}
+	1;
+}
+
+1;
+
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: acronyms
+
+=head1 DESCRIPTION
+
+Allows you to create a list of keywords that are automatically
+marked as abbreviation or acronym.
+
+You can set your own location for the acronyms data file, but by
+default it lives in your data directory.
+
+=head1 EXAMPLE DATA FILE
+
+Put this in you acronyms data file and you already have a reasonable
+base to extend.
+
+ASCII=American Standard Code for Information Interchange
+BGP=Border Gateway Protocol; Beer-to-Glass-Protocol (Roger Schwentker)
+BSD=Berkeley System Distribution
+CD=Compact-Disc
+CGI=Common Gateway Interface; Computer Generated Imagery
+CLI=Command Line Interface
+CLUE=Command Line User Environment
+CS=Computer Science; Counter Strike
+CSS=Cascading Stylesheets
+CVS=Concurrent Versioning System
+DSL=Digital Subscriber Line
+DVD=Digital Video Disc
+ELF=Executable and Linking Format
+FAQ=Frequently asked question(s)
+FIFO=First In, First Out
+FOSS=Free and Open Source Software
+FLOSS=Free, Libre and Open Source Software
+FSF=Free Software Foundation
+FSFE=Free Software Foundation Europe
+FUD=Fear, Uncertainty and Doubt
+FYEO=Four Your Eyes Only
+FYI=For Your Information
+GNOME=GNU Network Object Model Environment
+GPL=GNU General Public License
+GPRS=General Packet Radio Service
+GSM=Global System for Mobile Communications
+GTK=GIMP-Toolkit
+GUI=Graphical User Interface
+HTML=Hypertext Markup Language
+HTTP=Hypertext Transport Protocol
+IIS=Internet Intrusion Server
+IMO=in my opinion
+IMHO=in my humble opinion
+IMNSHO=in my not so humble opinion
+IRC=Internet Relay Chat
+ISBN=International Standard Book Number
+ISDN=Integrated Services Digital Network (German: I schnall des nedd ;-)
+ISSN=International Standard Serial Number
+ITP=intend to package
+JFYI=Just For Your Information
+JFTR=Just For The Record
+KDE=Kolorful Diskfilling Environment
+KISS=Keep it simple, stupid
+MCSE=Minesweeper Consultant and Solitaire Expert (User Friendly)
+MHz=abbr|Megahertz
+MMS=Multimedia Messaging Service
+MMX=Multimedia Extension
+MPEG=Moving Picture Experts Group
+MP3=MPEG (Moving Picture Experts Group) 1 Audio Layer 3
+MSIE=Microsoft Internet Explorer
+MTV=Music TeleVision
+NIH=Not Invented Here
+OOP=Object-Oriented Programming
+OS=Operating System; Open Source
+OSI=Open Source Initiative; Open Systems Interconnection
+OSS=Open Source Software
+PC=Personal Computer
+PERL=Pathologically Eclectic Rubbish Lister
+PHP[2345]?=Programmers Hate PHP ;-)
+PISG=Perl IRC Statistics Generator
+QA=Quality Assurance
+RAM=Random Access Memory
+RIP=Rest in Peace
+SMD=Surface Mounted Devices
+SMS=Short Message Service
+SSI=Server-Side Includes
+TLA=Three Letter Acronym
+UI=User Interface
+UK=United Kingdom
+UMTS=Universal Mobile Telecommunications System
+URL=Uniform Resource Locator
+URI=Uniform Resource Indicator
+US=United States (of America)
+USA=United States of America
+USB=Universal Serial Bus
+VCF=Vintage Computer Festival
+VCFE=Vintage Computer Festival Europe
+VCFe=Vintage Computer Festival Europe
+VM=Virtual Machine
+VoIP=Voice over IP
+WFM=Works For Me
+WAP=Wireless Application Protocol
+WTF=what/who the fuck
+WTH=what the heck/hell
+WML=Website Meta Language; Wireless Markup Language; Wesnoth Markup Language
+WORN=Write Once, Read Never
+WWW=World Wide Waiting ;-)
+XHTML=Extensible Hypertext Markup Language
+XML=Extensible Markup Language
+aka=acronym|also known as
+btw.=abbr|by the way
+btw=abbr|by the way
+BTW=abbr|by the way
+e.g.=for example; as an example
+gpl=GNU General Public License
+i.e.=id est (that is to say; in other words) 
+irc=Internet Relay Chat
+pisg=Perl IRC Statistics Generator
+GHz=Gigahertz
+MB=Megabyte
+GB=Gigabyte; Great Britain
+TB=Terabyte
+kB=Kilobyte
+IIRC=if I remember correctly
+AFAIK=as far as I know
+AFAICS=as far as I can see
+AFAIR=as far as I remember
+YMMV=your milage may vary
+LMAA=Leck&apos; mich am Arsch
+ASAP=as soon as possible
+EFF=Electronic Frontier Foundation
+FFII=Foundation for a Free Information Infrastructure / F&ouml;rderverein f&uuml;r eine Freie Informationelle Infrastruktur
+WYSIWYG=What you see is what you get
+TOFU=Text oben, Fullquote unten
+PEBKAC=Problem exists between keyboard and chair
+FIFO=First In, First Out
+LIFO=Last In, First Out
+GIGO=Garbage In, Garbage Out
+EU=European Union
+yast2?=Yet another Setup Tool
+SuS[EI]=System- und Software-Entwicklung
+KoL=Kingdom of Loathing
+MUD=Multi User Dungeon
+XMMS=X Multimedia System
+SUV=Sport Utility Vehicle
+SUVs=Sport Utility Vehicles
+IMD[Bb]=Internet Movie Database
+FTWCA=For those who care about
+LUG=Linux User Group
+GUUG=German Unix User Group
+SPF=Sender Policy Framework, formerly Sender Permitted From
+RBL=Realtime Black-List
+SMTP=Simple Mail Transfer Protocol
+NSFW=Not Safe For Work
+ROM=Read Only Memory
+CD-ROM=Compact Disc Read-Only Memory
+ISO=International Organization for Standardization; also short for a image of an ISO9660 (CD-ROM) file system
+
+=head1 AUTHOR
+
+Axel Beckert <blosxom@deuxchevaux.org>
+
+=head1 LICENSE
+
+This source was and therefore is still submitted to the public domain.
+Feel free to use and modify it.  Credits to Fletcher Penney and
+Gregory Bair for their original work would be appreciated.
+
+THIS SOFTWARE IS PROVIDED AS IS AND WITHOUT ANY WARRANTY OF ANY KIND.
+USE AT YOUR OWN RISK!

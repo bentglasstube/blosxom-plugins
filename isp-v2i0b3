@@ -1,0 +1,125 @@
+# Blosxom Plugin: isp
+# Author(s): Rael Dornfest <rael@oreilly.com> 
+# Version: 2.0b3
+# Documentation: See the bottom of this file or type: perldoc readme
+
+package isp;
+
+# --- Configurable variables -----
+
+# What bit of the URL should I treat as username?
+# Be sure the username bit is caught by the first () in the regular expression,
+# e.g. /~(.*)/weblog matches "sam" in http://www.example/~sam/weblog
+
+my $url_match = q!/~(.*?)/weblog!;
+
+# Where should I look for the user's Blosxom data directory ($datadir)?
+# Assume $username is populated by the results of the regular expression match
+# above, e.g. /home/sam/weblog
+
+my $user_datadir = q!/home/$username/weblog!;
+
+# Where should plug-ins keep their state for each user?
+# You should create this directory for them or no state will be saved.
+
+my $user_plugin_state_dir = q!/home/$username/.weblog/plugins/state!;
+
+# --------------------------------
+
+use CGI qw/:standard/;
+
+sub start {
+  url() =~ /$url_match/ or return 0;
+  my $username = $1;
+  
+  $blosxom::datadir = $user_datadir and $blosxom::datadir =~ s!\$username!$username!;
+  $blosxom::plugin_state_dir = $user_plugin_state_dir and $blosxom::plugin_state_dir =~ s!\$username!$username!;
+
+  
+  1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: isp
+
+=head1 SYNOPSIS
+
+This plug-in is designed for the ISP looking to provide Blosxom weblogs to all of its users.
+
+It traps URLs of the form /~username/weblog (as defined by $url_match), setting
+$blosxom::datadir to an appropriate directory (as defined by $user_datadir) in
+"username"'s home directory.
+
+=head2 Usage
+
+Be sure this plug-in sits BEFORE all other plug-ins.  To force this, rename it 
+to 00isp.
+ 
+This plugin works in concert with the "config" plug-in, without which it
+won't allow individual users to override the global Blosxom configuration by
+placing config files in their $datadir.
+
+Aside from this simple renaming, about all that should be needed is to 
+ScriptAlias /~username/weblog to /cgi-bin/blosxom.cgi, replacing the paths as 
+appropriate to your particular setup, of course.
+
+=head2 Warning
+
+Be sure to choose a $user_datadir _outside_ of the user's personal 
+Web-accessible document-root.  In other words, don't use a $user_datadir of
+/home/$username/www/weblog or the like, where anything under /home/$username/www
+is world-readable.
+
+=head2 Limitations
+
+This plug-in doesn't allow for users to add their own plug-ins to their own plugin directories.  There's a race condition in this I've not yet worked my way around, but I have it in mind.
+
+=head1 VERSION
+
+2.0b3
+
+Version number coincides with the version of Blosxom with which the 
+current version was first bundled.
+
+=head1 AUTHOR
+
+Rael Dornfest  <rael@oreilly.com>, http://www.raelity.org/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Blosxom and this Blosxom Plug-in
+Copyright 2003, Rael Dornfest 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

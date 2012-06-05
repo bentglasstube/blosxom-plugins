@@ -1,0 +1,113 @@
+# Blosxom Plugin: paragraph
+# Author: Bob Schumaker <cobblers@pobox.com>
+# Version: 0
+# http://www.cobblers.net/blog/
+# License: Public Domain
+
+package paragraph;
+
+# --- Plug-in package variables -----
+
+# Where the letter pictures are
+$letterurl = "http://%hostname%/letters";
+
+# The file extension for the letters
+$letterext = "gif";
+
+# The font size for the paragraph leader
+$fontsize = 4;
+
+# The font color for the paragraph leader
+$fontcolor = "663333";
+
+# Always do paragraphs? Read from config.paragraph, usually
+$paragraph_on = 0;
+
+# The default style, if one isn't specified
+$paragraph_default_style = "font";
+
+
+# --- Configurable variables -----
+
+# What flag in your weblog entries lets me know to turn on paragraph translation?
+my $paragraph_on_flag = "<!-- paragraph=\"(.*)\" -->";
+
+# --------------------------------
+
+my $package = "paragraph";
+
+sub start {
+  1;
+}
+
+sub head {
+  my($pkg, $path, $head_ref) = @_;
+
+  for (;;) {
+    do {
+      -r "$blosxom::datadir/$path/config.$package" and require "$blosxom::datadir/$path/config.$package" and last;
+    } while ($path =~ s/(\/*[^\/]*)$// and $1);
+    last;
+  }
+  if( defined($hostinfo::do_replacement) ) {
+    $letterurl = &{$hostinfo::do_replacement}($letterurl);
+  }
+
+  1;
+}
+
+sub story {
+	my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+	$$body_ref =~ s/$paragraph_on_flag//mi or $paragraph_on or return 0;
+	my $style = $1 || $paragraph_default_style;
+	return 0 unless( $style eq "graphic" or $style eq "font" );
+
+	if( $style eq "graphic" ) {
+		$$body_ref =~ s{<p>(.)}{<p><img src="$letterurl/$1.$letterext" border="0" align="left" alt="$1" />}gm;
+	}
+	else {
+		$$body_ref =~ s{<p>(.)}{<p><font size="$fontsize" color="$fontcolor">$1</font>}gm;
+	}
+
+	1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: paragraph
+
+=head1 DESCRIPTION
+
+Style your story with dropcaps at the beginning of all the paragraphs. Activate the plugin
+by including a line of the form <!-- paragraph="style">, where style is one of:
+
+  graphic: replace the first character of each paragraph with a letter from
+           $paragraph::letterurl
+  font: change the color and size of the first letter of the paragraph to
+        $paragraph::fontcolor and $paragraph::fontsize
+
+Configurable variables:
+
+$paragraph::letterurl: where to find the graphics named by single letters
+$paragraph::letterext: the extension to add to the letter for finding the graphic,
+                       i.e. A.$letterext
+$paragraph::fontsize: the size of the font to use for the first letter (default: 4)
+$paragraph::fontcolor: the color of the font to use for the first letter (default: 663333)
+
+=head1 AUTHOR
+
+Bob Schumaker <cobblers@pobox.com> http://www.cobblers.net/blog
+
+
+=head1 LICENSE
+
+This source is submitted to the public domain.  Feel free to use and modify it.  
+If you like, a comment in your modified source attributing credit to myself for 
+my work would be appreciated.
+
+THIS SOFTWARE IS PROVIDED AS IS AND WITHOUT ANY WARRANTY OF ANY KIND.  USE AT 
+YOUR OWN RISK!

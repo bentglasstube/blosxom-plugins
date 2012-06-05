@@ -1,0 +1,58 @@
+#Blosxom plugin: DoYouYahoo
+#Author(s): JonahC (jonahc@theblankline.net)
+#Version: 2005-3-14
+#Blosxom Home/Docs/Licensing: http://www.blosxom.com
+
+package doyouyahoo;
+
+#--- User Config Variables ---
+
+# What is your Yahoo ID?
+$YahooID = "exampleID";
+
+#--- End User Config Variables ---
+
+sub start {
+$display = '<a href="http://edit.yahoo.com/config/send_webmesg?.target=';
+$display .= "$YahooID";
+$display .= '&.src=pg">';
+$display .= '<img border=0 src="http://opi.yahoo.com/online?u=';
+$display .= "$YahooID";
+$display .= '&m=g&t=2"></a>';
+
+	1;
+}
+
+sub end {
+	1;
+}
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: DoYouYahoo
+
+=head1 SYNOPSIS
+
+Blosxom users with AOL Instant Messenger accounts could use the AIMStatus plugin to let their readers know if they were currently available on AIM or not.  However, I could not find a plugin for Blosxom users that did the same thing for Yahoo Messenger.  This plugin adopts Yahoo's "Online Presence" HTML into something Blosxom users can add to their sites to let readers know if they are available on Yahoo Messenger.
+
+=head1 INSTALLATION AND CONFIGURATION
+
+Put this plugin in your plugin directory and set the $YahooID variable to your Yahoo Messenger ID.  Then, just add $doyouyahoo::display to your flavour template somewhere.
+
+=head1 VERSION
+
+2005-3-14
+
+=head1 AUTHOR
+
+Jonah Chanticleer (jonahc@theblankline.net)
+
+=head1 BUGS
+
+I am not aware of any bugs at this time.  If you find any, please contact me at my email address.  Thanks!
+
+=head1 ACKNOWLEDGEMENTS
+
+Bri Hunziker, author of AIMStatus plugin for Blosxom, for initial inspiration.

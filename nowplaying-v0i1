@@ -1,0 +1,56 @@
+# Blosxom Plugin: nowplaying
+# Author(s): Terrence Yu
+# Version: 0.1
+
+# Used in conjuction with Brandon Fuller's Now Playing plugin
+# for iTunes for Windows (http://brandon.fuller.name/archives/hacks/nowplaying/).
+# This will populate $nowplaying::nowplaying with a list of the last songs played
+# in iTunes as well as the artist's name.
+
+package nowplaying;
+
+# --- Configurable variables -----
+
+# Filename including full path to file
+my $filename = "/home/tyua/pub_html/blog/now_playing.xml";
+
+# --------------------------------
+
+use CGI qw/:standard/;
+use FileHandle;
+
+sub start {
+
+  $nowplaying .= "<dl class=\"nowplaying\">\n";
+  
+  # Read the now_playing.xml file
+  open(NOWPLAYING, "$filename") || die "Can't open $filename: $!";
+  do {$nowplaying_data .= <NOWPLAYING>} until eof(NOWPLAYING);
+  close(NOWPLAYING);
+  chomp($nowplaying_data);
+  
+  # Put each song's data into an array
+  my @songs = split /<\/song>/, $nowplaying_data;
+  
+  # Get rid of last </now_playing> bit
+  pop(@songs);
+	
+  foreach my $song_data (@songs) {
+ 
+    my $np_title, my $np_artist;
+ 
+    if ($song_data =~ /<title>([^<]+)<\/title>/) {
+      $np_title = "$1";
+    }
+    
+    if ($song_data =~ /<artist>([^<]+)<\/artist>/) {
+      $np_artist = "$1";
+    }
+    
+    $nowplaying .= "  <dt>$np_title<\/dt>\n  <dd>$np_artist<\/dd>\n";
+  }
+
+  $nowplaying .= "  <\/dl>\n";
+
+1;
+}

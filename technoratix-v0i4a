@@ -1,0 +1,36 @@
+package technoratix;
+# creates technorati-style "tags" when single stories are displayed;
+# illustrates methods for creating <category> and <a> "tags" per 
+# http://www.technorati.com/help/tags.html (if that's the right 
+# place to be lookin' ;-)
+use strict;
+#call $technoratix::tags in templates
+use vars qw { $tags };
+
+sub start {1;}
+
+# making <category> tags
+sub head {
+  my ($pkg, $dir, $head_ref) = @_;
+  return 1 unless $dir =~ s/\/[^\/]+\..+$//;
+  foreach (split /\//,$dir) {
+    $_ and $tags .= qq{<category>$_</category>\n};
+  }
+  $tags =~ s/\n$//;
+  1;  
+}
+
+# making links with a "defined tag relationship"
+sub story {
+  my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+  return 1 unless $blosxom::path_info =~ m/\./;
+  $tags = "";  # unneeded if head() doesn't run
+  do {
+    $path =~ m/(\/[^\/]+)$/ and 
+      $tags .= qq{<a href="$blosxom::url/$path" rel="tag">$1</a>\n};
+  } while ($path =~ s/(\/+[^\/]+)$// and $1);
+  $tags =~ s/\n$//;
+  1;
+}
+1;
+__END__

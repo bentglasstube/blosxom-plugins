@@ -1,0 +1,72 @@
+# Bloxsom Plugin:AutoLink
+# Author: Fletcher T. Penney
+# Version: 0.3
+# modelled after dictionary by Gregory Bair
+
+package autolink;
+
+# --- Configurable variables ----
+
+# Where is the definition page
+$link_file = "$blosxom::datadir/autolinks";
+
+
+# -------------------------------
+
+$ignore = 0;
+
+sub start {
+	open (LINKS, $link_file);
+	@linkslist = <LINKS>;
+	close LINKS;
+	1;
+}
+
+sub story {
+	my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+	if ($$story_ref =~ m/<!-- noautolink -->/gi || $$body_ref =~ m/<!-- noautolink -->/gi) {
+		$ignore = 1;
+	}
+
+	if ($ignore == 0) {
+		foreach $i (@linkslist) {
+			if ($i =~ /(.*?)=(.*)/) {
+				$word = $1;
+				$link = $2;
+
+# By default, autolinks now changes only the first occurence of a given term
+# If you want to change all occurences, 
+# change the end of the following line to '\/a>/ig'
+				$$body_ref =~ s/(?<=\s)($word)(?=([\s\,\!\;]|\.\s|\:\s|[\(\)]\s))/<a href="$link">$1<\/a>/i;
+			}
+		}
+	}
+	1;
+}
+
+1;
+
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: autolink
+
+=head1 DESCRIPTION
+
+Allows you to create a list of keywords that are automatically converted to a url whenever they are used in a story.  You can insert "<!-- noautolink -->" in a story to prevent any changes
+
+You can set your own location for the autolinks data file, but by default it lives in your data directory.
+
+=head1 AUTHOR
+
+Fletcher T. Penney - http://fletcher.freeshell.org
+
+
+=head1 LICENSE
+
+This source is submitted to the public domain.  Feel free to use and modify it.  If you like, a comment in your modified source attributing credit to myself and Gregory Bair for his original work would be appreciated.
+
+THIS SOFTWARE IS PROVIDED AS IS AND WITHOUT ANY WARRANTY OF ANY KIND.  USE AT YOUR OWN RISK!

@@ -1,0 +1,161 @@
+# Blosxom Plugin: css
+# Author(s): Eric Davis <edavis <at> foobargeek <dot> com>
+# Documentation: See the bottom of this file or type: perldoc css
+
+package css;
+
+# --- Configurable variables -----
+
+# this list defines the display order of the generated $css::links list
+# for every entry here, there must be a corresponding entry in %css_files
+
+my @available_css = ( 'alien',
+                      'biohazard',
+                      'gray',
+                      'graypic' );
+
+# these are the files that are associated with the css selections
+
+my %css_files = ( 'alien'     => '/blog/css/blog_alien.css',
+                  'biohazard' => '/blog/css/blog_biohazard.css',
+                  'gray'      => '/blog/css/blog_gray.css',
+                  'graypic'   => '/blog/css/blog_gray_pic.css' );
+
+# the default css selection
+my $css_default = 'alien';
+
+# the name of the cookie stored at the client
+my $cookie_name = 'css';
+
+# --------------------------------
+
+use CGI qw/:standard/;
+
+$display;  # $css::display
+$links;    # $css::links
+
+sub start
+{
+    my $css_param = param('css');
+    my $css_cookie;
+    my $css_name;
+    my $css_file;
+    my $cookie;
+
+	if (($blosxom::plugins{cookies} > 0) and ($cookie = &cookies::get('css')))
+    {
+		$css_cookie = $cookie->{'css'};
+	}
+
+    $css_name = ($css_param) ? $css_param
+                             : ($css_cookie) ? $css_cookie
+                                             : $css_default;
+
+    $css_name = $css_default if (not $css_files{$css_name});
+    $css_file = $css_files{$css_name};
+
+    $display = qq{<link rel="stylesheet" href="$css_file" title="default" type="text/css" />};
+
+    if ($blosxom::plugins{cookies} > 0)
+    {
+        &cookies::add(
+          cookie(
+            -name=>"$cookie_name",
+            -value=>{ 'css' => "$css_name" },
+            -path=>$cookies::path,
+            -domain=>$cookies::domain,
+		    -expires=>$cookies::expires
+          )
+        );
+    }
+
+    $links  = qq{<ul class="css_links">\n};
+
+    my $active = qq{<li class="css_links_active_item">};
+    my $item   = qq{<li class="css_links_item">};
+    my $anchor = qq{<a href="$blosxom::url/$blosxom::path_info};
+    my $end    = qq{</a></li>\n};
+
+    foreach (@available_css)
+    {
+        $links .= (/^$css_name$/) ? qq{$active$anchor">$_$end}
+                                  : qq{$item$anchor?css=$_">$_$end};
+    }
+
+    $links .= qq{</ul>\n};
+
+    return 1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: css
+
+=head1 DESCRIPTION
+
+This plugin allows a visitor to choose which CSS layout they would like
+to use when browsing your site.  An important note is that this plugin
+does not require JavaScript like the B<blosxcss> plugin.  Instead, a 
+combination of CGI parameters and Cookies are used.  Note that the cookie
+plugin is required for this plugin to function properly.
+
+There are two variables filled in by this plugin that can be used within
+your flavour files.  The B<$css::display> variable contains the sylesheet
+link metatag for the currently selected CSS file.  This variable must be
+inserted into your head flavour file (i.e. within the HTML head section).
+The second variable is B<$css::links> which presents a list of all the
+different CSS themes available on your site.
+
+If you don't want to use the B<$css::links> list for accessing your various
+CSS themes, you can simply tack on the following CGI string to a URL:
+
+B<?css=css_name>: where 'css_name' is the name of the CSS theme
+
+This plugin can be modified via the following configuration variables:
+
+B<@available_css>: This list defines the order of the labels that are shown
+in the B<$css::links> unordered list.  Note that for every entry in this list,
+there must be a corresponding entry in the B<%css_files> hash.
+
+B<%css_files>: these are the files that are associated with the CSS selections
+
+B<$css_default>: the default CSS selection when none is specified (i.e. not
+specified via CGI or Cookie)
+
+B<$cookie_name>: the name of the cookie stored at the client
+
+The following class identifiers are used for CSS control of the B<css::links>
+output:
+
+B<css_links>: unordered CSS link list
+
+B<css_links_item>: an item in the unordered CSS link list
+
+B<css_links_active_item>: an item in the unordered CSS link list
+(this one respresents the current CSS theme being displayed)
+
+=head1 VERSION
+
+1.1  initial implementation
+
+=head1 VERSION HISTORY
+
+1.1  initial implementation
+
+=head1 AUTHORS
+
+Eric Davis <edavis <at> foobargeek <dot> com> http://www.foobargeek.com
+
+=head1 LICENSE
+
+This source is submitted to the public domain.  Feel free to use and modify it.
+If you like, a comment in your modified source attributing credit for my
+original work would be appreciated.
+
+THIS SOFTWARE IS PROVIDED AS IS AND WITHOUT ANY WARRANTY OF ANY KIND.  USE AT
+YOUR OWN RISK!
+

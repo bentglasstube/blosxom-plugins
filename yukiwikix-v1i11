@@ -1,0 +1,532 @@
+# -*-Mode: cperl;-*-
+# Blosxom Plugin: yukiwikix (YukiWiki 書式でエントリ書き)
+# Author(s): Yu-ji Hosokawa <yu-ji at hoso dot net>
+# Version: $Revision: 1.11 $
+# $Id: yukiwikix,v 1.11 2003/12/12 12:11:39 yu-ji Exp $
+#
+# Based on YukiWiki(XHTML+UTF-8) <http://www.hoso.net/~yu-ji/wiki/wiki.cgi>
+# Based on Mr. Hiroshi Yuki's YukiWiki 2.0.5 <http://www.hyuki.com/yukiwiki/>
+
+package yukiwikix;
+
+use strict;
+use warnings;
+
+use utf8;
+use Encode ();
+use Encode::Guess;
+
+###
+# --- Configurable variables -----
+
+my($useWikiName, $useInterWikiName);
+$useWikiName = 1;
+$useInterWikiName = 1;
+
+# Your Own Wiki page URL
+my $url_cgi = '/~yu-ji/wiki/wiki.cgi';
+
+# automatically convert image URL into <img> tag.
+my $use_autoimg = 1;
+
+# Your friend's Wiki pages (InterWiki)
+my %interwiki =
+  ('YukiWiki'
+   => 'http://www.hyuki.com/yukiwiki/wiki.cgi?mycmd=read;mypage=euc($1)',
+   'google'
+   => 'http://www.google.co.jp/search?q=sjis($1)',
+   'MSKB'
+   => 'http://support.microsoft.com/default.aspx?scid=kb;ja;asis($1)',
+   'MSセキュリティ情報'
+   => 'http://www.microsoft.com/japan/technet/security/bulletin/asis($1).asp',
+  );
+
+## yukiwikix extension
+# [[#a#url subject]] -> <a href="url">subject</a>
+# [[#img#url subject]] -> <img src="url" alt="subject"/>
+my $useInlineEx = 1;
+my $x_inlineEx = '\[\[\#\w+\#(\S+?) (.+)\]\]';
+my $x_anchorInline = '\[\[\#a\#(\S+?) (.+)\]\]';
+my $x_imageInline = '\[\[\#img\#(\S+?) (.+)\]\]';
+
+###
+
+my($yukiwikixOpen, $yukiwikixClose);
+$yukiwikixOpen  = '<div class="yukiwikix">';
+$yukiwikixClose = '</div>';
+
+my($aster1open, $aster1close, $aster2open, $aster2close);
+$aster1open  = '<h3>';
+$aster1close = '</h3>';
+$aster2open  = '<h4>';
+$aster2close = '</h4>';
+
+my $bracket_name = '\[\[(\S+?)\]\]';
+my $interwiki_definition = '\[\[(\S+?)\ (\S+?)\]\]';
+my $wiki_name = '\b([A-Z][a-z]+([A-Z][a-z]+)+)\b';
+my $interwiki_name = '([^:]+):([^:].*)';
+
+sub start {
+    1;
+}
+
+sub story {
+    my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    my(@result, @body);
+
+    if ((not $$body_ref) or ($$body_ref !~ m/^<yukiwikix[\/]?>/)) {
+	return 1;
+    }
+    @body = split(/\n/, $$body_ref);
+    renderXHTML(\@result, \@body);
+    $$body_ref = join("\n", @result);
+    1;
+}
+
+sub renderXHTML {
+    my($result_ref, $src_ref, %option) = @_;
+#    my($line, $inP, @toc);
+    my($line, $inP) = ('', '');
+    my($tocNum) = 0;
+    my($yukiwikix) = 0;
+
+    while (defined($line = shift(@$src_ref))) {
+	# start yukiwikix
+	$line =~ m/^<yukiwikix>/ and do {
+	    push(@$result_ref, $yukiwikixOpen);
+	    $yukiwikix = 1;
+	    next;
+	};
+	# stop yukiwikix
+	$line =~ m/^<\/yukiwikix>/ and do {
+	    closeParagraph($result_ref, \$inP);
+	    push(@$result_ref, $yukiwikixClose);
+	    $yukiwikix = 0;
+	    next;
+	};
+	$line =~ m/^<yukiwikix\/>/ and do {
+	    $yukiwikix = 0;
+	    next;
+	};
+	(not $yukiwikix) and do {
+	    push(@$result_ref, $line);
+	    next;
+	};
+	# embedded command
+#	$line =~ m/($embedded_name)/ and do {
+#	    if ($` or $') {
+#		unshift(@$src_ref, $');
+#		unshift(@$src_ref, $1);
+#		unshift(@$src_ref, $`);
+#		next;
+#	    }
+#	    closeParagraph($result_ref, \$inP);
+#	    push(@$result_ref, embedded_to_html($1));
+#	    next;
+#	};
+	# h3
+	$line =~ m/^\*\*(.*)/ and do {
+#	    if ($option{'toc'}) {
+#		push(@toc,
+#		     "-- <a href=\"#i$tocNum\">" . escape($1) . "</a>\n");
+#	    }
+	    closeParagraph($result_ref, \$inP);
+	    push(@$result_ref,
+		 $aster2open
+		 . '<a id="i' . $blosxom::fn . '_' . $tocNum++ . '"/>'
+		 . inline($1)
+		 . $aster2close);
+	    next;
+	};
+	# h2
+	$line =~ m/^\*(.*)/ and do {
+#	    if ($option{'toc'}) {
+#		push(@toc,
+#		     "- <a href=\"#i$tocNum\">" . escape($1) . "</a>\n");
+#	    }
+	    closeParagraph($result_ref, \$inP);
+	    push(@$result_ref,
+		 $aster1open
+		 . '<a id="i' . $blosxom::fn . '_' . $tocNum++ . '"/>'
+		 . inline($1)
+		 . $aster1close);
+	    next;
+	};
+	# hr
+	$line =~ m/^----/ and do {
+	    closeParagraph($result_ref, \$inP);
+	    push(@$result_ref, '<hr/>');
+	    next;
+	};
+	# ul, ol
+	$line =~ m/^(([-+]){1,3}).+/ and do {
+	    my($level, $char) = (length($1), $2);
+	    closeParagraph($result_ref, \$inP);
+	    unshift(@$src_ref, $line);
+	    #renderList($char, $result_ref, $src_ref, $level,
+	    # ↓好みで↑
+	    renderList($char, $result_ref, $src_ref, 1,
+		       'no_escape_list'=>$option{'no_escape_list'});
+	    next;
+	};
+	# dl
+	$line =~ m/^:[^:]+:.+/ and do {
+	    closeParagraph($result_ref, \$inP);
+	    unshift(@$src_ref, $line);
+	    renderDefinitionList($result_ref, $src_ref);
+	    next;
+	};
+	# table
+	$line =~ m/^,/ and do {
+	    closeParagraph($result_ref, \$inP);
+	    unshift(@$src_ref, $line);
+	    renderTable($result_ref, $src_ref);
+	    next;
+	};
+	# pre
+	$line =~ m/^\s(.*)$/ and do {
+	    my($preLine);
+	    $preLine = $1;
+	    if ($inP ne 'pre') {
+		closeParagraph($result_ref, \$inP);
+		openParagraph($result_ref, \$inP, '<pre>', 'pre');
+	    } else {
+	    }
+	    push(@$result_ref, escape($preLine));
+	    next;
+	};
+	# close paragraph
+	$line =~ m/^\s*$/ and do {
+	    closeParagraph($result_ref, \$inP);
+	    next;
+	};
+	# blockquote
+	$line =~ m/^(>{1,3})(.+)/ and do {
+	    my($depth, $bqLine) = (length($1), $2);
+	    my($Stag, $Etag) =
+	      ('<blockquote>' x $depth . '<p>',
+	       'p>' . ('</blockquote>' x $depth));
+	    $Etag =~ s/>$//;
+	    if ($inP ne $Etag) {
+		closeParagraph($result_ref, \$inP);
+		openParagraph($result_ref, \$inP, $Stag, $Etag);
+	    } else {
+	    }
+	    push(@$result_ref, inline($bqLine));
+	    next;
+	};
+	# p
+	$line =~ m/^.+$/ and do {
+	    if (not $inP) {
+		openParagraph($result_ref, \$inP, '<p>', 'p');
+	    }
+	    push(@$result_ref, inline($line));
+	    next;
+	};
+    }
+    closeParagraph($result_ref, \$inP);
+    if ($yukiwikix) {
+	push(@$result_ref, $yukiwikixClose);
+	$yukiwikix = 0;
+    }
+
+    # toc
+#    if ($option{'toc'} and @toc) {
+#	if (not (grep(m/^- /, @toc))) {
+#	    grep(s/^--/-/, @toc);
+#	}
+#	my(@tocHTML);
+#	push(@tocHTML, '<!-- toc -->');
+#	renderXHTML(\@tocHTML, \@toc, 'no_escape_list'=>1);
+#	push(@tocHTML, '<!-- /toc -->');
+#	unshift(@$result_ref, @tocHTML);
+#    }
+}
+
+sub openParagraph {
+    my($result_ref, $inP_ref, $startTag, $endTag) = @_;
+    push(@$result_ref, $startTag);
+    # HACK: build close-tag from open-tag.
+    $$inP_ref = $endTag;
+}
+
+sub closeParagraph {
+    my($result_ref, $inP_ref) = @_;
+    if ($$inP_ref) {
+	push(@$result_ref, '</' . $$inP_ref . '>');
+	$$inP_ref = 0;
+    }
+}
+
+sub renderTable {
+    my($result_ref, $src_ref) = @_;
+    my($line);
+
+    push(@$result_ref, '<table>');
+    while (defined($line = shift(@$src_ref))) {
+	if ($line =~ m/^,(.*)/) {
+	    #######
+	    # This part is taken from Mr. Ohzaki's Perl Memo and Makio Tsukamoto's WalWiki.
+	    # XXXXX
+	    my $tmp = "$1,";
+	    my @value = map {/^"(.*)"$/ ? scalar($_ = $1, s/""/"/g, $_) : $_} ($tmp =~ /("[^"]*(?:""[^"]*)*"|[^,]*),/g);
+	    my @align = map {(s/^\s+//) ? ((s/\s+$//) ? ' align="center"' : ' align="right"') : ''} @value;
+	    my @colspan = map {($_ eq '==') ? 0 : 1} @value;
+	    for (my $i = 0; $i < @value; $i++) {
+		if ($colspan[$i]) {
+		    while ($i + $colspan[$i] < @value and $value[$i + $colspan[$i]] eq '==') {
+			$colspan[$i]++;
+		    }
+		    $colspan[$i] = ($colspan[$i] > 1) ? sprintf(' colspan="%d"', $colspan[$i]) : '';
+		    $value[$i] = sprintf('<td%s%s>%s</td>', $align[$i], $colspan[$i], &inline($value[$i]));
+		} else {
+		    $value[$i] = '';
+		}
+	    }
+	    push(@$result_ref, join('', '<tr>', @value, '</tr>'));
+	    # XXXXX
+	    #######
+	} else {
+	    unshift(@$src_ref, $line);
+	    last;
+	}
+    }
+    push(@$result_ref, '</table>');
+}
+
+sub renderList {
+    my($char, $result_ref, $src_ref, $level, %option) = @_;
+    my($tag, $line, $opened);
+
+    $tag = ($char eq '-')? 'ul' : 'ol';
+    push(@$result_ref, "<$tag>");
+    while (defined($line = shift(@$src_ref))) {
+	if ($line =~ m/^(([-+]){1,3})(.+)/) {
+	    my($lv, $c, $content) = (length($1), $2, $3);
+	    # uncomment the following, if you dislike mixed list with ol/ul.
+	    #if ($char ne $c) {
+	    #    unshift(@$src_ref, $line);
+	    #    last;
+	    #}
+	    if ($level == $lv) {
+		if ($opened) {
+		    push(@$result_ref, '</li>');
+		    $opened = 0;
+		}
+		if ($option{'no_escape_list'}) {
+		    push(@$result_ref, '<li>' . $content);
+		} else {
+		    push(@$result_ref, '<li>' . inline($content));
+		}
+		$opened = 1;
+	    } else {
+		if ($level < $lv) {
+		    # down into the lower elvel
+		    if (not $opened) {
+			push(@$result_ref, '<li>');
+			$opened = 1;
+		    }
+		    unshift(@$src_ref, $line);
+		    renderList($c , $result_ref, $src_ref, $level + 1,
+			       %option);
+		} elsif ($level > $lv) {
+		    # return to the upper level
+		    unshift(@$src_ref, $line);
+		    last;
+		}
+	    }
+	} else {
+	    unshift(@$src_ref, $line);
+	    last;
+	}
+    }
+    if ($opened) {
+	push(@$result_ref, '</li>');
+	$opened = 0;
+    }
+    push(@$result_ref, "</$tag>");
+}
+
+sub renderDefinitionList {
+    my($result_ref, $src_ref) = @_;
+    my($line);
+    push(@$result_ref, '<dl>');
+    while (defined($line = shift(@$src_ref))) {
+	if ($line =~ m/^:([^:]+):(.+)/) {
+	    push(@$result_ref, '<dt>' . inline($1) . '</dt>',
+		 '<dd>' . inline($2) . '</dd>');
+	} else {
+	    unshift(@$src_ref, $line);
+	    last;
+	}
+    }
+    push(@$result_ref, '</dl>');
+}
+
+sub inline {
+    my ($line) = @_;
+    $line = &escape($line);
+    $line =~ s|'''([^']+?)'''|<i>$1</i>|g;  # Italic
+    $line =~ s|''([^']+?)''|<b>$1</b>|g;    # Bold
+#    $line =~ s|(\d\d\d\d-\d\d-\d\d \(\w\w\w\) \d\d:\d\d:\d\d)|<span class="date">$1</span>|g;   # Date
+    $line =~ s!
+                (
+                    ((mailto|http|https|ftp):([^\x00-\x20()<>\x7F-\xFF])*)  # Direct http://...
+                        |
+                    ($x_inlineEx)
+                        |
+                    ($bracket_name)             # [[likethis]], [[#comment]], [[Friend:remotelink]]
+                        |
+                    ($interwiki_definition)     # [[Friend http://somewhere/?q=sjis($1)]]
+                        |
+                    ($wiki_name)                # LocalLinkLikeThis
+                )
+            !
+                &make_link($1)
+            !gex;
+    return $line;
+}
+
+sub make_link {
+    my $chunk = shift;
+    if ($chunk =~ /^(http|https|ftp):/) {
+        if ($use_autoimg and $chunk =~ /\/([^\/]+?)\.(gif|png|jpeg|jpg)$/) {
+            return qq(<a href="$chunk"><img src="$chunk" alt="$1"/></a>);
+        } else {
+            return qq(<a href="$chunk">$chunk</a>);
+        }
+    } elsif ($chunk =~ /^(mailto):(.*)/) {
+        return qq(<a href="$chunk">$2</a>);
+    #} elsif ($chunk =~ /^$interwiki_definition$/) {
+    #    return qq(<span class="InterWiki">$chunk</span>);
+    #} elsif ($chunk =~ /^$embedded_name$/) {
+    #    return &embedded_to_html($chunk);
+    } elsif ($useInlineEx and $chunk =~ m/^$x_anchorInline/) {
+	return qq(<a href="$1">$2</a>);
+    } elsif ($useInlineEx and $chunk =~ m/^$x_imageInline/) {
+	return qq(<img src="$1" alt="$2"/>);
+    } else {
+        $chunk = &unarmor_name($chunk);
+        $chunk = &unescape($chunk); # To treat '&' or '>' or '<' correctly.
+        my $cookedchunk = &encode($chunk);
+        my $escapedchunk = &escape($chunk);
+        if ($useInterWikiName and $chunk =~ /^$interwiki_name$/) {
+            my ($intername, $localname) = ($1, $2);
+            my $remoteurl = $interwiki{$intername};
+            if ($remoteurl) {
+                $remoteurl =~ s/\b(euc|sjis|ykwk|asis)\(\$1\)/&interwiki_convert($1, $localname)/e;
+                return qq(<a href="$remoteurl">$escapedchunk</a>);
+            } else {
+                return $escapedchunk;
+            }
+        } elsif ($useWikiName) { #($database{$chunk}) {
+            #my $subject = &escape(&get_subjectline($chunk, delimiter => ''));
+            my $subject = &escape($chunk);
+            return qq(<a title="$subject" href="$url_cgi?$cookedchunk">$escapedchunk</a>);
+#        } elsif ($page_command{$chunk}) {
+#            return qq(<a title="$escapedchunk" href="$url_cgi?$cookedchunk">$escapedchunk</a>);
+#        } else {
+#            return qq($escapedchunk<a title="$resource{editthispage}" href="$url_cgi?mycmd=edit&amp;mypage=$cookedchunk">$editchar</a>);
+	} else {
+	    return $escapedchunk;
+        }
+    }
+}
+
+# from original YukiWiki
+sub escape {
+    my $s = shift;
+    $s =~ s|\r\n|\n|g;
+    $s =~ s|\&|&amp;|g;
+    $s =~ s|<|&lt;|g;
+    $s =~ s|>|&gt;|g;
+    $s =~ s|\"|&quot;|g;
+    return $s;
+}
+
+# from original YukiWiki
+sub unescape {
+    my $s = shift;
+    # $s =~ s|\n|\r\n|g;
+    $s =~ s|\&amp;|\&|g;
+    $s =~ s|\&lt;|\<|g;
+    $s =~ s|\&gt;|\>|g;
+    $s =~ s|\&quot;|\"|g;
+    return $s;
+}
+
+# from original YukiWiki
+# unarmor_name:
+#   [[bracket_name]] -> bracket_name
+#   WikiName -> WikiName
+sub unarmor_name {
+    my ($name) = @_;
+    if ($name =~ /^$bracket_name$/) {
+        return $1;
+    } else {
+        return $name;
+    }
+}
+
+# from original YukiWiki
+sub encode {
+    my ($s) = @_;
+    utf8::encode($s); # added
+    my $encoded = '';
+    foreach my $ch (split(//, $s)) {
+        if ($ch =~ /[A-Za-z0-9_]/) {
+            $encoded .= $ch;
+        } else {
+            $encoded .= '%' . sprintf("%02X", ord($ch));
+        }
+    }
+    return $encoded;
+}
+
+# from original YukiWiki
+sub interwiki_convert {
+    my ($type, $localname) = @_;
+    if ($type eq 'sjis' or $type eq 'euc') {
+        &code_convert(\$localname, $type);
+        return &encode($localname);
+    } elsif ($type eq 'ykwk') {
+        # for YukiWiki1
+        if ($localname =~ /^$wiki_name$/) {
+            return $localname;
+        } else {
+            &code_convert(\$localname, 'sjis');
+            return &encode("[[" . $localname . "]]");
+        }
+    } elsif ($type eq 'asis') {
+        return $localname;
+    } else {
+        return $localname;
+    }
+}
+
+sub str2utf8 {
+    my($source_ref) = shift(@_);
+    return if (Encode::is_utf8($$source_ref));
+    my $decoder = guess_encoding($$source_ref, qw(euc-jp shiftjis 7bit-jis));
+    if (not ref($decoder)) {
+        $decoder = guess_encoding($$source_ref, qw(euc-jp));
+        if (not ref($decoder)) {
+            # warn('Cannot guessed it...');
+            return;
+        }
+    }
+    $$source_ref = $decoder->decode($$source_ref);
+}
+
+sub code_convert {
+    my ($contentref, $kanjicode) = @_;
+    str2utf8($contentref);
+    for ($kanjicode) {
+	s/^utf8$/utf-8/;
+	s/^euc$/euc-jp/;
+	s/^sjis$/shiftjis/;
+	s/^jis$/iso-2022-jp/;
+    }
+    $$contentref = Encode::encode($kanjicode, $$contentref);
+    return $$contentref;
+}

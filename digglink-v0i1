@@ -1,0 +1,299 @@
+# Blosxom Plugin: digglink
+# Author: David J Moore
+# Version: 0.1
+
+# Copyright (c) 2007 David J Moore
+
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
+
+package digglink;
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# Configuration Section
+
+#$dbfile         = "$blosxom::plugin_state_dir/digglink.db";	#must be set and uncommented for plugin to work!!
+
+$replace_link   = 'digglink1234';				#'digg this' link
+$replace_digit  = 'diggdigit1234';				#number of links - just numerals
+$replace_diggs  = 'diggs1234';					#'digg' if number of links is 1, else 'diggs'
+$diggkey        = url_encode('http://foo.bar');			#Must put in a url to your page here
+
+$DEBUG          = '2';						#debug level 1 logs all HTTP requests sent out
+#								#level 2 logs a bit more
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+$ua = $diggkey;
+$ua =~ s/\D//;
+
+use MLDBM qw!DB_File Storable!;
+
+@digglink;
+@story_diggs;
+
+sub start {
+  1;
+}
+
+sub story {
+  my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+  my $link  = '';
+  my $title = url_encode($$title_ref);
+  my $body = url_encode($$body_ref);
+  my $uncoded = 'http://avitas.net/index.pl' . $path . '/' . $filename . '.comments';
+
+  warn("digglink::story::uncoded story url: $uncoded") if ($DEBUG > 1);
+
+  my $coded = substr(url_encode($uncoded), 0, 254);
+
+  warn("digglink::story::encoded story url: $coded") if ($DEBUG > 1);
+
+  my $diggs = diggs($coded);
+
+  $link .= 'http://digg.com/submit?phase=2&amp;url=';
+  $link .= $coded;
+  $link .= '&amp;title=';
+  $link .= substr($title, 0, 74);
+  $link .= '&amp;bodytext=';
+  $link .= substr($body, 0, 349);
+
+  warn("digglink::story::finalized digg submit link: $link") if ($DEBUG > 1);
+
+  push @story_diggs, $diggs;
+  push @digglink, $link;
+
+ 1;
+}
+
+sub diggs {
+  my $url = shift;
+
+  unless (-e $dbfile) {					#this sub opens the db read only, so if the dbfile
+    update_database($url);				 #doesn't exist, we call update to create it
+  }
+
+  tie %o, 'MLDBM', $dbfile, 0, 0640 or warn( $! );	#tie hash to the db file - these numerics seem to work :p
+  my $d = $o{diggs_array};				#copy out the array so we can untie asap
+  untie %o;						#untie
+
+  my $time = time();
+  my $diggs;
+  my $x = 0;
+
+  LOOKUP: while (1) {					#timtowdi i suppose
+    if ($d->[$x]{url} eq $url) {			#find the array slice that holds our url
+      $diggs = $d->[$x]{diggs};				 #pull the # of diggs
+        if (($time - $d->[$x]{time}) < 500) {		  #if the db entry is less than 500 seconds old..
+          return $diggs;				   #we're done, return $diggs
+        } else {					  #otherwise..
+          delete $d->[$x];				   #delete this array index
+          next LOOKUP;					   #restart, no other variables modified
+        }                                             
+    } else {
+      last LOOKUP if (scalar(@{$d})-1) == $x;		#if we've paged through the whole array..
+      $x++;						#increment control variable
+    }
+  }
+  update_database($url);				#couldn't find a good number, so we update the db for the url
+  return $diggs;					#and return it
+  1;
+}
+
+sub update_database {
+  my $url = shift;
+
+  my $localtime = localtime(time());
+  if ($DEBUG > 0) { warn("updating the database at $localtime"); }
+  
+  my $diggs = GET_diggs($url);
+  my $time = time();
+
+  tie %o, 'MLDBM', $dbfile, 0102, 0640 or warn( $! );	#seems to work..
+  my $u = $o{diggs_array};
+  my $ind = scalar(@{$u});
+
+  $u->[$ind]{diggs} = $diggs;
+  $u->[$ind]{time} = $time;
+  $u->[$ind]{url} = $url;
+
+  $o{diggs_array} = $u;
+  untie %o;
+  return 1;
+}
+
+
+sub GET_diggs {
+  my $url = shift;
+
+  my $diggstring = 'http://services.digg.com/stories?link=' . $url . '&appkey=' . $diggkey;
+
+require HTTP::MHTTP;                               #don't want this getting used unless it's necessary
+
+HTTP::MHTTP::http_init();
+HTTP::MHTTP::http_set_protocol(1);
+HTTP::MHTTP::http_add_headers(
+        'User-Agent' => $ua,
+        'Accept-Language' => 'en-us',
+        'Connection' => 'Keep-Alive',
+        'Host' => 'services.digg.com',
+        'Accept' => '*/*',
+                );
+
+if (HTTP::MHTTP::http_call("GET", $diggstring)){
+  if (HTTP::MHTTP::http_status() == 200 ){
+    $content =  HTTP::MHTTP::http_response();
+  } else {
+    $content = 'diggs="0"';			#no persistent retries or anything, just default to zero. easier this way.
+  }
+} else {
+  warn("MHTTP call failed \n");
+}
+
+if ( $content =~ /diggs="(\d+)"/ ) {
+    return $1;
+} else {
+    return 0;
+}
+
+}
+
+sub last {
+  for $link (@digglink) {
+    $blosxom::output =~ s/$replace_link/$link/;
+}
+
+  for $diggs (@story_diggs) {				#there's probably a better way to do this!
+    if ($diggs > 1) {
+      $blosxom::output =~ s/$replace_digit/$diggs/;
+      $blosxom::output =~ s/$replace_diggs/ diggs/;
+    } elsif ($diggs == '1') {
+      $blosxom::output =~ s/$replace_digit/$diggs/;
+      $blosxom::output =~ s/$replace_diggs/ digg/;
+    } elsif ($diggs == 0) {
+      $blosxom::output =~ s/$replace_digit/$diggs/;
+      $blosxom::output =~ s/$replace_diggs/ diggs/;
+    }
+  }
+1;
+}
+
+sub url_encode {
+  my $text = shift;
+
+  $text =~ s/([^A-Za-z0-9])/sprintf("%%%02X", ord($1))/seg;
+  return $text;
+}
+1;
+
+__END__
+
+=pod
+
+=head1 Name
+
+B<digglink> 0.1 for blosxom
+
+=head1 Synopsis
+
+ <style type="text/css">
+ .digglink         { text-decoration: none; }
+ .totaldiggs       { background-color: #fff9d7; border: thin solid #333333; padding: 2px; }
+ .diggbutton       { background-color: #eeeeee; border: thin solid #1871c5; padding: 2px; }
+ .digits           { font-weight: bold; font-size: 14px; }
+ </style>
+
+ ...intervening markup...
+
+ <!-- broken down for clarity -->
+
+ <a href="digglink"
+    rel="nofollow"
+    class="digglink">
+ <span class="totaldiggs">
+  <span class="digits">
+   diggdigit
+  </span> 
+   diggs
+  </span> 
+  <span class="diggbutton">digg this</span></a>
+
+=head1 Requirements
+
+digglink requires MLDBM, DB_File, and Storable for the caching engine, and HTTP::MHTTP for pulling the number of diggs from digg.com.
+
+=head1 Short Description
+
+digglink is a free plugin for Blosxom. It creates 'digg this' links, and it displays the number of diggs on each story page.
+
+=head1 Long Description
+
+The three replacement strings, by default 'digglink1234', 'diggdigit1234', and 'diggs1234', must each appear only once per story. They'll be replaced as 
+the page is generated. Refer to the synopsis for more details as to layout. The particular setup I use and have provided is a 'side-by-side' button type 
+of layout, though certainly any type of button is possible.
+
+=head1 Bugs
+
+I'm sure they're there, but none come immediately to mind. If you encounter one, please drop me a line and tell me all about it:
+
+     dave.j.moore@gmail.com
+
+
+=head1 See Also
+
+ http://apidoc.digg.com/
+ http://blosxom.sourceforge.net/
+
+=head1 Version History
+
+v0.2: 2007-06-29 - initial release
+
+=head1 TODO
+
+nothing yet :)
+
+=head1 Author
+
+ David J Moore
+ http://avitas.net/
+ dave.j.moore@gmail.com
+
+=head1 Copyright and License
+
+ Copyright (c) 2007 David J Moore
+
+ Permission is hereby granted, free of charge, to any person obtaining a copy
+ of this software and associated documentation files (the "Software"), to deal
+ in the Software without restriction, including without limitation the rights
+ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ copies of the Software, and to permit persons to whom the Software is
+ furnished to do so, subject to the following conditions:
+
+ The above copyright notice and this permission notice shall be included in
+ all copies or substantial portions of the Software.
+
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ THE SOFTWARE.
+ 
+=cut
+

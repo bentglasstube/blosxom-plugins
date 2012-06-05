@@ -1,0 +1,117 @@
+# Blosxom Plugin: dynamiccss
+# Author(s): Brian Haberer
+# Version: 1.0
+# Feb 25, 2004
+# brian@canonical.org
+# http://www.canonical.org/~brian/software/dynamiccss
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+package dynamiccss;
+
+use CGI qw/:standard/;
+use FileHandle;
+
+###### Instructions #######
+# Simply place this file in your plugins directory, and set 
+#  the following variables to what you want them to be. 
+# 
+# Use $dynamiccss:cssline in your flavor files to insert the <link> line.
+#
+# Small Note: the output is XHTML 1.1 Strict compliant, for those like me 
+#  who are anal retentive about compliance :)
+#
+
+# Variables
+# Browser specific 
+%files = ("gecko" => "blog.css",
+	  "IE"    => "ie.css",);
+# "Safe" cssfile
+$default = "blog.css";
+
+#path to the blosxom subdirectory where you keep css files.
+$csspath = "";
+
+# End of Variables
+
+$cssline = "";
+
+sub start {
+    1;
+}
+
+sub head {
+    my($pkg, $currentdir, $head_ref) = @_;
+    my $user = user_agent();
+    my $included = 0;
+    my $fullpath = $blosxom::url;
+    $fullpath =~ s/\/index.cgi//;
+    $fullpath .= $csspath;
+           
+    while (my ($regex, $file) = each %files) {
+	if ($user =~ /$regex/i) {
+	    $cssline = "<link rel=\"stylesheet\" type=\"text/css\" 
+                              href=\"$fullpath\/$file\" //>";
+	    $done = 1;
+	    last;
+	}
+    }
+    if (! $done) {
+	$cssline = "<link rel=\"stylesheet\" type=\"text/css\" 
+                              href=\"$fullpath\/$default_file\" //>";
+    }	
+    1; 
+}
+
+sub end
+{
+	1;
+}
+
+1;
+
+=head1 NAME
+	
+DynamicCSS Bloxsom Plugin 
+	
+=head1 SYNOPSIS
+
+Enables Bloxsom users to load different CSS styles based on the UserAgent. 
+
+=head1 VERSION
+
+0.1
+
+=head1 USAGE
+
+Regexes can be added to the %files variable as well as a relitive 
+css file to load on a match.  
+
+=head1 AUTHOR
+Brian Haberer <brian@canonical.org>, http://weirdo513.org/
+
+Thanks to: 
+Joey Gibson <joey@joeygibson.com>, http://www.joeygibson.com
+Whose uainclude plugin was the inspiration for this plugin.
+
+=head1 LICENSE
+
+Blosxom plugin - Dynamic CSS (c) 2004 Brian Haberer
+  http://www.canonical.org/~brian/software/dynamiccss
+
+Copyright (C) 2004 Brian Haberer
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+
+Or See: http://www.gnu.org/copyleft/gpl.html

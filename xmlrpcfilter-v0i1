@@ -1,0 +1,173 @@
+# Blosxom Plugin: xmlrpcfilter
+# Author(s): l.m.orchard <deus_x@pobox.com>
+# Version: 0.1
+
+package xmlrpcfilter;
+
+my $conf =
+  {
+   remove_whitespace => 1,
+   url               => 'http://www.decafbad.com/twiki/bin/twiki_xmlrpc.cgi',
+   cache_dir         => "/www/decafbad.com/data/blosxom/xmlrpc-cache",
+  };
+
+my $xmlrpc_on_flag = "<!-- xmlrpcfilter on -->";
+
+use SOAP::Lite;
+use XMLRPC::Lite;
+
+use File::stat;
+use File::Path;
+
+sub start { 1; }
+
+sub story {
+    my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+    # Only perform XML-RPC filter if the option appears in the story
+    my $filter_on = undef;
+    # Check for HTML comment style activation
+    $$body_ref =~ s/$xmlrpc_on_flag//mi and $filter_on = 1;
+    # Check for new meta plugin activation
+    ($meta::Xmlrpc_filter eq '1') and $filter_on = 1;
+    # "Legacy" metadata plugin activation
+    ($metadata::XMLRPC_FILTER eq '1') and $filter_on = 1; 
+    return if (!$filter_on);
+
+    # Create the cache dir, if needed
+    mkpath([ $conf->{cache_dir}."/$path"], 0, 0777)
+      if (! (-d $conf->{cache_dir}."/$path") );
+
+    # Derive the story and cache filenames
+    my $story_fn = "$blosxom::datadir$path/$filename.txt";
+    my $cache_fn = $conf->{cache_dir}."$path/$filename.txt";
+
+    my $raw = $$body_ref;
+
+    # Perform XML-RPC filtering if there's no cache file, or if the cache
+    # file is older than the story
+    if ( (!-f $cache_fn) || (stat($story_fn)->mtime > stat($cache_fn)->mtime) ) {
+        my $out;
+
+        ### Get the URL, method, content type, and filter parameters
+        my $remove_whitespace =
+          defined($conf->{remove_whitespace}) ?
+            $conf->{'remove_whitespace'} : 1;
+        my $url = $conf->{url};
+        my $method = $conf->{method} || 'wiki.filterData';
+        my $content_type = $conf->{content_type} || "text/html";
+        my $raw_params = $conf->{params} || "";
+        my %params = map { split(/=/, $_) } split(/,/, $raw_params);
+
+        ### Remove whitespace before and after text.
+        if ($remove_whitespace) {
+            $raw =~ s/^(\s+)//;
+            $raw =~ s/(\s+)$//;
+        }
+
+        ### Make the XML-RPC filter call
+        my $result;
+        eval {
+            $result = XMLRPC::Lite->proxy($url)->call
+              ($method, SOAP::Data->type(base64 => $raw), $content_type, \%params)->result();
+        };
+
+        ### Return something, hopefully the results,
+        ### but possibly an error message
+        if ($@) {
+            $out = "Problem calling filter: ".$@
+        } elsif (! defined $result->{data}) {
+            $out = "Problem calling filter, empty result."
+        } else {
+            $out = $result->{data};
+        }
+        open (FOUT, ">$cache_fn");
+        print FOUT $out;
+        close (FOUT);
+    }
+
+    # Slurp in the cache file and replace the body with it.
+    local $/; undef $/; open(FIN, "$cache_fn"); my $in = <FIN>; close(FIN);
+    $$body_ref = $in;
+
+}
+
+1;
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: xmlrpcfilter
+
+=head1 DESCRIPTION
+
+Passes story content through a filter available via XML-RPC.
+
+=head1 ABSTRACT
+
+The remote XML-RPC filter can perform any number of transformations
+upon the current story, including things like linking WikiWords to a
+wiki and applying wiki formatting rules from an existing wiki.  This
+is not limited to Wikis, however -- any web-service exposing this API
+can be used as a filter.
+
+Configuration variables are available at the top of the plugin file:
+
+ my $conf =
+   {
+    # Trim whitespace from the beginning and end of blog entry
+    remove_whitespace => 1,
+    # URL at which the filter's XML-RPC interface resides
+    url               => 'http://www.decafbad.com/twiki/bin/twiki_xmlrpc.cgi',
+    # Directory under which filtered content will be cached
+    cache_dir         => "/Users/deusx/Sites/blosxom/xmlrpc-cache",
+   };
+
+=head1 VERSION
+
+v0.1
+
+=head1 AUTHOR
+
+l.m.orchard <deus_x@pobox.com> http://www.decafbad.com
+
+=head1 SEE ALSO
+
+XML-RPC Filtering Pipe API:
+http://www.decafbad.com/twiki/sbin/view/Main/XmlRpcFilteringPipe
+
+XML-RPC to Wiki API:
+http://www.decafbad.com/twiki/sbin/view/Main/XmlRpcToWiki
+
+Blosxom Home/Docs/Licensing:
+http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs:
+http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports to the author.
+
+=head1 LICENSE
+
+This Blosxom Plug-in
+Copyright 2003, l.m.orchard
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

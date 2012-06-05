@@ -1,0 +1,89 @@
+# Blosxom Plugin: magiclink
+# Author: Bruce Alderson
+# Version: 2003-11-24 (v0.5)
+# License: LGPL            
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/blosxom
+
+# magiclink
+#
+# An automatic link-formatter that uses a mostly natural format.
+# Markup is inline, is easy to remember, and reads well in a 
+# text file.  Both magical (guessed) and normal linking is
+# supported.  Magical linking works by using a keyword and 
+# constructing a link from configuration (currently in perl), 
+# and normal linking grabs the link directly.
+#
+# Usage Examples:
+# 
+#  "Sponge Bob"[google]    Builds a link to a google search for "Sponge Bob"
+#  "Test"[folodoc]         Builds a link to a FOLDOC search for "Test"
+#  "Site"[http://site.org] Builds a link to site.org
+#  "Local"[/dl/file]       A relative link for a local file
+#
+
+package magiclink;
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# Configuration Section
+
+use magicConf; # Requires magicConf.pm (in @INC path)
+               # TODO: find a way to load this from plugin path
+
+# Link-dictionary configuration file name
+my $cfg_file = 'plugins/magiclink.conf';
+
+#
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+my $sources;
+
+sub start {
+    $sources = magicConf::load($cfg_file);
+    warn "MagicLink: Could not find $cfg_file" unless -f $cfg_file;
+    warn "MagicLink: Configuration not loaded" unless defined $sources;
+  1;
+}
+
+sub magic_url {
+    my ($terms, $service) = @_;
+  
+    # service not found, return something sane
+    return "\"$terms\"[$service]" 
+        if (!exists($sources->{$service})); 
+    
+    # get config for this service
+    my ($url, $ws, $q, $tmpl, $img) = 
+        ($sources->{$service}{url}, $sources->{$service}{ws}, $sources->{$service}{q}, 
+         $sources->{$service}{tmpl}, $sources->{$service}{img});
+
+    # build url
+    $url =~ s/%terms%/$q$terms$q/g;
+    $url =~ s/\s/$ws/g;
+
+    # no user-defined template, use default
+    return "<a href=\"$url\">$terms</a>"
+        unless defined $tmpl and length $tmpl; 
+        
+    # populate user-defined template    
+    $img =~ s/%terms%/$terms/g;
+    $tmpl =~ s/%url%/$url/g;
+    $tmpl =~ s/%img%/$img/g;
+    $tmpl =~ s/%terms%/$terms/g;
+
+    return $tmpl;
+}
+
+sub story {
+ my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+    # magic urls "term term"[service]
+    $$body_ref =~ s/"([\w\s_\-\.\+]+)"\[(\w+)\]/magic_url($1,$2)/ges;
+    $$body_ref =~ s/"([\w\s_\-\.\+]+)"\[(\w+)\]/magic_url($1,$2)/ges;
+
+    # manual urls "term term"[http://theurl.com]
+#    $$body_ref =~ s/"([\w\s_\-\.\+]+)"\[(.*?)\]/<a href=\"$2\">$1<\/a>/gs;
+ 1;
+}
+
+1;
+

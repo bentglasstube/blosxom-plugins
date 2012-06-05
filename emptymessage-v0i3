@@ -1,0 +1,77 @@
+# Blosxom Plugin: emptymessage
+# Author(s): Fletcher T. Penney http://fletcher.freeshell.org
+# Version: 0.3
+
+# Displays a message if there are no stories available in the 
+# current directory or below.  Useful for preventing the empty
+# page when someone enters an incorrect path
+
+# Additionally, it gives an error if a partial path is entered, preventing
+# something like /path/t matching /path/to/something
+
+package emptymessage;
+
+# --- Configurable variables -----
+
+$message = qq!<h3><span class="header">I'm Sorry</span></h3>
+<p>There are no stories to display here.  If you feel you have reached this page in error, please use the searchbox on the left to find what you are looking for.</p>
+<p>If you have come here from an old link using a /weblog at the beginning, you can delete the weblog portion of the url and try again, or you can use the searchbox.</p>
+<p>Thank You...</p>!;
+
+$send_404 = 1;		# Set to 1 to send a 404 error instead.
+
+$message_404 = "<!DOCTYPE HTML PUBLIC" . qq! "-//IETF//DTD HTML 2.0//EN">
+<html>
+	<head>
+		<title>404 Not Found</title>
+	</head>
+	<body>
+		<h1>Not Found</h1>
+		<p>The requested page does not exist... Please try another URL</p>
+	<p><a href="$blosxom::url">Return to home page</a>.</p>
+	</body>
+</html>
+!;
+
+# --------------------------------
+
+use CGI qw/:standard/;
+
+my $is_empty = 0;
+
+sub start {
+1;
+}
+
+sub head {
+	my ($pkg, $currentdir, $head_ref) = @_;
+	my $empty = 0;
+	
+	$currentdir = "$blosxom::datadir/$currentdir";
+	$currentdir =~ s/\..*?$//;
+	$currentdir =~ s/\/$//;
+	
+	foreach my $file (keys %blosxom::files) {
+		$empty = 1 if $file =~ /^$currentdir([\.\/].*)?$/;
+	}
+	
+	if ( $empty == 0 ) {
+		if (! param('find')) {
+			$$head_ref.= $message;
+			$is_empty = 1;
+		}
+	}
+1;
+}
+
+sub last {
+	if ( ( $send_404 ) && ( $is_empty ) ) {
+		if (! param('recent')) {
+			$blosxom::output = $message_404;
+			print "Status: 404\n";
+		}
+	}
+	1;
+}
+
+1;

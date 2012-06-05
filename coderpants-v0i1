@@ -1,0 +1,131 @@
+
+
+#!/usr/bin/perl
+# Blosxom Plugin: coderpants
+# Author(s): Eric Sherman <enkidu@enkidu.bloggedup.com
+# Version: 2003-04-28 (v0.1)
+# Documentation: http://enkidu.bloggedup.com/development/blosxom/coderpants/
+#
+# Translates @blah blah blah@ and @@blah blah blah@@ in story files into
+# nicely formatted <code></code> blocks in the tradition of the smartypants 
+# and textile plugins.
+#
+# Just make sure it loads before textile and read the comments below.
+
+package coderpants;
+
+# --- Meta variables -------------
+# meta-coderpants_enable: enables the plugin for this story if set to anything
+# meta-coderpants_disable: disables the plugin for this story if set to anything
+
+# --- Configurable variables -----
+ 
+# should this plugin usually be turned on?
+# 1 = yes, 0 = no 
+$auto_enable = 1;
+
+# the head and foot of an inline code block, usually used for one variable or
+# a short phrase which should appear in the same line as other text.  
+# surrounded by @ signs, with the contents touching the signs.
+# ex: ...this @template@ activates when @$blosxom::flavour eq 'html'@ so...
+# becomes (by default): ...this <code>template</code> activates when <code>$blosxom::flavour eq 'html'</code> so...
+# this may be customized to include a class name or whatever other tag(s) you 
+# want. 
+$code_head = '<code>';
+$code_foot = '</code>';
+
+# the head and foot of a blockquote-style block of code.  this is normally 
+# used for any code longer than one line, or even for single lines which 
+# deserve special attention.  these blocks are designated by matching pairs of
+# @'s signs.  
+# ex:
+# ... 
+# @@
+# public String getNastyString(int foo, int bar) { 
+#	StringBuffer fonk = new StringBuffer(""); 
+#	for (int i = foo; i < bar; i++) {	
+#		fonk = fonk.append(getSomeString(i)); 
+#	}
+#	return fonk.toString();	
+# }
+# @@
+# ...
+# becomes (by default):  
+# ... 
+# <pre><blockquote><code>
+# public String getNastyString(int foo, int bar) { 
+#	StringBuffer fonk = new StringBuffer(""); 
+#	for (int i = foo; i < bar; i++) {	
+#		fonk = fonk.append(getSomeString(i)); 
+#	}
+#	return fonk.toString();	
+# }
+# </code></blockquote></pre>
+# ...
+# this may be customized to include class names or whatever other tag(s) you 
+# want.   the current rational is "the following is code, it should be treated
+# much like a blockquote, and is already preformatted."
+$block_code_head = "<pre><blockquote><code>";
+$block_code_foot = "</code></blockquote></pre>";
+
+# --------------------------------
+
+$enabled = $auto_enable || $meta::coderpants_enable;
+$enabled = 0 if $meta::coderpants_disable;
+
+sub start {
+	return 1;
+}
+
+sub story {
+	my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+	return 1 if (!$enabled);
+
+	# block code
+	#
+	#$$body_ref =~ s/(\s)@@([^\s]+)@@(\s)/$1$block_code_head$2$block_code_foot$3/sg;
+	# one whitespace character = $1 followed by 
+	# '@@' followed by
+	# one or more whitespace characters = $2 (ignored) followed by
+	# one or more of any character = $3 followed by
+	# one or more whitespace characters = $4 (ignored) followed by
+	# '@@' followed by
+	# one whitespace character = $5
+	# multiline
+	#$$body_ref =~ s/(\s)@@(\s+)(.+?)(\s+)@@(\s)/$1$block_code_head$3$block_code_foot$5/sg;
+	# one whitespace character = $1 followed by 
+	# '@@' followed by
+	# one or more of any character = $2 followed by
+	# '@@' followed by
+	# one whitespace character = $3
+	# multiline
+	#
+	# takes care of " @@whatever@@ " 
+	$$body_ref =~ s/(\s)@@(.+?)@@(\s)/$1$block_code_head$2$block_code_foot$3/sg;
+
+	# inline code
+	#
+	# one whitespace character = $1 followed by
+	# '@' followd by
+	# one or more non-whitespace characters = $2 followed by
+	# '@' followed by
+	#  one whitespace character = $3 
+	#
+	# takes care of " @x@ ", " @xx@ ", etc. 
+	$$body_ref =~ s/(\s)@([^\s]+)@(\s)/$1$code_head$2$code_foot$3/g;
+	# one whitespace character = $1 followed by an
+	# '@' followed by
+	# one non-whitespace character = $2 followed by
+	# one or more of any character = $3 followed by
+	# one non-whitespace character = $4 followed by
+	# '@' followed by
+	# one whitespace character = $5
+	# 
+	# takes care of all other cases of " @[morethantwocharacters]@ "
+	$$body_ref =~ s/(\s)@([^\s])(.+?)([^\s])@(\s)/$1$code_head$2$3$4$code_foot$5/g;
+
+	return 1;
+}
+
+1;

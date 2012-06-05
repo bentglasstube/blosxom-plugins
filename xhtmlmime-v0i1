@@ -1,0 +1,104 @@
+# Blosxom Plugin: xhtmlmime -*-cperl-*-
+# Author: Sam Pearson <http://sgp.me.uk/sam>
+# Version: 0.1
+
+package xhtmlmime;
+
+use strict;
+use CGI qw/:standard/;
+
+# --- Configuration ---
+
+# Flavours upon which you want this plugin to act.
+# Multiple flavours should be separated by the vertical bar
+# character, '|', as this will be used in a regular expression.
+my $flavours = '';
+
+# Character encoding used by your website.
+# For English speakers, this will usually be one of:
+# iso-8859-1, utf-8 or windows-1251
+my $charset = 'utf-8';
+
+# --- End Configuration ---
+
+my $mime;
+
+sub start {
+
+  # Should this plugin run at all?
+  $flavours or return 0;
+  $blosxom::flavour =~ /$flavours/ or return 0;
+
+  # Check for ?mime= URL parameter:
+  if ( param('mime') ) {
+    if ( param('mime') eq 'xhtml' ) { $mime = 'xhtml'; }
+    else { $mime = 'html'; }
+    return 1;
+  }
+
+  # Check user-agent HTTP headers:
+  if ( $ENV{'HTTP_ACCEPT'} =~ m!application/xhtml\+xml! ) {
+    if ( Accept('application/xhtml+xml') >= Accept('text/html') ) {
+      $mime = 'xhtml';
+      return 1;
+    }
+  }
+
+  # Fall back onto something safe:
+  $mime = 'html'
+    and return 1;
+
+}
+
+sub last {
+
+  if ( $mime eq 'html' ) {
+    $blosxom::header->{'Content-Type'} = "text/html; charset=$charset";
+  }
+  else {
+    $blosxom::header->{'Content-Type'} = "application/xhtml+xml; charset=$charset";
+  }
+
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plugin: B<xhtmlmime>
+
+=head1 DESCRIPTION
+
+This plugin is designed to return a B<Content-Type:> HTTP header of B<application/xhtml+xml> to user agents that indicate they prefer it to B<text/html> in their B<Accept:> HTTP header.
+
+The highly useful B<CGI.pm> does all the work, even down to interpreting B<q> values.
+
+You can force the plugin to use B<application/xhtml+xml> by specifying a URL parameter of B<mime=xhtml>.  Setting B<mime> to anything else will cause the plugin to use B<text/html>.
+
+=head1 CONFIGURATION
+
+There are two configurable variables:
+
+Set B<$flavours> to a list of the flavours that you want the plugin to act upon.  If this variable is empty, the plugin will quietly exit without doing anything.  Separate each flavour using the vertical bar character, B<|>.  For example: B<my $flavours = 'htm|html';>
+
+Set B<$charset> to the encoding used on your website.  The default is B<utf-8>, but other common English-language codes are B<iso-8859-1> or B<windows-1251>.
+
+=head1 SEE ALSO
+
+Blosxom and application/xhtml+xml:
+
+B<http://sgp.me.uk/sam/2005/06/06/xhtml-mime-plugin>
+
+I am aware that another similar plugin named B<xhtml> was once written.  I was unable to locate a copy after a cursory bit of googling, so I wrote this one.  I would be surprised if there were any substantial differences between the two.
+
+=head1 AUTHOR
+
+Sam Pearson <http://sgp.me.uk/sam>
+
+=head1 LICENSE
+
+Copyright 2005, Sam Pearson
+
+This work is licensed under the Creative Commons Attribution-NonCommercial-ShareAlike License. To view a copy of this license, visit http://creativecommons.org/licenses/by-nc-sa/2.0/uk/ or send a letter to Creative Commons, 559 Nathan Abbott Way, Stanford, California 94305, USA.

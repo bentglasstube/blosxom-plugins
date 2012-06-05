@@ -1,0 +1,139 @@
+# Blosxom Plugin: storylog
+# Author: Mike Downey
+# Version: 0.20
+
+package storylog;
+
+# -------- Configure variables --------
+
+# What kind of list do we want?
+# 0 = no, 1 = simple list, 2 = unordered list, 3 = ordered list
+my $logkeywords = 0;
+my $logcategories = 0;
+my $logcombined = 1;
+
+my $keywordlogfile = "$blosxom::plugin_state_dir/keyword.log";
+my $categorylogfile = "$blosxom::plugin_state_dir/category.log";
+
+my $display = 10; # how many to display
+
+my $showcount = 0; # display number of views?
+
+my $ignore = "Blog|.*[.].*";	# regex to ignore
+
+# -------------------------------------
+
+# To display the most-clicked categories or keywords, use:
+# $storylog::keywords
+# $storylog::categories
+# $storylog::combined
+
+$keywords;
+$categories;
+$combined;
+
+my %keywordcount;
+my %categorycount;
+
+use CGI qw/:standard/;
+
+sub start {
+	
+	if ($logkeywords || $logcombined){
+		
+		open KWF,"<$keywordlogfile";
+		while (my $line = <KWF>){
+			chomp $line;
+			my ($keyword,$count) = split(",",$line);
+			$keywordcount{lc $keyword} = $count;
+			}
+		close KWF;
+
+		if (CGI::param("keyword")){
+
+			$keywordcount{lc CGI::param("keyword")}++;
+			open KWF,">$keywordlogfile";
+			foreach $kw (keys %keywordcount){
+				print KWF "$kw,$keywordcount{$kw}\n";
+				}
+			}
+		close KWF;
+		}
+
+		if ($logcategories || $logcombined){
+		open KWF,"<$categorylogfile";
+		while (my $line = <KWF>){
+			chomp $line;
+			my ($category,$count) = split(",",$line);
+			if ($category =~ /^[\w|\/]+$/){	# if category is only words or /
+				$categorycount{$category} = $count;
+				}
+		}
+		close KWF;
+	
+		if($blosxom::path_info){
+			my $storypath = $blosxom::path_info;
+			# strip any story name from the end of the path
+			$storypath =~ s/\/.*\..*$//;
+
+			$categorycount{$storypath}++;
+
+			open KWF,">$categorylogfile";
+			foreach $kw (keys %categorycount)
+				{print KWF "$kw,$categorycount{$kw}\n";}
+			close KWF;		
+		}
+	}
+
+	# Build up the lists.
+	$keywords = build_list($logkeywords,"?keyword=",\%keywordcount);
+	$categories = build_list($logcategories,"/",\%categorycount);
+
+	# Build the combined list if required
+	if ($logcombined){
+		foreach my $path (keys %categorycount){
+			# skip anything with a . (probably a story)
+			if ($ignore and $path =~ /$ignore/){next;}
+			my $endofpath = (split("/",$path))[-1];
+			$keywordcount{lc $endofpath} += $categorycount{$path};
+		}
+		$combined = build_list($logcombined,"?keyword=",\%keywordcount);
+	}
+	1;
+}
+
+#sub story {
+#	my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+	# eventually log how many times each story gets viewed
+
+#	1;
+#}
+
+
+sub build_list{
+	my ($logtype,$linktype,$logref) = @_;
+	if (!$logtype)
+		{return ""};
+
+	my $count=0;
+	my $list=("","<ul>","<ol>")[--$logtype];
+	
+	foreach $item (sort { $$logref{$b} <=> $$logref{$a} } keys %$logref){
+#	foreach $item (sort keys %$logref){
+		
+		my $makelink = "<a href=\"$blosxom::url$linktype$item\">";
+		my $displayname = $item;
+		$displayname =~ s/[_-](.)/ \u$1/g;
+		$makelink .= ucfirst ($displayname)."</a>";
+		$list .= ("","<li>","<li>")[$logtype] . $makelink;
+		if ($showcount){$list .= " ($$logref{$item})";}
+		$list .= ("<br>","</li>","</li>")[$logtype]."\n";
+		last if (++$count >= $display);
+	}
+
+	$list .= ("","</ul>","</ol>")[$logtype];
+	return $list;
+}
+
+1;
+

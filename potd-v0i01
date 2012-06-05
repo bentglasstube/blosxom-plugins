@@ -1,0 +1,254 @@
+# Blosxom Plugin: potd                                     -*- perl -*-
+# Author: Kevin Scaldeferri (kevin+blosxom at scaldeferri dot com)
+# Version: 0.01
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/blosxom
+
+package potd;
+
+use strict;
+use warnings;
+
+
+# --- Configuration Variables ---
+
+# pattern to use to match local image URLs in stories
+my $image_pattern = qr/\.(jpg|jpeg|gif)/;
+
+# these two patterns are used to transform the name of the image
+# to generate the POTD.  This would typically be used if you
+# want to display full images in the main blog and thumbnails
+# for the POTD.  If either pattern is undef, no transformation will
+# be done
+my $from_pattern = "\.";            # find first '.'
+my $to_pattern   = "-thumbnail.";   # put '-thumbnail' before it
+
+# frequency to pick a new POTD.  Set to 0 to pick a new image
+# for every page load
+my $cache_expire = 60 * 60 * 24;
+
+# Set to 0 for no debugging or 5 for maximum verbosity
+# or somewhere in between for something in between
+my $debug_level = 1;
+
+# -------------------------------
+
+
+# 
+# Variables exported to templates
+#
+use vars qw($potd $potd_source);
+
+use Data::Dumper;
+my $cachefile = "${blosxom::plugin_state_dir}/.". __PACKAGE__ . ".cache";
+
+sub debug {
+  my ($level, @msg) = @_;
+
+  if ($debug_level >= $level) {
+    print STDERR __PACKAGE__ . " debug $level: @msg\n";
+  }
+  1;
+}
+
+
+sub transform_image_name {
+  my $original = shift;
+  
+  if (defined($from_pattern) && defined($to_pattern)) {
+    $original =~ s/$from_pattern/$to_pattern/o; 
+  }
+
+  return $original;
+}
+
+sub file_to_permalink {
+  my $file = shift;
+  
+  # category based permalink
+  $file =~ s/${blosxom::datadir}/${blosxom::url}/o;
+  $file =~ s/${blosxom::file_extension}$/html/o;
+
+  return $file;
+}
+
+
+sub cache_valid {
+  my $cache;
+  if (     $cache_expire
+      && ( $cache = do "$cachefile" )
+      && ( time() - $cache->{timestamp} < $cache_expire )
+     ) {
+    return $cache;
+  } else {
+    return undef;  # not $cache!
+  }
+}
+
+#
+# Plugin Subroutines follow
+#
+
+sub start {
+  debug(1, "loaded potd");
+
+  1;
+}
+
+sub filter {
+  my ($pkg, $files) = @_;
+
+  my $cache;
+
+  if (defined($cache = cache_valid()) ) {
+
+    debug(3, "using cache");
+    $potd = $cache->{potd};
+    $potd_source = $cache->{potd_source};
+
+  } else {
+    debug(3, "cache disabled or expired");
+
+    debug(1, "examining", scalar(keys %$files), "files");
+
+    my %images = ();
+
+    for my $filename (keys %$files) {
+      if (open my $fh, "<", $filename) {
+        debug(5, "opened $filename");
+        my $contents;
+        {
+          local $/;
+          $contents = <$fh>;
+        }
+        close $fh;
+
+        if (my @images = $contents =~ m/<img \s+
+                                     [^>]*
+                                     \bsrc=["']($image_pattern)["']
+                                   /oigx) {
+          for my $image (@images) {
+            debug(3, "found $image in $filename");
+            $images{$image} = $filename;
+          }
+        }
+      } else {
+        debug(1, "Couldn't open $filename : $!");
+      }
+    }
+
+    my @images = keys %images;
+    debug(5, scalar @images, "images found");
+
+    my $image = $images[int(rand(scalar @images))];
+    debug(5, "original image is $image");
+  
+    $potd = transform_image_name($image);
+    debug(1, "potd is $potd");
+
+    my $file = $images{$image};
+    debug(5, "original file is $file");
+    $potd_source = file_to_permalink($file);
+    debug(1, "potd_source is $potd_source");
+
+    $cache = { timestamp => time(),
+               potd      => $potd,
+               potd_source => $potd_source };
+
+    if (open CACHE, ">", $cachefile) {
+      print CACHE Data::Dumper->Dump([$cache], ['cache']);
+    } else {
+      debug(1, "couldn't open cache file [$cachefile] : $!");
+    }
+
+  }
+
+  return 1;
+}
+
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: potd (picture of the day)
+
+=head1 SYNOPSIS
+
+Randomly selects a photo that has been posted in the blog to be
+the "picture of the day" (for an arbitrary value of day).  Provides
+the template variables:
+
+  * $potd::potd -- the URL to the POTD
+  * $potd::potd_source -- permalink to the entry containing the POTD
+
+
+=head1 VERSION
+
+0.01
+
+=head1 Customization
+
+=head2 Configuration variables
+
+C<$image_pattern> is a regular expression used to pick images which
+may be candidates for the POTD.  The intent is typically to restrict
+to images hosted in the same URL space as the blog, although the default 
+is simply any file with a jpg, jpeg, or gif suffix.
+
+C<$from_pattern> and C<$to_pattern> are used to transform the original
+url of the image in order to generate the POTD. This would typically
+be used if you want to display full-size images in the main blog and
+thumbnails for the POTD.  If either pattern is undef, no
+transformation will be done
+
+C<$cache_expire> is the frequency with which to pick a new POTD.  The 
+default is 1 day.  This can be set to 0 to disable caching and pick a
+new image for each request.
+
+C<$debug_level> can be set to a value between 0 and 5; 0 will output
+no debug information, while 5 will be very verbose.  The default is 1,
+and should be changed after you've verified the plugin is working
+correctly.
+
+=head1 AUTHOR
+
+Kevin Scaldeferri (kevin+blosxom at scaldeferri dot com)
+L<http://kevin.scaldeferri.com/>
+
+=head1 BUGS
+
+Probably; address bug reports and comments to me or to the Blosxom
+mailing list L<http://www.yahoogroups.com/groups/blosxom>.
+
+=head1 TODO
+
+=over
+
+=item * Support date-based permalinks
+
+=item * make img tag parsing more robust
+
+=item * provide potd_alt containing any alt text for the image
+
+=back
+
+=head1 Giving Credit
+
+The basic concept for this plugin was stolen from Tim Bray's "Ongoing", 
+L<http://www.tbray.org/ongoing/>
+
+=head1 LICENSE
+
+POTD Blosxom Plug-in
+Copyright 2005, Kevin Scaldeferri
+
+This code is released under the same license as Perl, namely the
+Artistic License:
+L<http://www.perl.com/pub/a/language/misc/Artistic.html>.  (Note that
+this is different from the license which Blosxom is distributed
+under.)
+
+
+

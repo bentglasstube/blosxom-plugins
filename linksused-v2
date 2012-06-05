@@ -1,0 +1,78 @@
+# Blosxom Plugin: Links Used
+# Author: Gregory Bair <http://www.pionar.com>
+# Version: 2
+# Blosxom Home: http://www.blosxom.com
+#
+# Documentation: http://www.pionar.com/blog.cgi/Blosxom/Plugins/linksused
+
+package linksused;
+
+# Only 2 variables!
+# How long is the maximum size you want the URL to be.
+my $urllength = 70;
+
+# Do you want the whole link listed, or just the URL?
+# Values are "link" and "urL"
+$link_or_url = "url";
+#That's it!
+
+#----------------------------------------------------------
+
+sub start
+{
+	1;
+}
+
+sub story
+{
+  
+   my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+   $linksused = "";
+  if($link_or_url eq "link")
+  {
+   @linklist = ($$body_ref =~ m/(<a href=".*?">.*?<\/a>)/gsi);
+   foreach $item (@linklist)
+   {
+ 	$linksused .= qq!$item<br />!;
+   }
+  }
+
+  elsif ($link_or_url eq "url")
+  {
+   @linklist = ($$body_ref =~ m/(<a href=".*?">.*?<\/a>)/gsi);
+   foreach $item (@linklist)
+   {
+    $item =~ /<a href="(.*?)">/i;
+    if (length($1) > $urllength)
+    {
+     my $short = substr($1, 0, $urllength);
+     $linksused .= qq!<a href="$1">$short...</a><br />!;
+    }
+    else
+    {
+     $linksused .= qq!<a href="$1">$1</a><br />!;
+    }
+   }
+  }
+  1;
+}
+1;
+
+=head1 NAME
+
+Blosxom Plugin: linksused
+
+=head1 SYNOPSIS
+
+Populates $linksused::linksused with a list of the links referenced to in that story.  Maybe not so useful, but I think it's neat, and it taught me a bit about Perl regular expressions.
+
+=head1 AUTHOR
+
+Gregory Bair greg@pionar.com, http://www.pionar.com/
+
+=head1 Changelog
+
+2 - Got rid of HTML::LinkExtor module and used regexp matching instead.  
+    Offered choice of link url or linked text.
+    Very much improved over v1.
+1 - Initial version

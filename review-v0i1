@@ -1,0 +1,83 @@
+# Blosxom Plugin: Review
+# Author: Warner Onstine <warner@warneronstine.com>
+# Version: .1
+# http://www.warneronstine.com
+# License: Public Domain
+
+# Review is a Blosxom Plugin that simplifies writing reviews for 
+# such things as movies, restaurants, books, whatever
+
+# Installation:
+#   Drop review into your plugins directory
+
+# Todo:
+#   
+
+package review;
+my %hash;
+my $imdb_link = "http://us.imdb.com/";
+
+sub start {
+    1;
+}
+
+# Modify the body of the story to not only generate some automatic links but to replace
+# specific entries
+sub story {
+    my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    
+    # First load in the alias file
+    my $file_location;
+    my @replaceVars;
+    
+    $file_location = $blosxom::datadir  . $path . "/" . $filename . ".alias";
+    open(fileIN,$file_location);
+    @replaceVars = <fileIN>;
+    foreach $line (@replaceVars)
+    {
+        my $key, $value;
+        chomp($line);
+        ($key, $value) = split(/=/,$line);
+        $hash{$key} = $value;
+    }
+    while ($$title_ref =~ s/%(\w+)%/replaceText($1)/eg){ } 
+    while ($$body_ref =~ s/%(\w+)%/replaceText($1)/eg){ }
+    if($hash{"review_type"}) {
+        buildLinks(\$$body_ref);
+    }
+    undef %hash;
+    1;
+}
+
+sub replaceText {
+    my($text) = shift;
+    my $tmp;
+    if ($text eq "movie_title") {
+        $tmp = '<a href="' . $imdb_link . $hash{"movie_imdb"} . '">' . $hash{$text} . '</a>';
+        return $tmp;
+    } elsif ($text =~ m/actor\_(\w+)/is) {
+        my $actor_link = "actor_" . $1 . "_imdb";
+        $tmp = '<a href="' . $imdb_link . $hash{$actor_link} . '">' . $hash{$text} . '</a>';
+        return $tmp;
+    } else {
+        return $hash{$text};
+    }
+}
+
+sub buildLinks {
+#<a href="asin:B000003RGY">
+    #First we need to build the links relative to this
+    my ($body_ref) = @_;
+    
+    $$body_ref .= $hash{"movie_title"} . " links :<br/>";
+    $$body_ref .= '<a href="' . $imdb_link . $hash{"movie_imdb"} . '">Visit IMDB for ' . $hash{"movie_title"} . '</a><br/>';
+    if ($hash{"movie_dvd_asin"}) {
+        $$body_ref .= '<a href="asin:' . $hash{"movie_dvd_asin"} . '">Buy ' . $hash{"movie_title"} . ' on DVD </a><br/>';
+    }
+    if ($hash{"movie_vhs_asin"}) {
+        $$body_ref .= '<a href="asin:' . $hash{"movie_vhs_asin"} . '">Buy ' . $hash{"movie_title"} . ' on VHS </a><br/>';
+    }
+    1;
+}
+
+1;

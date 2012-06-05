@@ -1,0 +1,47 @@
+# A note from Stu:
+# I've got this in my pile of not-ready-for-prime-time plugins... works
+# great, IF you don't use a date template (i.e. your date template file
+# is empty). If you do use a date template, and the expired entry is the
+# only story for that date, then the date will be displayed in the blog
+# with no entry...boo.
+
+package expirez;
+
+# - USAGE - - - - - - - - - - - - - - - - - -
+# set an "expiration date" for an entry by
+# adding a meta-tag in this format:
+# meta-expire_date: YYYY MM DD
+# (and so, expirez requires the meta plugin)
+# - - - - - - - - - - - - - - - - - - - - - -
+
+use strict;
+use Time::Local;
+
+sub start {
+  $blosxom::path_info =~ /\./ and return 0;     # don't run if
+displaying only one story
+  return 1;
+}
+
+my $time = time;
+
+sub story {
+  my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+  ! $meta::expire_date and return 1;            # skip entry if no
+expiration date
+
+  my @date_ref = split(' ',$meta::expire_date); # get the expiration date,
+                                                # and convert to local time
+  my $exp_time = timelocal(0,0,0,$date_ref[2],$date_ref[1]-1,$date_ref[0]);
+
+                                                # delete title and
+body if expired
+  if ($exp_time < $time) {
+    $$title_ref = "";
+    $$story_ref = "";
+  }
+  1;
+}
+
+1;

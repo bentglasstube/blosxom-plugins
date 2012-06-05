@@ -1,0 +1,146 @@
+# Blosxom Plugin: google_sitesearch
+# Author(s): Rael Dornfest <rael@oreilly.com> 
+# Version: 2.0b4
+# Documentation: See the bottom of this file or type: perldoc google_sitesearch
+
+package google_sitesearch;
+
+# --- Configurable variables -----
+
+# What text should appear on your Search button?
+
+# To which domain(s) would you like to restrict your Google SiteSearch?
+# (Defaults to what you set as your Blosxom $url)
+
+my $domains = "";
+
+# What customization bits were included in the "cof" field when 
+# you signed up for your free Google SiteSearch?
+
+my $cof = "";
+
+# --------------------------------
+
+$searchbox; # use as $google_sitesearch::searchbox in flavour templates
+
+sub start {
+
+  $domains ||= $blosxom::url;
+  $domains =~ s!^\w+?://!!; # get rid of the http:// bit
+
+  $searchbox = <<"SEARCHBOX";
+<!-- Search Google -->
+<form method="GET" action="http://www.google.com/custom">
+<a href="http://www.google.com/"><img src="http://www.google.com/logos/Logo_40wht.gif" border="0" alt="Google"></a>
+<br />
+<input name="q" type="text" size="25" maxlength="255" />
+<br />
+<input type="submit" name="sa" value="Google Search" />
+<input type="hidden" name="domains" value="$domains">
+<input type="hidden" name="cof" VALUE="$cof">
+<br>
+<font face=arial,sans-serif size=-1>
+<input type="radio" name="sitesearch" value="" checked />Search WWW 
+<input type="radio" name="sitesearch" value="$domains" />Search $blosxom::blog_title
+</font>
+</form>
+<!-- Search Google -->
+SEARCHBOX
+  
+  0; # No need to continue; we're done.
+}
+
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: google_sitesearch
+
+=head1 SYNOPSIS
+
+Provides Google Free SiteSearch [http://www.google.com/services/free.html]
+for your weblog.
+
+=head1 INSTALLATION
+
+Drop the google_sitesearch plug-in into your plugins directory.
+
+Use $google_sitesearch::searchbox anywhere in your flavour templates you wish.
+
+=head1 CONFIGURATION
+
+The google_sitesearch plug-in assumes you've signed up for Google's Free
+SiteSearch [http://www.google.com/services/free.html] for your site.
+
+The plug-in will just work out of the box without any configuration.
+That said, it's probably best to apply any configuration settings you
+made when you signed up for Google SiteSearch in the Configurable
+Variables section.
+
+While $domains defaults to something intelligent -- your Blosxom $url
+sans the http:// bit -- you might fill in whatever values appear in 
+the domains field of the form Google created for you when you signed
+up.
+
+e.g. <INPUT type=hidden name=domains value="example">
+
+Simply paste everything between the "" between the "" of $domains in the 
+Configurable Variables section.
+
+Also, Google Free SiteSearch allows you to customize the look-and-feel
+of your results pages.  If you'd like, you can set $cof to the value
+appearing in the cof field of the form Google created for you when
+you signed up.
+
+e.g.  <INPUT type=hidden name=cof VALUE="GIMP:#666666;T:#666666;ALC:#666666;L:http://www.example/images/example.gif;GFNT:#666666;LC:#666666;BGC:#dddddd;AH:center;VLC:#666666;GL:1;S:http://www.example/;GALT:#666666;AWFID:2498b45f59b093e3;">
+
+Simply paste everything between the "" between the "" of $cof in the 
+Configurable Variables section.
+
+=head1 VERSION
+
+2.0b4-5
+
+Version number coincides with the version of Blosxom with which the 
+current version was first bundled.
+
+=head1 AUTHOR
+
+Rael Dornfest  <rael@oreilly.com>, http://www.raelity.org/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Blosxom and this Blosxom Plug-in
+Copyright 2003, Rael Dornfest 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

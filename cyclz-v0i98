@@ -1,0 +1,274 @@
+
+
+# Blosxom Plugin: cyclz
+# Author(s): Stu MacKenzie <http://groups.yahoo.com/group/blosxom/messages>
+#            with help from Rael Dornfest and Tony Williams
+# Version: 2004-03-17 (v0.98)
+
+package cyclz;
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+#
+#  Configuration Section
+#
+# # # # # # # # # # # # # # # # #
+#
+#  the Cycles file --
+#  You tell cyclz what values to use with which variables with 
+#  which flavours by creating "cycles" files. Each file should 
+#  be named "cycles.flavour_extension" (without the quotes). 
+#  For example, "cycles.html" will add alternating variables to 
+#  your "html" flavour story template; "cycles.index" is for 
+#  your "index" flavour; etc. The "cycles" files should be placed 
+#  in your Blosxom plugins' state folder.
+#
+#  In the cycles files, you supply a name and values for as many 
+#  variables as you want. Each variable and its values go on one 
+#  line, like this:
+#  variable_name:value 1,value 2,value 3,value 4
+#  The variable_name can be only one word long, and *must* appear 
+#  first, and it *must* be separated from your list of values by a 
+#  colon. Items in the list *must* be separated by commas (and so, 
+#  commas can't be used in your values; neither can newlines). You 
+#  can specify as many variables as you want for each flavour, and 
+#  as many values as you want for each variable.
+#
+#  What's the complete path to the cycles file?
+#   (leave empty for automatic configuration using Blosxom's plugins state dir)
+  $cycles_path = "";
+#
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+
+# These vars need to be inited before story(); doing 
+# it here allows us to pull out of the plugin queue 
+# if something screws up
+sub start {
+  # get our values file, or bail:
+  !$cycles_path and $cycles_path = "$blosxom::plugin_state_dir/cycles";
+  open(CYCLES, "< $cycles_path.$blosxom::flavour")
+    or open(CYCLES, "< $cycles_path")
+      or 0;
+
+  # all of these hashes have the user-defined var_names as keys; values are:
+  %h = ();               #  the user-defined list_of_values [array]
+  %loop = ();            #  the cycling iterator for this var_name [integer]
+  %limits = ();          #  length of the list_of_values array [integer]
+  $counter = 0;          #  bonus - cumulative number of posts processed
+
+  # process each line's var_name and list of values
+  while (my $str = <CYCLES>) {
+    chomp $str;
+    my($key, $value) = split /\s*?:\s*/, $str, 2;
+    if ($key =~ /^\w+$/) {                   # got a var name? build some values:
+      @fields = split /\s*,\s*/, $value;     #  make an array from list of values
+      $h{$key} = [@fields];                  #  store the value array
+      $loop{$key} = 0;                       #  init the loop-iterator
+      $limits{$key} = scalar(@{$h{$key}});   #  store the length of value array
+    }
+  }
+  close(CYCLES);
+
+  # hero or goat?
+  return scalar(keys(%h))>0;
+}
+
+
+sub story {
+  $counter++;                               # number of entries processed so far
+  foreach my $key (keys %h) {               # create each named var, and give it a value
+    $var_name = $key;
+    $$var_name = $h{$key}[$loop{$key}];
+                                            # increment this var's loop; return to 0 
+                                            # after we've reached the end of our list
+    $loop{$key} = (1+$loop{$key}) % $limits{$key};
+  }
+
+  1;
+}
+
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: cyclz
+
+=head1 SYNOPSIS
+
+The cyclz plugin lets users define any number of flavour-sensitive variables for use in story templates; each variable can be assigned any number of alternating return values. The plugin will then cycle through each variable's list of values each time the story() routine runs as Blosxom builds a page.
+
+=head1 DESCRIPTION
+
+Variable and values are specified in "cycles" files, stored in your Blosxom plugins' state folder. Format for a cycles file is:
+File name: "cycles.flavour_name" (without the quotes). For example: cycles.html; cycles.index; etc.
+
+The way Blosxom is built, every story rendered by a flavour looks exactly the same as every other (except maybe for the first story, whose style can be set from the head template ;-).
+
+The cyclz plugin lets you add a little spice to this uniformity by letting you specify a list of values (style names, color values, just about any text, etc.) from which alternating items will be sent to your story template each time Blosxom composes a story. It's easier to understand than it is to explain:
+
+Here's a very simple .index story template --
+ <tr bgcolor="gray">
+  <td>$title</td>
+  <td>$date</td>
+ </tr>
+ 
+Works fine; a nice solid field of grays ;-) Here's how a few entries look -- 
+  <tr bgcolor="gray">
+   <td>Big Cats</td>
+   <td>Sept 31, 2003</td></tr>
+  <tr bgcolor="gray">
+   <td>Small Fry</td>
+   <td>Aug 32, 2003</td></tr>
+  <tr bgcolor="gray">
+   <td>Some Blogs</td>
+   <td>July 32, 2003</td>
+  </tr>
+  <tr bgcolor="gray">
+   <td>test post</td>
+   <td>June 31, 2003</td>
+  </tr>
+
+Now, let's use cyclz. We'll tell it to create a variable called "bg_color" and give it two alternating values, gray and silver -- here's the "cycles.index" file entry:
+  bg_color:gray,silver
+
+and we'll call it like this in our story.index template:
+  <tr bgcolor="#cyclz::bg_color"><td>$title</td><td>$date</td></tr>
+
+Here's how a few entries look --
+  <tr bgcolor="gray">
+   <td>Big Cats</td>
+   <td>Sept 31, 2003</td>
+  </tr>
+  <tr bgcolor="silver">
+   <td>Small Fry</td>
+   <td>Aug 32, 2003</td>
+  </tr>
+  <tr bgcolor="gray">
+   <td>Some Blogs</td>
+   <td>July 32, 2003</td>
+  </tr>
+  <tr bgcolor="silver">
+   <td>test post</td>
+   <td>June 31, 2003</td>
+  </tr>
+Now you've got alternating rows of color...kinda cool ;-)
+
+Here's what's even cooler -- you can define as many variables as you want, and each variable can have as many values as you want. Let's expand on our .index example (above) --We'll tell cyclz to create another variable, this one named "color_bg" and give it two alternating values -- silver and gray. Here's the cycles.index entries:
+  bg_color:gray,silver
+  color_bg:silver,gray
+
+Now we have two alternating vars:bg_color moves from gray to silver to gray to silver, etc.; while color_bg moves from silver to gray to silver to gray, etc.
+We'll call them like this in our story.index template --
+ <tr>
+  <td bgcolor="#cyclz::bg_color">$title</td>
+  <td bgcolor="#cyclz::color_bg">$date</td>
+ </tr>
+
+Here's how a few entries look --
+  <tr>
+   <td bgcolor="gray">Big Cats</td>
+   <td bgcolor="silver">Sept 31, 2003</td>
+  </tr>
+  <tr>
+   <td bgcolor="silver">Small Fry</td>
+   <td bgcolor="gray">Aug 32, 2003</td>
+  </tr>
+  <tr>
+   <td bgcolor="gray">Some Blogs</td>
+   <td bgcolor="silver">July 32, 2003</td>
+  </tr>
+  <tr>
+   <td bgcolor="silver">test post</td>
+   <td bgcolor="gray">June 31, 2003</td>
+  </tr>
+Now you're *weaving* color...nice ;-)
+
+Another example -- 
+Let's say you wrap each entry in a <blockquote> tag, and put a border around blockquotes via css. Looks nice, but every border is the same color. 
+
+Let's alternate those border colors in css (and the backgrounds, too ;-)...
+ blockquote {blah:blah; border:4px solid #cccccc;}
+ blockquote.blue {border-color:#3333dd; background-color:#6af;}
+ blockquote.green {border-color:#33dd33; background-color:#6af;}
+ blockquote.red {border-color:#dd3333; background-color:#6af;}
+ blockquote.yellow {border-color:#ffff33; background-color:#6af;}
+and create a variable to call them --
+ border_color : blue, red, green, yellow
+
+Let's *also* change the font of headlines in each entry, from serif to sans-serif and back. Here's the css --
+ h1.ser {font-family:serif;}
+ h1.san {font-family:sans;}
+and create a var to call 'em, from a cycles file --
+ h1_face : ser,san
+ 
+We'll tell cyclz to alternate between four bgcolor values -- blue, green, red, yellow -- *and* our h1 values -- ser,san -- and call it like this:
+ <blockquote class="#cyclz::border_color">
+  <h1 class="$cyclz::h1_face>$title</h1>
+  $story
+ </blockquote>
+
+Now, the 1st, 5th, 9th.. stories will have a blue border; the 2nd, 6th, 10th.. stories will have green borders; the 3rd, 7th, 11th.. stories will have red borders; and the 4th, 8th, 12th.. stories will have yellow borders. AND, every 1st, 3rd, 5th, etc. title will be in a serif face, wihle the 2nd, 4th, 6th, etc. titles will be in a sans-serif face.
+
+=head1 CONFIGURABLE VARIABLES
+
+* The scalar $cycles_path becomes the complete path to the cycles file; leave it blank to automatically configure using Blosxom's plugins state dir
+
+=head1 INSTALLATION
+
+Enter configuration values per CONFIGURATION SECTION; drop this file into your blosxom plugins folder; blog on.
+
+=head1 USAGE
+
+Without a "cycles.flavourExtension" file the plugin won't go very far, so you need to make one first. The file is composed of lines of text; each line handles one variable. The line format is:
+  variable_name:value 1,value 2,value 3,value 4
+
+The variable_name can be only one word long, and must appear first; a colon follows; and then a list of comma-delimited values for the variable. (This means that the file name can't contain a colon, and variable values can't include commas.) You can specify as many variables as you want for each flavour, and as many values as you want for each variable.
+
+Once you've got a cycles file set up for for a flavour, you'll need to add code to that flavour's "story" file, to receive the cycling values of your variables. See the top section of this file for examples.
+
+One more thing -- a counter increments for each story; this can be accessed in $cyclz::counter
+
+=head1 CREDITS
+
+Tips from Tony Williams and Rael Dornfest
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 VERSION
+
+2004-03-17 (v0.98) - doc it
+2004-03-07 (v0.96) - cleanup
+2003-09-19 (v0.6)  - multi-flavoured; multi-variabled; multi-valued
+2003-09-18 (v0.5b) - external multi-flavoured prefs added; much more to do
+2003-09-17 (v0.5d) - it's alive
+
+=head1 LICENSE
+
+cyclz plugin
+Copyright 2003-2004, Stu MacKenzie
+
+(This license is the same as Blosxom's)
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

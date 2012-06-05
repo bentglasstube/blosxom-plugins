@@ -1,0 +1,164 @@
+# Blosxom Plugin: meta_date
+# Author(s): Robert Hahn <rh-blosxom@tenletters.com> 
+#            http://www.tenletters.com/rhahn
+# Version: 0+1i
+# Documentation: See the bottom of this file or type: perldoc meta_date
+
+package meta_date;
+
+use File::stat;
+use Time::localtime;
+
+# --- Configurable variables -----
+
+# Set the timezone offset.
+
+$tz = "-0500";
+$showtime = "true";
+
+# --------------------------------
+
+$meta;
+
+%month2num = (nil=>'00', Jan=>'01', Feb=>'02', Mar=>'03', Apr=>'04', May=>'05', Jun=>'06', Jul=>'07', Aug=>'08', Sep=>'09', Oct=>'10', Nov=>'11', Dec=>'12');
+sub start {
+  1;
+}
+
+sub head {
+  my($pkg, $currentdir, $head_ref) = @_;
+   
+   my $mtime, $time;
+  if ($currentdir) {
+	  if ($currentdir =~ m#(.*?)/?(\w+)\.(\w+)$# and $2 ne 'index') {
+		$file = join('/', $blosxom::datadir, $1, "$2.txt");
+		$mtime = stat($file)->mtime or print STDERR "meta_date: $!\n";
+	  }
+  }
+  
+  ($dw,$mo,$mo_num,$da,$ti,$yr) = nice_date($mtime);
+  ($hr,$min) = split /:/, $ti;
+  ($hr12, $ampm) = $hr >= 12 ? ($hr - 12,'pm') : ($hr, 'am'); 
+  $hr12 =~ s/^0//; $hr12 == 0 and $hr12 = 12;
+
+
+  if($yr eq "1969" ) {
+    $meta = "";
+  }else{
+    if($showtime eq "true") {
+	$time = "$hr:$min $tz";
+    }
+    $meta = "<meta name=\"Date\" content=\"$yr-$mo_num-$da $time\" />";
+  }
+}
+
+sub nice_date {
+  my($unixtime) = @_;
+  
+  my $c_time = ctime($unixtime);
+  my($dw,$mo,$da,$ti,$yr) = ( $c_time =~ /(\w{3}) +(\w{3}) +(\d{1,2}) +(\d{2}:\d{2}):\d{2} +(\d{4})$/ );
+  $da = sprintf("%02d", $da);
+  my $mo_num = $month2num{$mo};
+  
+  return ($dw,$mo,$mo_num,$da,$ti,$yr);
+}
+
+1;
+__END__
+=head1 NAME
+
+Blosxom Plug-in: personLink
+
+=head1 SYNOPSIS
+
+Purpose: After noticing that some Google queries sport a date, I investigated further and found that Google looks for tags like this:
+
+	<meta name="Date" content="2004-01-15" />
+
+This plugin is used to augment your templates by adding in this meta tag for all individual entries.
+
+
+=head1 PREQUISITES
+
+None.
+
+=head1 DETAILS
+
+This plug-in is designed only for those blogs that are configured to display single posts.  You'll know what I mean if your style of permalinking is not to reference a post with an anchor in the URI, but a link to the post itself.
+
+=head1 CUSTOMIZATION
+
+The meta tag can only really be formatted one way, so the only customization available is to set the timezone, and to allow posting the time of the post.
+
+$tz -- sets the timezone.
+
+The best way to find out your timezone offset is probably to go visit this page: http://timezoneconverter.com/ 
+
+When you conduct a search of your location, you'll be presented with a table of results. In one of the columns, you'll see a field that looks something like this:
+
+  -00:05:00:00
+
+To convert that value into something for this plug-in, remove the first pair of zeros, and all colons.  It'll then look like this:
+
+  -050000
+
+If the last pair of digits are both zeros, they may be omitted:
+
+  -0500
+
+$showtime -- indicates whether you want time info in the meta tag
+
+Allowed values are "1" (for yes) and "0" (for no)
+
+
+=head1 VERSION
+
+0+1i First Release.
+
+=head1 AUTHOR
+
+Robert Hahn  
+  rh-personlink@tenletters.com
+  [http://www.tenletters.com/rhahn/]
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: 
+  [http://www.raelity.org/apps/blosxom/]
+
+Blosxom Plugin Docs: 
+  [http://www.raelity.org/apps/blosxom/plugin.shtml]
+
+Link for this plug-in: 
+  [http://www.tenletters.com/rhahn/Internet/Blogging/Blosxom/]
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Blosxom
+Copyright 2003, Rael Dornfest 
+
+meta_date
+Copyright 2004, Robert Hahn
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

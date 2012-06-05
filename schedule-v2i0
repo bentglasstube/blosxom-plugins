@@ -1,0 +1,198 @@
+#!/usr/bin/perl
+# Blosxom Plugin: schedule
+# Author(s): Peter Florijn <tooh@tooh.myweb.nl> 
+# Version: 2.0
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+# Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+package schedule;
+use POSIX qw(strftime);
+
+$schedule;
+
+# --- Configurable variables -----
+$debug_level ||= 1;
+my $package = "schedule";
+
+# CSS class for events list
+$list_class = "<CLASS=\"menuitem\">";
+$list_prepend = "<TABLE BORDER=\"1\">";
+$list_append  = "</TABLE>";
+
+# CSS class for items
+$item_class = "<CLASS=\"menuitem\">";
+$item_label_prepend = "<TR><TD>";
+$item_label_append  = "</TD>";
+
+# CSS class for item descriptions
+$item_description_prepend = "<TD>";
+$item_description_append  = "</TD></TR>";
+
+sub debug {
+    my ($level, @msg) = @_;
+
+    if ($debug_level >= $level) {
+	print STDERR "$package debug $level: @msg\n";
+    }
+}
+
+sub genschedule {
+
+$todays_date = strftime("%b %d %Y", localtime());  
+
+# Which file holds the info?
+$filename = "$blosxom::datadir/.mycalendar";
+
+# Let's make sure that the file '$filename' exists!
+die "$filename doesn't exist\n" if (! -e $filename);
+
+# Let's process the dates....
+
+@todays_date = split /\s+/, $todays_date;
+($tmonth, $tday, $tyear) = ($todays_date[0], $todays_date[1], $todays_date[2]);
+
+$upper_month= uc($tmonth);
+# Let's check the file.
+open (FILENAME, "$filename") || die "error opening file $filename";
+#print " --- Schedule for $todays_date --- \n";
+$result .= $list_class . $list_prepend . "<TH COLSPAn=\"2\">Schedule for $upper_month</TH>";
+
+while ($line = <FILENAME>)
+{
+   chop $line;
+
+   # Let's skip the comments or blank lines!
+   next if ($line =~ /^\s*#/ || $line =~ /^\s*$/);
+
+   # Let's split the lines
+   @fields = split /\s+/, $line;
+
+   # Let's grab the appropriate fields
+   $len = $#fields + 1;
+   ($month, $day, $year) = ($fields[0], $fields[1], $fields[2]);
+
+if ($year =="*")
+{ 
+$year = $tyear;
+} 
+   @message = @fields[3..($len - 1)];
+
+   # Let's print if there is appropriate message
+#   if ($day =~ /^$tday$/i && $month =~ /^$tmonth$/i && $year =~ /^$tyear$/i)
+#   {
+#      print "@message\n";
+#   }
+#  Let's print if there is appropriate message
+   if ($month =~ /^$tmonth$/i && $year =~ /^$tyear$/i)
+   {
+      $result .= $item_class . $item_label_prepend . $day . $item_label_append . $item_description_prepend . "@message" . $item_description_append;
+
+   }
+
+}
+      $result .= $list_append;
+
+return $result;
+}
+
+
+sub start {
+$schedule = genschedule();
+	return 1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: schedule
+
+=head1 SYNOPSIS
+
+Purpose: Produces a list of calendar events from a.calendar file.
+
+Description
+
+This plugin generates a schedule from .mycalendar file 
+
+Configuration
+
+$debug_level ||= 1;
+
+Set debuglevel to 0 when the plugin works OK.
+
+$list_class = "<CLASS=\"menuitem\">";
+$list_prepend = "<TABLE BORDER=\"1\">";
+$list_append  = "</TABLE>";
+
+# CSS class for items
+$item_class = "<CLASS=\"menuitem\">";
+$item_label_prepend = "<TR><TD>";
+$item_label_append  = "</TD>";
+
+# CSS class for item descriptions
+$item_description_prepend = "<TD>";
+$item_description_append  = "</TD></TR>";
+
+
+Additional Bits Required 
+
+Category
+/text ?
+
+Date
+14-9-2003
+
+Todo list
+
+<BR>
+
+=head1 VERSION
+
+2.0
+
+Version number coincides with the version of Blosxom with which the 
+current version was first bundled.
+
+=head1 AUTHOR
+
+Peter Florijn  <tooh@tooh.myweb.nl>, http://tooh.myweb.nl/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+This Blosxom Plug-in
+Copyright 2003, Peter Florijn 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+
+

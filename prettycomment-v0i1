@@ -1,0 +1,64 @@
+# Blosxom Plugin: prettycomment
+# Author(s): Matt Melton
+# Version: 0.1
+# Home/Docs/Licensing: contact at http://my-security.net
+
+# A bloxsom plugin to fix the comment/comments problem that annoys people so much.
+# (i've seen a load of fixes for this, but this ones almost drag and drop)
+
+package prettycomment;
+
+# --- Configurable variables -----
+
+# Where are writebacks kept?
+my $wb_dir = "/home/security/blogplugins/state/writeback";
+
+# What file extension is used for writebacks? 
+my $wb_extension = "wb";
+
+# Here are the writeback strings, use $prettycomment::wb_comment in your flavours
+my @writeback_string = ("comments, click here to add the first", # if there are no writebacks
+			"comment", 				 # if there is only 1 writeback
+			"comments");				 # if there is more than 1
+
+
+# There are no more user configurable variables
+
+
+# --------------------------------
+
+use CGI qw/:standard/;
+use FileHandle;
+
+$wb_comment;
+
+sub start {
+	1;
+}
+
+sub story {
+	my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+	my $fh = new FileHandle;
+	my $count = 0;
+	$wb_comment = $writeback_string[0];
+
+  	if ( $fh->open("$wb_dir$path/$filename.$wb_extension") ) {
+      		map { $count++ if /^-----$/; } (<$fh>);
+  	}
+  	$wb_comment = $writeback_string[1] if ($count == 1);
+  	$wb_comment = $writeback_string[2] if ($count > 1);
+
+ 	1;
+}
+
+
+1;
+
+__END__
+
+How to use:
+
+Copy file to your plugin directory, as "prettycomment", case sensitive.
+
+Find some thing looking similar to, where you have "$writeback::count comments" in your story flavour, and replace with "$writeback::count $prettycomment::wb_comment"

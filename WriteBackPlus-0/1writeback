@@ -1,0 +1,615 @@
+# Blosxom Plugin: WritebacksPlus
+# Author: Fletcher T. Penney http://fletcher.freesheel.org/
+#		Much of the original code by Rael Dornfest
+# MT-Blacklist and E-mail Notify added by Tony Shadwick (Numbski)
+#		http://www.numbski.net
+# Version 0.2.1a
+
+package writeback;
+use CGI::Carp 'fatalsToBrowser';
+
+# This plugin is essentially a drop in replacement for the original
+# writeback plugin by Rael.  There were a couple of issues with the
+# original, plus I have added a lot of new features.
+#
+# Finally, I just decided to merge a couple of writeback related
+# plugins and finally "resolve" this matter.
+#
+# This plugin replaces the original writeback plugin, the recentwritebacks
+# plugin, and the seewritebacks plugin.
+#
+# Additionally, it adds the functionality of my antispam plugin to the
+# writebacks, masking email from the spambots.  ( It's not guaranteed to
+# help, but it can't hurt... )
+#
+# But wait, that's not all.  It also attempts to do some escaping to 
+# prevent blosxom variables OR errant HTML tags from being displayed in comments
+#
+# NOTE: This means you cannot include HTML code in comments, other than <p> and 
+# <br> tags at present.  Support for additional tags can be added.
+#
+# Enjoy
+
+# Numbski's notes - I've also added support for the MT-Spam Blacklist at 
+# http://www.jayallen.org/comment_spam/ .  This should prevent comment spam
+# from appearing in your blog.  This adds some extra setup steps, but is well
+# worth the effort.  You will receive e-mail notifications of new posts just
+# in case something slips through.
+
+
+# Instructions
+# To set this up, do the following:
+# 	- Put this plugin in your plugin directory, for ease of use, leave it
+#		named 1writeback
+#	- You need 2 flavour files ( writeback.flavour and
+#		writebacksform.flavour ), or the corresponding sections
+#		in your theme.  (NOTE: You can create versions for each of your 
+#		flavours or themes, or you can create a set ending in 
+#		".general" that will be used for all themes)  Put them wherever
+#		you store your flavour files.
+#	- writeback.flavour contains the display information for comments
+#		if absent, the default will be used which is built in to this
+#		plugin.
+#	- writebacksform.flavour contains the writeback submission form and
+#		other data.  A sample was included with this file.
+#	- You need to put two variables in your story.flavour or the 
+#		story section of your theme file, $writeback::writebacks, and 
+#		$writeback::writebacksform
+#	- You need to configure this plugin so that it knows where to store
+#		the writebacks.  Edit the $writeback_dir variable, and ensure that
+#		the corresponding folder exists and has read/write permissions
+#		(ie chmod 777)
+#	- Add the <h3>Comments...</h3> and $writeback::writeback_response 
+#		variable to your story flavour
+#
+#	That should do it!  Just read through this file to learn what you can
+# 	do!
+#
+#	NOTE: Rael's documentation was more thorough - you should check out 
+# 	his writeback plugin's documentation to read more about trackbacks
+# 	etc.  Just don't install that version anymore - this one is better!
+
+#	Numbski's NOTE:  To added MT-Blacklist functionality, you will need to 
+#	place update-blacklist.pl in your blosxom plugins directory (or anywhere you have
+#	execute permissions on your system), edit update-blacklist.pl so that $state_dir
+#	points to your blosxom plugin's state directory.  Make sure the file is 
+#	executable, and make a crontab entry to run the script a couple of times
+#	an hour.  It checks an rss feed, so it's not too big of a deal.  Here's an
+#	example:
+
+#	*/30 * * * *    perl /Users/numbski/blosxom_plugins/update-blacklist.pl >log-out 2>log-err || cat log-err
+
+#	That should do it.  The plugin will check state/blacklist.txt before every entry into your blog.
+#	You may wish to run update-blacklist.pl the first time yourself just to be sure 
+#	you have the blacklist.
+#	If spam DOES happen to get through, forward the notification you receive to this
+#	e-mail address.  A script will add it to the blacklist:
+#	mtbcsc-spamsubmit@jayallen.org
+
+# --- Configurable variables -----
+
+# Where should I keep the writeback hierarchy?
+# I suggest: $writeback_dir = "$blosxom::plugin_state_dir/writeback";
+#
+# NOTE: By setting this variable, you are telling the plug-in to go ahead
+# and create a writeback directory for you.
+my $writeback_dir = "$blosxom::plugin_state_dir/writeback";
+
+# Where should I keep the local copy of the MT-Blacklist?
+my $blacklist = "$blosxom::plugin_state_dir/blacklist.txt";
+
+# Enter seperated by spaces any Topics you wish to have writebacks disabled for.
+my @disabled_topics =
+    qw( Perl6Goodness );
+
+# Any keywords you would like to have blacklisted enter here.
+my @disallowed_keywords = 
+    qw( levitra paxil migraine-relief fioricet headachetreatment.net);
+
+# address to email writeback details to.  leave blank if you don't
+# want email notification
+my $address = 'me@myhost.com';
+
+# What flavour should I consider an incoming trackback ping?
+# Otherwise trackback pings will be ignored!
+my $trackback_flavour = "trackback";
+
+# What file extension should I use for writebacks? 
+# Make sure this is different from that used for your Blosxom weblog
+# entries, usually txt.
+my $file_extension = "wb";
+
+# What fields are used in your comments form and by trackbacks?
+my @fields = qw! name url date title comment excerpt blog_name ip !;
+
+# CGI parameter to filter for stories with writebacks within
+# the last x days
+$switch_word = "recent";
+	# ie http://some.host/?recent=5
+	# This would show stories with writebacks in last 5 days
+	
+# Use embedded datestamp, rather than file modification date
+# to determine comment dates
+$use_datestamp = 1;
+
+# What field contains the date?
+$date_field = "date";
+
+# What date format to use?
+$use_UK_dates = 0;			# Default is mm/dd/yy (US)
+							# Set to 1 to use dd/mm/yy (UK)
+
+# Use the "inverted" date format:
+#	yyyy/mm/dd
+$use_inverted_dates = 0;
+
+
+# Should I emulate the seewritebacks plugin?
+# This automatically displays writeback information on single
+# story view pages, and when the "?seewritebacks=y" bit is
+# appended to a url
+
+$do_seewritebacks=1;
+
+# --------------------------------
+
+
+# Comments for a story; use as $writeback::writebacks in flavour templates
+$writebacks;
+
+# Count of writebacks for a story; use as $writeback::count in flavour templates
+$count;
+
+# The path and filename of the last story on the page (ideally, only 1 story
+# in this view) for displaying the trackback URL;
+# use as $writeback::trackback_path_and_filename in your foot flavour templates
+$trackback_path_and_filename;
+
+# Response to writeback; use as $writeback::writeback_response in 
+# flavour templates
+$writeback_response;
+
+# Response to a trackback ping; use as $writeback::trackback_response in
+# head.trackback flavour template
+$trackback_response =<<'TRACKBACK_RESPONSE';
+<?xml version="1.0" encoding="iso-8859-1"?>
+<response>
+<error></error>
+<message></message>
+</response>
+TRACKBACK_RESPONSE
+ 
+# Writeback submission form.  This is used to replace the functionality of 
+# the seewritebacks plugin as well.
+$writebacksform;
+
+
+# --------------------------------
+
+
+use CGI qw/:standard/;
+use FileHandle;
+use File::stat;
+use Time::Local;
+
+
+my $time = time();
+my $fh = new FileHandle;
+my $email = '[\w\.\-]+@([\w\-]+\.)+[\w]+'; 
+
+
+# Strip potentially confounding bits from user-configurable variables
+$writeback_dir =~ s!/$!!; $file_extension =~ s!^\.!!;
+
+# Save Name and URL/Email via cookie if the cookies plug-in is available
+$cookie;
+
+sub start {
+
+	# $writeback_dir must be set to activate writebacks
+	unless ( $writeback_dir ) { 
+		warn "blosxom : writeback plugin > The \$writeback_dir configurable variable is not set; please set it to enable writebacks. Writebacks are disabled!\n";
+		return 0;
+	}
+
+
+	# the $writeback_dir exists, but is not a directory
+	if ( -e $writeback_dir and ( !-d $writeback_dir or !-w $writeback_dir ) ) { 
+		warn "blosxom : writeback plugin > The \$writeback_dir, $writeback_dir, must be a writeable directory; please move or remove it and Blosxom will create it properly for you.  Writebacks are disabled!\n";
+		return 0;
+	}
+  
+	# the $writeback_dir does not yet exist, so Blosxom will create it
+	if ( !-e  $writeback_dir )  {
+		my $mkdir_r = mkdir("$writeback_dir", 0777);
+		warn $mkdir_r 
+			? "blosxom : writeback plugin > \$writeback_dir, $writeback_dir, created.\n"
+			: "blosxom : writeback plugin > There was a problem creating your \$writeback_dir, $writeback_dir. Writebacks are disabled!\n";
+		$mkdir_r or return 0;
+
+		my $chmod_r = chmod 0777, $writeback_dir;
+	    warn $chmod_r 
+		? "blosxom : writeback plugin > \$writeback_dir, $writeback_dir, set to 0755 permissions.\n"
+		: "blosxom : writeback plugin > There was a problem setting permissions on \$writeback_dir, $writeback_dir. Writebacks are disabled!\n";
+		$chmod_r or return 0;
+
+		warn "blosxom : writeback plugin > writebacks are enabled!\n";
+	}
+
+	# Check to see if we should filter for dates...
+	if (CGI::param($switch_word)) {
+		my $time_window = CGI::param($switch_word);
+		$time =  $time - $time_window*60*60*24;
+	} else { 
+		$time = 0;
+	}
+
+	$path_info = CGI::path_info();
+	my($path,$fn) = $path_info =~ m!^(?:(.*)/)?(.*)\.$blosxom::flavour!;
+	$path =~ m!^/! or $path = "/$path";
+	$path = "/$path";
+
+
+	# Only spring into action if POSTing to the writeback plug-in
+	if ( request_method() eq 'POST' and (param('plugin') eq 'writeback' or $blosxom::flavour eq $trackback_flavour) ) {
+
+	 foreach my $file (@disabled_topics) {
+          if ($path_info =~ /$file/i) {
+              $writeback_response = "This topic is spammed too much.  Writebacks disabled.";
+              $trackback_response =~ s!<error></error>!<error>1</error>!m;
+              $trackback_response =~ s!<message>trackback error</message>!!m;
+              return 1;
+          }
+      }
+
+      my $values = "";
+      foreach my $key (param()) {
+          $values .= param($key) . "\n"
+      }
+      my @blacklist = read_blacklist();
+      die "I didn't catch that\n" unless @blacklist;
+      foreach $spam (@blacklist) {
+	  chomp($spam);
+          if ($values =~ /$spam/im) {
+              $trackback_response =~ s!<error></error>!<error>1</error>!m;
+              $trackback_response =~ s!<message>trackback error</message>!!m;
+              $writeback_response = "I highly suspect you're a spammer and you're vandalizing personal property.  That's much worse than just filling my inbox with crap.  Now you're defacing my home.";
+              return 1;
+          }
+      }
+		foreach ( ('', split /\//, $path) ) {
+			$p .= "/$_";
+			$p =~ s!^/!!;
+			-d "$writeback_dir/$p" or mkdir "$writeback_dir/$p", 0777;
+			chmod (0777,"$writeback_dir/$p");
+		}
+
+		if ( $fh->open(">> $writeback_dir$path/$fn.$file_extension") ) {
+			foreach ( @fields ) {
+				my $p = param($_);
+				if ( $_ == "url" ) {
+					$p =~ s/^($email)/mailto:$1/;
+				}
+				$p =~ s/\r?\n\r?/\r/mg;
+        
+				if ( $_ eq "ip" ) {
+					# Log IP address of poster
+					$p = $ENV{'REMOTE_ADDR'};
+				}
+        
+				if ( $_ eq "date" ) {
+					# Log datestamp for comment
+        			my ($sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst) = localtime(time());
+					$year += 1900;
+					$mon += 1;
+					$hour = sprintf("%02d",$hour);
+					$min = sprintf("%02d",$min);
+					$sec = sprintf("%02d",$sec);
+					if ( $use_UK_dates eq 0) {
+						# US Formatting
+			        	$p = "$mon/$mday/$year $hour:$min:$sec";
+			        } else {
+			        	# UK Formatting
+			        	$p = "$mday/$mon/$year $hour:$min:$sec";
+			        }
+			        
+			        if ( $use_inverted_dates eq 1) {
+			        	# Inverted formatting
+			        	$p = "$year/$mon/$mday $hour:$min:$sec";
+			        }
+	 	       }
+        
+				if ( $_ eq "comment" ) {
+        		# Convert all "$" to web-safe version to prevent accidentally
+        		# ( or purposefully) including variables in comments that
+        		# crash blosxom
+        			$p =~ s/\$/&#36;/g;
+	        		$p =~ s/<(?!(\/?(p|br)\/?))/&lt;/g;
+    	    		$p =~ s/<br>/<br\/>/;
+				}
+        
+        		print $fh "$_: $p\n";
+      		}
+
+			print $fh "-----\n";
+			$fh->close();
+			chmod (0777,"$writeback_dir$path/$fn.$file_extension");
+
+          # send the email if there's an address
+          if ($address) {
+              use Net::SMTP;
+              my $comment = param('comment') || param('excerpt');
+              my $smtp = Net::SMTP->new('localhost');
+              $smtp->mail($address);
+	      $smtp->to($address);
+              $smtp->data();
+              $smtp->datasend("To: $address\n");
+              $smtp->datasend($headers);
+              $smtp->datasend("\n\n");
+              $smtp->datasend($comment);
+              $smtp->datasend("\n----\n$path\n");
+              $smtp->dataend();
+              $smtp->quit;
+          }
+
+			$trackback_response =~ s!<error></error>!<error>0</error>!m;
+			$trackback_response =~ s!<message></message>\n!!s;
+			$writeback_response = "Thanks for the comment!<br/>";
+	
+			# Make a note to save Name and URL/Email if save_preferences checked
+			param('save_preferences') and $cookie++;
+			# Pre-set Name and URL/Email based on submitted values
+			$pref_name = param('name') || '';
+			$pref_url = param('url') || '';
+		} else {
+			warn "couldn't >> $writeback_dir$path/$fn.$file_extension\n";
+			$trackback_response =~ s!<error></error>!<error>1</error>!m;
+			$trackback_response =~ s!<message>trackback error</message>!!m;
+			$writeback_response = "There was a problem posting your comment.";
+		}
+	}
+		
+	1;
+}
+
+
+sub story {
+	my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    
+	$path =~ s!^/*!!; $path &&= "/$path";
+	($writebacks, $count)  = ('', 0);
+	my %param = ();
+
+	# Prepopulate Name and URL/Email with cookie-baked preferences, if any
+	if ( $blosxom::plugins{cookies} > 0 and my $cookie = &cookies::get('writeback') ) {
+		$pref_name ||= $cookie->{'name'};
+		$pref_url ||= $cookie->{'url'};
+	}
+
+	if ( $fh->open("$writeback_dir$path/$filename.$file_extension") ) {
+		foreach my $line (<$fh>) {
+			$line =~ /^(.+?): (.*)$/ and $param{$1} = $2;
+			if ( $line =~ /^-----$/ ) {
+
+				my $writeback = &$blosxom::template($path,'writeback',$blosxom::flavour) || &$blosxom::template($path,'writeback','general') || '<p><b>Name/Blog:</b> $writeback::name$writeback::blog_name<br /><b>URL:</b> $writeback::url<br /><b>Title:</b> $writeback::title<br /><b>Comment/Excerpt:</b> $writeback::comment$writeback::excerpt</p>';
+
+				$writeback =~ s/\$writeback::(\w+)/$param{$1}/ge;
+				$writebacks .= $writeback;
+				$count++;
+			}
+		}
+
+		# Added for spam protection
+		while ($writebacks =~ /($email)/ig) {
+			$original=$1;
+			$masked="";
+			@decimal = unpack('C*', $original);
+			foreach $i (@decimal) {
+				$masked.="&#".$i.";";
+			}
+			$writebacks =~ s/$original/$masked/ig;
+		}
+	}
+
+	$trackback_path_and_filename = "$path/$filename";
+	
+	# This bit display writebacks if:
+	#	the seewritebacks parameter is submitted
+	# 	a writeback is submitted
+	#	if a single story is displayed
+	
+	if ( $do_seewritebacks && ((CGI::param("seewritebacks")) || (CGI::param("plugin") eq 'writeback') ||
+		($blosxom::path_info =~ /\./))) {
+			# Load the writebacksform template and fill in variables
+			
+			$writebacksform = &$blosxom::template($path,'writebacksform',$blosxom::flavour) || &$blosxom::template($path,'writebacksform','general');
+			$writebacksform = &$blosxom::interpolate($writebacksform);
+	}
+
+		
+	1;
+}
+
+sub head {
+	$blosxom::plugins{cookies} > 0 and $cookie and &cookies::add(
+		cookie(
+			-name=>'writeback', 
+			-value=>{ 'name' => param('name'), 'url' => param('url') }, 
+			-path=>$cookies::path,
+			-domain=>$cookies::domain,
+			-expires=>$cookies::expires
+		)
+	);
+}
+
+sub filter {
+	# This filters articles based on comment date
+	my ($pkg, $files_ref) = @_;
+	my @files_list = keys %$files_ref;
+
+	# If $time was set to 0, then don't filter
+	return 1 if ( $time == 0 );
+	
+	foreach $file (@files_list) {
+		$realfile = $file;
+		$file =~ s/$blosxom::datadir/$writeback_dir/;
+		$file =~ s/txt$/$file_extension/;
+		if ($fh->open("$file")) {
+			$keep =0;
+			
+			$stats = stat($file)->mtime;
+
+			if ( $use_datestamp == 1 ) {
+				while ( $line = <$fh> ) {
+					if ($line =~ /^$date_field\:\s*(.*)/) {
+						$datestamp = $1;
+						
+						$stat2 = parsedate($datestamp);
+						if ($stat2 gt $stats) {
+							$stats = $stat2;
+						}				
+					}
+				}
+			}
+
+			if ($stats lt $time) {
+				delete $files_ref->{$realfile};
+			}				
+
+		} else {
+			# No writebacks available
+			delete $files_ref->{$realfile};
+		}
+	}
+	
+	sub read_blacklist {
+    open BLACKLIST, "$blacklist" or die "Can't read '$blacklist', $!\n";
+    my @lines = grep {! /^\s*\#/ } <BLACKLIST>;
+    close BLACKLIST;
+    die "No blacklists?\n" unless @lines;
+    my @nocomments;
+    foreach my $line (@lines) {
+        $line =~ s/^\s*//;
+        $line =~ s/\s*[^\\]\#.*//;
+        next unless $line;
+        push @nocomments, $line;
+    }
+    die "No non-comm blacklists?\n" unless @nocomments;
+    return @nocomments;
+	}
+	1;
+}
+
+
+sub parsedate {
+	my ($datestring) = @_;
+	warn "Parsing $datestring\n";
+	$year, $mon, $mday, $hour, $min, $sec = 0;
+	
+	# Possible formatting
+	# Month can be 3 letter abbreviation or full name (in English)
+	# Time must be hh:mm or hh:mm:ss  in 24 hour format
+	# Year must be yyyy
+	# The remaining 1 or 2 digits are treated as date
+	# ie: May 25 2003 18:40 
+	# order is not important as long as pieces are there
+		
+	# Convert the datestring to a time() format
+
+	# Find "inverted" Date
+	if ( $datestring =~ s/(\d\d\d\d)\/(\d\d?)\/(\d\d?)// ) {
+		$mon = $2 - 1;
+		$day = $3;
+		$year = $1;
+		warn "year: $year mon:$mon day:$day\n";
+		# Now, clean up year if 2 digit
+		# You may change the 70 to whatever cutoff you like
+		$year += 2000 if ($year < 70 );
+		$year += 1900 if ($year < 100);
+	}
+	
+	# Find "Shorthand" Date
+	if ( $datestring =~ /\d\d?\/\d\d?\/\d\d\d?\d?/) {
+		if ( $use_UK_dates eq 0) {
+			# Use US Formatting
+			$datestring =~ s/(\d\d?)\/(\d\d?)\/(\d\d\d?\d?)//;
+			$mon = $1 - 1;
+			$day = $2;
+			$year = $3;
+		} else {
+			# Use UK Formatting
+			$datestring =~ s/(\d\d?)\/(\d\d?)\/(\d\d\d?\d?)//;
+			$mon = $2 - 1;
+			$day = $1;
+			$year = $3;
+		}
+		
+		# Now, clean up year if 2 digit
+		# You may change the 70 to whatever cutoff you like
+		$year += 2000 if ($year < 70 );
+		$year += 1900 if ($year < 100);
+	}
+	
+	# Find Month
+	$mon = 0 if ($datestring =~ s/(Jan|January)//i);
+	$mon = 1 if ($datestring =~ s/(Feb|February)//i);
+	$mon = 2 if ($datestring =~ s/(Mar|March)//i);
+	$mon = 3 if ($datestring =~ s/(Apr|April)//i);
+	$mon = 4 if ($datestring =~ s/(May)//i);
+	$mon = 5 if ($datestring =~ s/(Jun|June)//i);
+	$mon = 6 if ($datestring =~ s/(Jul|July)//i);
+	$mon = 7 if ($datestring =~ s/(Aug|August)//i);
+	$mon = 8 if ($datestring =~ s/(Sep|September)//i);
+	$mon = 9 if ($datestring =~ s/(Oct|October)//i);
+	$mon = 10 if ($datestring =~ s/(Nov|November)//i);
+	$mon = 11 if ($datestring =~ s/(Dec|December)//i);
+
+	# Find Time
+	if ($datestring =~ s/(\d\d?):(\d\d)(:\d\d)?//) {
+		$hour = $1;
+		$min = $2;
+		$sec = $3;
+	}
+	
+	if ($datestring =~ s/(\d\d\d\d)//) {
+		$year = $1;
+	}
+	
+	if ($datestring =~ s/(\d\d?)//) {
+		$day = $1;
+	}
+	
+	return timelocal($sec,$min,$hour,$day,$mon,$year);
+	
+}
+
+
+1;
+
+__END__
+
+
+=head1 LICENSE
+
+Blosxom and the original Writeback Plug-in
+Copyright 2003, Rael Dornfest 
+
+Remainder of this plugin Copyright 2004, Fletcher T. Penney
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

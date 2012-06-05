@@ -1,0 +1,165 @@
+# Blosxom Plugin: lamitap
+# Author:  KITAMURA Akatsuki <kits@akatsukinishisu.net>
+# Version: 2004-10-01
+# Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+# This script is encoded in UTF-8.
+
+package lamitap;
+use strict;
+
+# --- Configurable variables -----------
+
+# Last-Modifiedを出力するフレーバー（正規表現）
+my $flavour_re = q{^(?:html?|rss)$};
+
+# writebackのデータディレクトリ
+# writebackを使っていなければ空文字列にする。
+my $wb_dir = "$blosxom::plugin_state_dir/writebacks";
+
+# writebackのデータファイルの拡張子
+my $wb_ext = "wb";
+
+# テンプレートとプラグインの更新を反映:
+# する => 1, しない => 0
+my $check_template_and_plugin = 1;
+
+# --- Plug-in package variables --------
+
+use vars qw($mtime);
+
+# --------------------------------------
+
+use CGI qw(:standard);
+use File::stat;
+use HTTP::Date;
+
+sub start {
+	return 0 if ($ENV{QUERY_STRING});
+	return 0 if ($blosxom::path_info_yr);
+	return ($blosxom::flavour =~ /$flavour_re/o) ? 1 : 0;
+}
+
+sub filter {
+	# my ($pkg, $files_ref, $others_ref) = @_;
+	my $files_ref = $_[1];
+
+	# 検索対象となるパス名
+	my $search_path = "$blosxom::datadir/$blosxom::path_info";
+	$search_path =~ s/\.$blosxom::flavour$/\\\.$blosxom::file_extension\$/;
+
+	# 対象となるエントリファイル
+	my @files = 
+		sort {$$files_ref{$b} <=> $$files_ref{$a}}
+		grep {/^$search_path/ && -f}
+		keys %$files_ref;
+	splice @files, $blosxom::num_entries;
+
+	# writebackファイル（あれば）を対象に追加
+	if ($wb_dir) {
+		my @wb_files = grep {-f} map { &entry2wb($_) } @files;
+		push @files, @wb_files;
+	}
+
+	if ($check_template_and_plugin) {
+		# テンプレートを対象に追加
+		# （$datadir直下にあり、拡張子が$blosxom::flavourのもの）
+		if (opendir TMPL, $blosxom::datadir) {
+			my @tmpl_files =
+				grep {/\.$blosxom::flavour$/ && -f}
+				map {"$blosxom::datadir/$_"} readdir TMPL;
+			closedir TMPL;
+			push @files, @tmpl_files;
+		}
+
+		# プラグインを対象に追加
+		my @plug_files =
+			grep {-f}
+			map {"$blosxom::plugin_dir/$_"} @blosxom::plugins;
+		push @files, @plug_files;
+	}
+
+	# 対象ファイルの更新時間を走査
+	$mtime = 0;
+	foreach (@files) {
+		my $fmt = stat($_)->mtime;
+		$mtime = $fmt if ($fmt > $mtime);
+	}
+
+	1;
+}
+
+sub skip {
+	# Las-Modifiedヘッダを設定
+	$blosxom::header->{-Last_modified} = time2str($mtime);
+
+	# If-Modified-Sinceが無かったら終了
+	my $since = $ENV{HTTP_IF_MODIFIED_SINCE} or return 0;
+
+	# IEの"Fri, 03 Sep 2004 19:54:17 GMT; length=55438"というヘッダに対応
+	$since =~ s/;.*$//;
+
+	# $mtimeの方が大き（新し）かったら終了
+	return 0 if ($mtime > str2time($since));
+
+	# 変更無しのステータスを設定
+	$blosxom::header->{-status} = '304 Not Modified';
+
+	# 残りの処理をスキップ
+	1;
+}
+
+# エントリファイル名をwritebackファイル名に変換
+sub entry2wb{
+	my $fn = $_[0];
+	$fn =~ s/^$blosxom::datadir/$wb_dir/;
+	$fn =~ s/$blosxom::file_extension$/$wb_ext/;
+	return $fn;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: lamitap - Last-Modified including template and plugin
+
+=head1 SYNOPSIS
+
+このプラグインは Kyo Nagashimaさんのlast_modifiedプラグインを
+元に作成されました。
+
+スクリプトの流れを変更し、テンプレートファイルとプラグインファイルの
+更新時刻を反映する機能を付加しています。
+
+ちなみにlamitapというのは LAst Modified Including Template And Plugin
+の略です。超適当。
+
+=head1 VERSION
+
+2004-10-01
+
+=head1 AUTHOR
+
+北村曉 (KITAMURA Akatsuki)
+<kits@akatsukinishisu.net>,
+http://www.akatsukinishisu.net/
+
+元となったlast_modifiedプラグインは
+Kyo Nagashimaさんにより作成されました。
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+Blosxom Plugin Docs: http://www.blosxom.com/plugins/
+
+last_modified plugin:
+http://hail2u.net/blog/blosxom/last_modified_plugin.html
+
+モジュール版PHPで「If-Modified-Since」に対応する:
+http://www.arielworks.net/articles/2004/0125a/
+
+lastmodified plugin:
+http://www.blosxom.com/plugins/headers/lastmodified.htm

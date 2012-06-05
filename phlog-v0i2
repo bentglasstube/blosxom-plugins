@@ -1,0 +1,1015 @@
+# vim: ft=perl
+# Blosxom Plugin: phlog
+# Author(s): Jason Thaxter <sseye@ahab.com>
+# Version: 0.2
+# Documentation: See the bottom of this file or type: perldoc phlog
+
+package phlog;
+use strict;
+
+# package-wide variables. some should become object-wide in a Blosxom3
+use vars qw( $enabled $image_dir $image_url $entry_dir $image_ext
+  $blog_image_height $blog_image_width
+  $entry_image_height $entry_image_width
+  $auto_create_entries $img_position $mtime_format
+  $meta_magick $meta_exiftags $meta_exifcom $meta_rdjpgcom
+  $screen_filename
+  $rephlog_passwd $cache_period $debug
+  $cachefile %cache
+  $have_date_parse
+  $image $info $caption $href $src $height $width
+);
+
+# --- Configurable variables -----
+
+#
+# Basic operation
+#
+
+# set this to zero to disable
+$enabled;
+
+# image directory
+# file path where images are found
+# default: NONE: THIS IS REQUIRED
+$image_dir = '/MySite';
+
+# image url
+# url path where images are found
+# default: REQUIRED
+$image_url = '/photos';
+
+# entry path
+# file path where we put auto-generated entries
+# must be writable by web server
+# default: $blosxom::datadir
+$entry_dir;
+
+# regex for valid image extensions
+# default: (?i)(jpe*g|png|gif)
+$image_ext;
+
+# $blog_image_height, $blog_image_width
+# Size of thumbnail - viewed in "blog" mode
+# default: 100
+$blog_image_height;
+$blog_image_width;
+
+# Size of medium image - viewed in "story" mode
+# default: 400
+$entry_image_height;
+$entry_image_width;
+
+# if true, prevent actual filenames from leaking into metadata output
+# default: true
+$screen_filename;
+
+#
+# Appearance: auto generation options
+#
+
+# whether to automatically create entries for images that don't have one
+# default: true/on/1
+$auto_create_entries;
+
+# when the story doesn't contain any tags for the image, where to put the image
+# options: start end none
+# default: start
+$img_position = 'end';
+
+# how to format image times (via strftime)
+# default: %F %T %Z
+$mtime_format;
+
+#
+# Meta-data acquisition
+#
+# see documentation
+
+# From ImageMagick: identify
+# part of our basic requirements; complete but slow
+# options: nothing, absolute path, or 'identify' name for limited search path
+#   or 'perlmagick' for PerlMagick (will revert to 'identify' if not supported)
+# default: none
+$meta_magick = 'identify';
+
+# From exiftags: exiftags and exifcom
+# uncommon but simple package, and fast
+# options: nothing, absolute path, or program name for limited search path
+# default: none
+$meta_exiftags;
+$meta_exifcom;
+
+# From jpeg: rdjpgcom
+# not super useful, but common (part of standard jpeg package)
+# options: nothing, absolute path, or program name for limited search path
+# default: none
+# note: will be skipped if using "identify"...
+$meta_rdjpgcom;
+
+#
+# Caching vars
+#
+
+# what magic query string variable forces reindex
+# default: none (re-index by time only)
+$rephlog_passwd;
+
+# How many minutes delay before entries are re-indexed?
+# (In minutes)
+# default: 15
+# zero means never auto-reindex
+$cache_period;
+
+# --------------  END CONFIGURATION-----------------------------
+
+# -----------------  SET DEFAULTS ------------------------------
+
+$enabled = 1 unless defined $enabled;
+
+$image_url          ||= '';
+$entry_dir          ||= $blosxom::datadir;
+$image_ext          ||= '(?i)(jpe*g|png|gif)';
+$blog_image_height  ||= 100;
+$blog_image_width   ||= 100;
+$entry_image_height ||= 400;
+$entry_image_width  ||= 400;
+$screen_filename = 1 unless defined $screen_filename;
+
+$auto_create_entries = 1 unless defined $auto_create_entries;
+$img_position =~ m/start|end/i or $img_position = 'start';
+$mtime_format ||= '%F %T %Z';
+
+$meta_exifcom  = &which($meta_exifcom);
+$meta_exiftags = &which($meta_exiftags);
+$meta_rdjpgcom = &which($meta_rdjpgcom);
+$meta_magick   = &which($meta_magick);
+
+$cache_period = 15 unless defined $cache_period;
+$cachefile    = "$blosxom::plugin_state_dir/phlog_cache";
+
+# ---------------- STANDARD SETUP ----------------------------
+
+use Carp qw(cluck);
+use Fcntl qw(:DEFAULT :flock);
+use File::stat;
+use File::Find;
+use Data::Dumper;
+use File::Basename;
+use File::Path;
+use FileHandle;
+use POSIX qw(strftime);
+
+# standard for blosxom
+use CGI qw(:standard);
+
+# required
+use Image::Magick;
+
+# we'll use Date::Parse if we have it
+$have_date_parse;
+eval { require Date::Parse; };
+if ($@) {
+    require Time::Local;
+}
+else {
+    $have_date_parse = 1;
+}
+
+my $time;       # current time
+my $reindex;    # reindex or not
+
+my $fh = new FileHandle;
+our %template;
+
+# default templates
+$template{phlog}{title} = 'Photo: $caption';
+$template{phlog}{body}  = '
+$image
+Photo: $caption
+<p>$info</p>
+';
+
+$template{phlog}{image} =
+  '<a href="$href"><img src="$src" border="0 align="left"></a>';
+
+$template{phlog}{info} = '$key: $value<br>';
+
+#
+# ---------------- METHODS ----------------------------
+#
+
+# blosxom hook
+sub start {
+
+    return 0 if not $enabled;
+
+    # make sure we will be able to auto-create entries if needed
+    if ( $auto_create_entries and (not -w $entry_dir or not -w $image_dir)) {
+        warn "ERROR: plugin needs to write to image and entry dirs ($image_dir,$entry_dir)";
+        return 0;
+    }
+
+    # Force a reindex by query string, by modification time, or
+    # absence of a readable cache
+
+    # Read cache and reindex if failed or otherwise directed
+    my ( $index, $VAR1 );
+    (
+        (
+            open( MYCACHE, $cachefile ) and $index = join '',
+            <MYCACHE>
+              and $index =~ /\$VAR1 = /
+              and eval($index)
+              and !$@
+              and %cache = %$VAR1
+              and close MYCACHE
+        )
+          and (
+            not( $rephlog_passwd and param('phlog') eq $rephlog_passwd )
+            and not($cache_period
+                and -f "$cachefile"
+                and stat($cachefile)->mtime < ( time() - $cache_period * 60 ) )
+          )
+      )
+      or &reindex();
+
+    return 1;
+}
+
+# during render phase, insert images into story templates,
+# making image tag if necessary
+# and making missing thumbnails
+sub story {
+    my ( $pkg, $path, $filename, $story_ref, $title_ref, $body_ref ) = @_;
+
+    # SKIP UNLESS THERE ARE MATCHING IMAGES IN THE CACHE
+    my ( $ifile, $idir );
+    $idir = "$image_dir$path";
+    $idir =~ s/$image_url//;
+
+    # get matching images
+    my @images  = sort grep /\.$image_ext$/i, glob "$idir/$filename.*";
+    my @globbed = glob "$idir/$filename.*";
+
+    # return unless we have one (and for now, just take the first one)
+    ( @images == 1 and $ifile = $images[0] )
+      or ( not @images and return )
+      or ( warn "multiple images (" . @images . ": behavior undefined"
+        and return );
+
+    # ARE WE SHOWING A CATEGORY OR THE ACTUAL ENTRY FOR THIS ONE?
+    # i.e. do we show thumbnail or merely reduced size
+    my ( $entry_mode, $thumbnail_type, $height, $width );
+
+    if ( path_info() =~ "$path/$filename" ) {
+        $entry_mode     = 1;
+        $thumbnail_type = 'sm';
+        $height         = $entry_image_height;
+        $width          = $entry_image_width;
+    }
+    else {
+        $entry_mode     = 0;
+        $thumbnail_type = 'tn';
+        $height         = $blog_image_height;
+        $width          = $blog_image_width;
+    }
+
+    &make_thumbnail( $ifile, $thumbnail_type, $height, $width );
+
+    #
+    # PROCESS TEMPLATES
+    #
+
+    # LOAD TEMPLATE VARIABLES
+
+    # Href
+    if ($entry_mode) {
+        $href = "$path/$filename.$cache{$ifile}{ext}";
+    }
+    else {
+        $href = "$blosxom::url$path/$filename.$blosxom::flavour";
+    }
+
+    # List
+    $src = "$path/t/$filename-$thumbnail_type\.$cache{$ifile}{ext}";
+
+    # Info
+    # What we do here is arbitrary and uncustomizable for now
+    if ($entry_mode) {
+        my $tmpl = load_template( "$blosxom::datadir$path", 'info', 'phlog' );
+
+        foreach my $x (qw(Date Height Width exif magick)) {
+            if ( ref( $cache{$ifile}{$x} ) ) {
+                foreach my $key ( sort keys %{ $cache{$ifile}{$x} } ) {
+
+                    # screen out filenames for security
+                    next if (
+                        ($x eq 'magick' and $key eq 'Image')
+                        and $screen_filename
+                    );
+
+                    # otherwise, substitute
+                    my $val = $cache{$ifile}{$x}{$key};
+                    add_info( \$info, $tmpl, $key, $val );
+                }
+            }
+            elsif ( $cache{$ifile}{$x} ) {
+                add_info( \$info, $tmpl, $x, $cache{$ifile}{$x} );
+            }
+        }
+    }
+
+    # INTERPOLATE OUR STUFF
+
+    # load sub-chunk
+    my $image .= load_template( "$blosxom::datadir$path", 'image', 'phlog' );
+
+    $$body_ref =~ s/\$(phlog::)*image/$image/
+      or (  $img_position eq 'start'
+        and $$story_ref =~ s/\$body/$caption$image$info\$body/ )
+      or $$story_ref =~ s/\$body/\$body $image$caption$info/;
+
+    # this little magick subs metadata into
+    # since we may do this repeatedly (for many entries)
+    # we don't want to pollute our $phlog:: namespace (bugs)
+    # and we don't want to police metadata tags (weak)
+    # so we do explicit substitutions
+    # using a helper function:
+    $$body_ref =~ s/\$(\w+)(\::\w+)*/terp($1,$2,$cache{$ifile})/ge;
+}
+
+# Perform reindexing if necessary
+sub reindex {
+
+    &lokkit( \*CACHE, $cachefile ) or return;
+
+    # clean deleted files from cache
+    foreach my $file ( keys %cache ) {
+        -f $file or delete $cache{$file};
+    }
+
+    find(
+        {
+            wanted => sub {
+                my ( $ffname, $ffext, $cur_depth, $entry );
+
+                # easier to read.
+                $ffname = $File::Find::name;
+
+                # CHECK DIRECTORY
+                # return if we're out of our depth
+                # or if we've descended into a thumbnail dir
+                $cur_depth = $File::Find::dir =~ tr[/][];
+                if ( ( $blosxom::depth and $cur_depth > $blosxom::depth )
+                    or $File::Find::dir =~ '/t$' )
+                {
+
+                    # clean from cache while we're at it
+                    delete $cache{$ffname} if $cache{$ffname};
+                    return;
+                }
+
+                # CHECK FILE
+                # skip unless it's a real image
+                return
+                  unless (
+                    $ffname =~ m/^$image_dir\/(?:(.*)\/)*(.+)\.($image_ext)$/i
+                    and $2 !~ m/^\./    # skip dotfiles
+                    and $ffext = $3         # skip non-images
+                    and ( -r "$ffname" )    # skip unreadable files
+                  );
+
+                # METADATA ACQUISITION
+                #
+                # this *can* be very expensive.
+                # only do if:
+                #   * we don't have metadata for this file
+                #   * the metadata is older than the image timestamp
+                &load_metadata($ffname)
+                  if ( not $cache{$ffname}
+                    or stat($ffname)->mtime > $cache{$ffname}{mtime} );
+
+                #
+                # AUTO-GENERATION
+                #
+                # do this only if auto-create is on, there is no entry
+                # or the entry is staler than the image, the directory
+                # exists or can be made, and we can lock the output file
+
+                # Make the name of the corresponding entry
+                $entry = $ffname;
+                $entry =~ s/$image_dir/$entry_dir/;    # fix base dir
+                $entry =~ s/$image_ext$/$blosxom::file_extension/;    # fix ext
+
+                if (
+                    $auto_create_entries
+                    and ( not -f $entry
+                        or stat($entry)->mtime < stat($ffname)->mtime )
+                  )
+                {
+                    if ( not -d dirname($entry) ) {
+                        my $umask = umask 002;
+                        mkpath( [ dirname($entry) ], 0 );
+                        umask $umask;
+                    }
+                    &autocreate_entry( $entry, $ffname );
+                }
+
+            },
+            follow => 1
+        },
+        $image_dir
+    );    # end find
+
+    # Save cache if it changed in any way
+    stuffit( \*CACHE, Dumper( \%cache ), $cachefile );
+
+}
+
+#
+# a little utility to locate helper programs for metadata
+#
+sub which {
+    my $prog = shift;
+    return unless $prog;    # nothing = disabled
+    return $prog if $prog =~ m!^/!;    # if absolute path, believe the config
+
+    # little reminder for future perlmagick support
+    if ( $prog =~ /perlmagick*/i and $Image::Magick::VERSION !~ /^6/ ) {
+        warn "PerlMagick support not yet implemented: using 'identify'";
+        $prog = 'identify';
+    }
+
+    # else, look for the program in a limited path
+    foreach (qw(/usr/bin /usr/local/bin /usr/X11R6/bin)) {
+        my $test = "$_/$prog";
+        return $test if -x "$test";
+    }
+    return;    # we have failed to find it
+}
+
+#
+# GET IMAGE INFO
+#
+sub load_metadata {
+    my $ifile = shift;
+
+    # store for later use
+    $ifile =~ m/($image_ext)$/;
+    $cache{$ifile}{ext} = $1;
+
+    # Exif tags
+    if ( $meta_exiftags
+        and open( EXIFTAGS, "$meta_exiftags $ifile 2>/dev/null |" ) )
+    {
+        my @lines = <EXIFTAGS>;
+        close EXIFTAGS;
+
+        # e.g. "Image Created: 2004:02:29 11:36:43"
+        foreach (@lines) {
+            m/ (.*?) \s* : \s* (.*?) \s* $ /x
+              and $cache{$ifile}{exif}{$1} = $2;
+        }
+    }
+    elsif ($meta_exiftags) {
+        warn "exiftags failed on image \"$ifile\": $!";
+    }
+
+    # Exif comment
+    if ( $meta_exifcom
+        and open( EXIFCOM, "$meta_exifcom $ifile 2> /dev/null|" ) )
+    {
+        my $lines = join( '', <EXIFCOM> );
+        chomp $lines;
+        close EXIFCOM;
+        $cache{$ifile}{exifcomment} = $lines;
+    }
+    elsif ($meta_exifcom) {
+        warn "exifcom failed on entry \"$ifile\": $!";
+    }
+
+    # JPG comment
+    if ( $meta_rdjpgcom
+        and open( JPGCOM, "$meta_rdjpgcom $ifile |" ) )
+    {
+        my $lines = join( '', <JPGCOM> );
+        chomp $lines;
+        close JPGCOM;
+        $cache{$ifile}{jpgcomment} = $lines;
+    }
+    elsif ($meta_rdjpgcom) {
+        warn "rdjpgcom failed on entry \"$ifile\": $!";
+    }
+
+    # ImageMagick support
+    if ( $meta_magick
+        and open( IMCOM, "$meta_magick -verbose $ifile |" ) )
+    {
+        my @lines = <IMCOM>;
+        close IMCOM;
+        foreach (@lines) {
+            m/ \s* ([^:]+?) \s* : \s* (.*?) \s* $ /x
+              and $cache{$ifile}{magick}{$1} = $2;
+        }
+    }
+    elsif ($meta_magick) {
+        warn "image magick failed ($meta_magick) \"$ifile\": $!";
+    }
+
+    # Create basic meta info:
+    #   mtime, caption, height, width
+
+    # MTIME
+    #
+    # save file time so we can detect if it's updated
+    $cache{$ifile}{mtime} = stat($ifile)->mtime;
+
+    #
+    # we try to make intelligent guesses, but exif tags may
+    # be camera dependent!
+    #
+    # exiftags: Image Created
+    # identify: file created:  Date and Time
+    #           photo snapped: Date and Time (original)
+    #           saved to card: Date and Time (digitized)
+    # file mtime as default
+    my $photo_time =
+      (      $cache{$ifile}{magick}{'Date and Time (original)'}
+          || $cache{$ifile}{magick}{'Date and Time (digitized)'}
+          || $cache{$ifile}{magick}{'Date and Time'}
+          || $cache{$ifile}{exif}{'Image Created'}
+          || $cache{$ifile}{mtime} );
+
+    # Format time
+    # convert from text first if necessary
+    $cache{$ifile}{Date} =
+      strftime( $mtime_format, localtime( cheap_date($photo_time) ) );
+
+    # CAPTION
+    #
+    $cache{$ifile}{caption} =
+      (      $cache{$ifile}{magick}{comment}
+          || $cache{$ifile}{exifcomment}
+          || $cache{$ifile}{jpgcomment}
+          || basename($ifile) );
+
+    # DIMENSIONS
+    $cache{$ifile}{Height} =
+      (      $cache{$ifile}{magick}{PixelYDimension}
+          || $cache{$ifile}{exif}{'Image Height'}
+          || ( $cache{$ifile}{magick}{Geometry} =~ m/x(\d+)/ and $1 ) );
+    $cache{$ifile}{Width} =
+      (      $cache{$ifile}{magick}{PixelXDimension}
+          || $cache{$ifile}{exif}{'Image Width'}
+          || ( $cache{$ifile}{magick}{Geometry} =~ m/(\d+)x/ and $1 ) );
+
+}
+
+sub autocreate_entry {
+    my ( $entry, $ifile ) = @_;
+    warn "automaking $entry";
+
+    &lokkit( \*ENTRY, $entry ) or return;
+
+    #
+    # BUILD ENTRY
+    #
+
+    my $ffdir = dirname($entry);
+    my $contents;
+    $contents .= load_template( $ffdir, 'title', 'phlog' );
+    $contents .= "\n";
+
+    # META INFO
+    if ($entries_cache_meta::enabled) {
+        $contents .=
+            $entries_cache_meta::meta_prefix
+          . 'mtime: '
+          . $cache{$ifile}{mtime};
+    }
+
+    # BODY
+    $contents .= "\n";
+    $contents .= load_template( $ffdir, 'body', 'phlog' );
+
+    # SUB IN VALUES
+    # EXCEPT: $image and $info we save for later since we need to
+    # substitute in our metadata.
+    # since we may do this repeatedly (for many entries)
+    # we don't want to pollute our $phlog:: namespace (bugs)
+    # and we don't want to police metadata tags (weak)
+    # so we do explicit substitutions
+    # like this:
+    my $fc = $cache{$ifile};
+
+    $contents =~ s/\$(\w+)(\::\w+)*/terpy($1,$2,$cache{$ifile})/ge;
+
+    # WRITE FILE
+    stuffit( \*ENTRY, $contents, $entry );
+
+}
+
+sub terpy {
+    my ( $a, $b, $fc ) = @_;
+
+    return "\$$a" if ( $a eq 'info' or $a eq 'image' );
+
+    return terp( $a, $b, $fc );
+}
+
+# Reserve file for writing
+sub lokkit {
+    local *FH = shift;
+    my $filename = shift;
+    my $file_tmp = "$filename.TMP";
+
+    # open it
+    my $umask = umask 002;    # group-write is useful
+    sysopen( FH, "$file_tmp", O_RDWR | O_CREAT )
+      or ( warn "can't open file $file_tmp: $!" and return );
+    umask $umask;             # restore so it doesn't affect other plugins
+
+    # lock file
+    flock( FH, LOCK_EX | LOCK_NB )
+      or (  close FH
+        and ( not $debug or warn "can't lock file ($file_tmp): $!" )
+        and return );
+
+    return 1;
+}
+
+# Write and install file
+sub stuffit {
+    local *FH = shift;
+    my $contents = shift;
+    my $filename = shift;
+    my $file_tmp = "$filename.TMP";
+
+    my $err;
+    print FH $contents or $err = "can't write cache $file_tmp: $!";
+    flock( FH, LOCK_UN ) or $err = "can't unlock cache $file_tmp: $!";
+    close FH or $err = "can't close cache $file_tmp: $!";
+
+    if ( not $err ) {
+        rename "$file_tmp", $filename
+          or warn "Error installing cache $filename: $!";
+    }
+    else {
+        warn $err;
+        unlink $file_tmp;
+    }
+}
+
+sub add_info {
+    my ( $info_ref, $tmpl, $key, $value ) = @_;
+    $tmpl =~ s/\$key/$key/;
+    $tmpl =~ s/\$value/$value/;
+    $$info_ref .= $tmpl;
+}
+
+sub terp {
+    my ( $one, $two, $fc ) = @_;
+    no strict 'refs';
+
+    return $$one if defined $$one;
+
+    if ( $fc->{$one} ) {
+        if ( ref( $fc->{$one} ) eq 'HASH' and $two ) {
+            $two =~ s/^:*//;
+            while ( my ( $k, $v ) = each %{ $fc->{$one} } ) {
+                $k =~ tr[A-Z][a-z];
+                $k =~ s[\s+][_];
+                $k =~ s[\W][];
+                if ( $k eq $two ) {
+                    return $v;
+                }
+            }
+        }
+        else {
+            return $fc->{$one};
+        }
+    }
+    else {
+        return '';
+    }
+}
+
+# cheap n sleazy date parser
+sub cheap_date {
+    my $value = shift;
+    my $sse;    # seconds since the epoch - our internal representation
+
+    if ( $value =~ m/^\d+$/ ) {
+        $sse = $value;
+    }
+    elsif ($have_date_parse) {
+        $sse = Date::Parse::str2time($value);
+    }
+    else {
+
+        # Exif times may look like this: 2004:02:29 13:13:13
+        my ( $yr, $mo, $day, $hr, $min, $sec, $tz ) = (
+            $value =~ m!
+              (\d{4}) [/\:] (\d{2}) [/\:] (\d{2}) \s+
+              (\d{2}) : (\d{2}) : (\d{2}) \s*
+              ((UTC|GMT)*)
+            !x
+        );
+
+        if ($tz) {
+            $sse = timegm( $sec, $min, $hr, $day, --$mo, $yr );
+        }
+        else {
+            $sse = timelocal( $sec, $min, $hr, $day, --$mo, $yr );
+        }
+    }
+
+    if ( not $sse ) { warn "unparseable or missing time ($value)" }
+
+    return $sse;
+}
+
+# and a basic template loader
+sub load_template {
+    my ( $path, $chunk, $flavour ) = @_;
+
+    do {
+        return join '', <$fh>
+          if $fh->open("< $path/$chunk.$flavour");
+    } while ( $path =~ s/(\/*[^\/]*)$// and $1 );
+    return $template{$flavour}{$chunk} || '';
+}
+
+sub make_thumbnail {
+    my ( $ifile, $thumbnail_type, $height, $width ) = @_;
+
+    #
+    # THUMBNAIL GENERATION
+    #
+    my ( $tnfile, $tndir );
+
+    # make paths, vars
+    $tndir  = dirname($ifile) . "/t";
+    $tnfile = basename($ifile);
+    $tnfile =~ s/\.($image_ext)$/-$thumbnail_type.$1/;
+    $tnfile = "$tndir/$tnfile";
+
+    # skip if thumbnail exists, is not empty, AND is up to date
+    return
+      if (
+        -f "$tnfile"
+        and not -z "$tnfile"    # just in case
+        and stat($tnfile)->mtime >= stat($ifile)->mtime
+      );
+
+    # make dir
+    my $umask = umask 002;      # group-write is useful
+    if ( not -d $tndir ) {
+        if ( mkdir $tndir ) {
+            warn "making thumbs dir $ifile::$tndir" if $debug;
+        }
+        else {
+            warn "can't make thumbs dir ($ifile:$tndir): $!";
+            return;
+        }
+    }
+
+    # Lock file: this stuff can be expensive, too, so don't pile on
+    # lokkit/stuffit aren't used here
+    local *IMAGE;
+    sysopen( IMAGE, "$tnfile.LOCK", O_RDWR | O_CREAT )
+      or ( warn "can't open lockfile $tnfile.LOCK: $!" and umask $umask and return );
+    umask $umask;    # restore so it doesn't affect other plugins
+
+    # lock file
+    flock( IMAGE, LOCK_EX | LOCK_NB )
+      or (  close IMAGE
+        and ( not $debug or warn "can't lock file ($tnfile.TMP): $!" )
+        and return );
+
+    # read image (targeted to size, so uses less memory)
+    my $img = Image::Magick->new( size => "$height\x$width" );
+
+    my $err = $img->Read($ifile);
+    ( warn "perlmagick reading err: $err" and return ) if $err;
+
+    # make according size thumb
+    $err = $img->Resize( geometry => $width . "x" . "$height>" );
+    ( warn "perlmagick thumbnailing err: $err" and return ) if $err;
+
+    # store new dimensions
+
+    # write it to disk
+    $err = $img->Write( filename =>"$tnfile.TMP");
+    ( warn "perlmagick writing err: $err" and return ) if $err;
+
+    # release lock
+    flock( IMAGE, LOCK_UN ) or warn "can't unlock file: $!";
+
+    rename "$tnfile.TMP", $tnfile;
+    unlink "$tnfile.LOCK"; # needed?
+
+    return;
+}
+
+1;
+
+__END__
+
+=head1 NAME - phlog
+
+Blosxom Plug-in: phlog
+
+=head1 SYNOPSIS
+
+This is not an attempt to create yet another image gallery program; this plugin
+is intended to add images to Blosxom-powered blogs in a Blosxom-y way.  Simply
+adding an image to the Blosxom data directory is enough to start an image
+gallery, or you can easily include images in normal Blosxom entries containing
+captions or stories, using simple tags and naming conventions to pump images
+into your blog. Formatting and presentation are done primarily through existing
+flavour mechanisms. Captions may be automatically created from the image's
+metadata.
+
+Following the format of many gallery softwares, this has three levels of size:
+thumbnail, standard, and full. In normal blog context, we show a thumbnail (and
+link to the entry). When showing a single entry (via permalink), we show a
+larger image, and link to the full-sized image.
+
+=head1 USAGE
+
+This plugin fires in two phases: C<start>, and C<story>. The former is where
+most of the work is done so that automatically created entries will appear by
+the time other plugins run C<entries>; the latter is just variable prep for
+interpolation, but also automatic thumbnail creation.
+
+To use, simply put images into your image directory; $image_dir: by default, the
+Blosxom data directory. Each image having a valid file extension will
+automatically get a story created for it. This requires write access to the
+target directory; otherwise, the plugin will disable itself.
+
+Unless you disable auto-create, this plugin should go before any other plugins
+that modify the entry list. This is necessary for any automatically generated
+entries to show up properly. This plugin will not actually implement the entries
+hook, so it will not interfere with other plugins from doing so.
+
+The auto-created thumbnails directory is called F<t>, so you can't have that as
+the name of any of your photo directories. The name should probably be
+configurable.
+
+The following configurable variables are supported:
+
+=over 4
+
+=item $enabled
+
+Set to 0 to disable the plugin. This is useful for testing, debugging, and goes
+nicely with the C<config> plugin.
+
+=item $image_dir
+
+TODO
+
+=item $image_url
+
+TODO
+
+=item $entry_dir
+
+TODO
+
+=item $image_ext
+
+TODO
+
+=item $blog_image_height, $blog_image_width
+
+TODO
+
+=item $entry_image_height, $entry_image_width
+
+TODO
+
+=item $auto_create_entries
+
+TODO
+
+=item $img_position
+
+TODO
+
+=item $mtime_format
+
+TODO
+
+=item $meta_magick, $meta_exiftags, $meta_exifcom, $meta_rdjpgcom
+
+TODO
+
+=item $rephlog_passwd
+
+What query string password forces reindex.  You can force a scan by appending a
+query string, e.g.  C<?phlog=mypassword> to the end of the url. This will NOT
+cause meta tags to be updated, because of the potential expense. However, for
+security's sake, you must set the password in the configuration to use this.
+
+=item $cache_period
+
+TODO
+
+=item $debug
+
+This turns on some messages sent to Apache's error log. Defaults to off.
+
+=back
+
+=head1 REQUIREMENTS
+
+ImageMagick is needed for thumbnail creation.
+
+There are multiple options for  C<identify> is the most complete, and will be
+present wherever this plugin works, since it comes with ImageMagick, but it's
+slow. C<rdjpgcom> only reads JPEG comments, but those are written by more
+software. C<exiftags> and C<exifcom> are fast and handle lots of cases, but it's
+not a common package (though it's very simple to install if you can).
+
+Lots of things should be more elegant but will remain in the condition known as
+"it works" for a long time, if not forever. Despite this fact, this plugin is
+wicked good.
+
+=head1 TODO
+
+Additional meta stuff, e.g. image size.
+
+Add support for jhead to get image metadata.
+
+Getting directory options and handling right is a priority. It works now, but
+I'm entertaining suggestions for improvements. Perhaps just good documentation.
+Configurable thumbnail directory locations would be nice, for example, but does
+anyone care?
+
+ImageMagick 6 is supposed to have EXIF support in Perl. It should be used if and
+when available.
+
+Cropping vs aspected thumbs (with weighting).
+
+Support all Image::Magick's options for Resize. Support other image processing
+options as cleverly and concisely as possible (don't duplicate the API, enable
+it via function refs or the like).
+
+Allow alternate syntax to image: $phlog::path::from::imgadir::file(::ext)*
+
+
+Multiple images per entry?
+
+=head1 BUGS
+
+When autocreating, the entry does not show on first load. This is because
+Blosxom's "future entries" option compares the image to the current time using
+I<less than>, rather than I<less than or equal to>. This can be fixed by using
+the latest version of the C<entries_cache_meta> plugin, or any version greater
+than 0.6. This bug may not be present in Blosxom 3.
+
+=head1 VERSION
+
+Release version: 0.2
+Subversion:      $Revision$
+
+=head1 AUTHOR
+
+Dedicated to Charlotte, Amelia, and Daisy.
+Jason Thaxter <sseye@ahab.com>, http://ahab.com/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list
+[http://www.yahoogroups.com/group/blosxom] or to the author.
+
+=head1 LICENSE
+
+Copyright 2004, Jason Thaxter
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

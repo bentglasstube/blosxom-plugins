@@ -1,0 +1,192 @@
+# Blosxom Plugin: technorati_api
+# Author: Dave Slusher <dslusher@gmail.com>
+# Version: 0.1, 20040601
+# http://www.evilgeniuschronicles.org/
+# See the perldoc info at the bottom for more details
+
+package technorati_api;
+
+use LWP::Simple;
+
+# --- Configurable variables -----
+# IMPORTANT - YOU MUST CHANGE THIS TO MAKE IT WORK
+# WITHOUT AN API KEY NOTHING WILL HAPPEN
+# you need to have your own API key to use this. You can get one at
+# http://www.technorati.com/members/apikey.html
+my $api_key="";
+
+
+my $separator = " - ";
+$debug_level = 1 unless defined $debug_level;
+
+# if you want a different URL than the default 
+# blosxom url (such as using a domain rather than the fully qualified
+# path to the CGI) enter it here. If blank, it will use the default 
+my $technorati_url = "http://www.evilgeniuschronicles.org" || $blosxom::url;
+
+my $cache_file = $blosxom::plugin_state_dir.'/'."technorati_api.dat";
+
+# set this to the time in hours between downloading new copies of the 
+# information. Set it to 0 to means never cached (highly NOT recommended - this will
+# slow everything down and quickly burn through your number of lookups per day)
+
+my $cache_hours = 6;
+
+my $limit = 100;
+
+# --- End Configurable variables -----
+# ------------------------------------
+
+use vars qw !$technorati_cosmos $inbound_blogs $inboundlinks!;
+my $cosmos_list = (); 
+
+
+sub debug {
+    my ($level, @msg) = @_;
+    if ($debug_level >= $level) {
+	print STDERR "$package debug $level: @msg\n";
+    }
+    1;
+}
+
+
+sub start {
+    format_list();
+    1;
+}
+
+sub get_list {
+    use Data::Dumper;
+    if ( !-e $cache_file or time() > (stat $cache_file)[9] + ($cache_hours * 3600))   {
+	return fetch_cosmos();
+    } else {
+	return load_cache();
+    }
+}
+
+sub load_cache {
+    my $list = ();
+    #open data file
+    local *FH;
+    if( -e "$cache_file") {
+	open FH, "$cache_file" or debug (0, "Error opening cache: $!");
+    }
+    flock(FH, 2);
+    while (<FH>) {
+	chomp ($_);
+	my ($url, $title) = m/(\S*)\s(.*)/;
+	my $item = {url=>$url, title=>$title}; 
+	push @{$list}, $item;
+    }
+    close (FH);
+    return $list;
+
+}
+
+sub save_cache {
+    my $cosmos = shift;
+    my $counter = 0;
+    my $item;
+    local *FH;
+    open FH, ">$cache_file" or return 0;
+    flock(FH, 2);
+    debug(1, "writing to $cache_file at ".localtime()."\n");
+    while ($item = $cosmos->[$counter++]) {
+	debug (1, $item->{url}." ".$item->{title}."\n"); 
+	print FH $item->{url}." ".$item->{title}."\n"; ; 
+    }
+    close FH;
+    return 1;
+
+}
+
+sub fetch_cosmos {
+    my $list = ();
+    my %seen_urls; 
+#    my $url = "http://apibeta.technorati.com/cosmos?format=xml&url=".$technorati_url."&key=".$api_key."&type=weblog";
+    my $url = "http://api.technorati.com/cosmos?format=xml&url=".$technorati_url."&key=".$api_key."&type=weblog";
+    if ($limit) {
+	$url .= "&limit=$limit";
+    }
+    my $xml = get($url);
+    debug (1, "Results of fetching $url are:\n$xml");
+    my ($results, $item) = $xml =~ m#<result>(.*?)</result>(.*)#ms;
+    #debug (1, "Results = $results\n\n");	
+    #debug (1, "Items = $item\n\n");	
+    ($inbound_blogs, $inbound_links) = $results =~ m#<inboundblogs>([^<]*)</inboundblogs>.*<inboundlinks>([^<]*)</inboundlinks>#ms;
+    while ($item =~ m#<name>(.*?)</name>.*?<url>(.*?)</url>#gms ) {
+	   if (!$seen_url{$2} ) {
+	       my $item = {title=>$1, url=>$2};
+	       push @{$list}, $item;
+	       $seen_url{$2} =1 ;
+	   }
+    }
+    save_cache($list); 
+    return $list;
+
+}
+
+sub format_list {
+    my $list = get_list();
+    my $counter = 0;
+    $technorati_cosmos = "<div  class=\"technorati-cosmos-item\">\n";
+    while ($item = $list->[$count++]) {
+	$technorati_cosmos .= "<a href=\"".$item->{url}."\">".$item->{title}."</a></br>\n";
+    }
+    $technorati_cosmos .= "</div>\n"; 
+#    debug(1, $technorati_cosmos);
+  }
+
+1;
+
+
+=head1 NAME
+
+Blosxom Plug-in: technorati_api
+
+=head1 SYNOPSIS
+
+This plugin will use the Technorati API to get the "cosmos" for this
+weblog and populate them into the variable
+$technorati_api::technorati_cosmos. You MUST CHANGE the API key in the
+configuration variables to your own key, which you can get at
+http://www.technorati.com/members/apikey.html or else nothing will
+happen.
+
+
+
+=head1 AUTHOR
+
+Dave Slusher <dslusher@gmail.com>
+
+=head1 SEE ALSO
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Copyright 2004, Dave Slusher
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+

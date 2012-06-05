@@ -1,0 +1,49 @@
+Thanks for trying Sxtem! I hope you like it and find it useful.
+
+Requirements:
+Bloxsom (Tested on 2.0 b5)
+Ruby (Tested on 1.6.7)
+xml-rpc4r (Get the latest: http://www.fantasy-coders.de/ruby/xmlrpc4r/)
+A blogger-api client. w.bloggar works fairly well.
+
+Installation:
+Make sure that your web server process has write access to your
+data dir and all its subdirectories. (Folders for you Mac users)
+To do this, use the chmod command, set permissions to 777 on all
+directories.
+
+Copy sxtem.cgi and Articles.rb into your web directory.
+I put mine in the root.
+
+Edit the configuration variables in the sxtem.cgi file
+to fit your bloxsom install. The values should be obvious
+except for the username and password: those are the values that
+you'll be using to log in via your blogging tool.
+
+w.bloggar setup:
+With a new w.bloggar install, run the program.
+Enter your "user" and "pass" variables in the "Username" and "Password"
+w.bloggar fields. Make sure the blog pull-down says "New" ("Custom"
+for existing installs)
+
+API Server tab:
+Host - the url of your server, less pathnames. (IE: www.greenman.org)
+Page - the path to your sxtem.cgi. (IE: /sxtem.cgi)
+leave the rest default unless you know what you're doing. ;)
+
+Proxy Server tab:
+Leave it default unless you have a proxy server.
+
+Custom:
+Posts - Blogger API
+Categories: metaWeblog API - Single
+
+Leave the rest default.
+
+Please email me with any comments and ideas. Patches are lovingly welcomed.
+Once I get the feel for the thing, I'll consider making a plugin in Perl.
+This is my first Ruby project ever, so be nice.
+
+-Keith Hudgins
+ greenman@greenman.org
+ 07-02-2003

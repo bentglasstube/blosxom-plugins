@@ -1,0 +1,89 @@
+# Blosxom Plugin: redirecterror
+# Author(s): Carlos Falquez <1.054572@gmail.com>
+# Version: 1.0
+# Documentation: See the bottom of this file or type: perldoc redirecterror
+
+package redirecterror;
+
+## Plugin Code ##
+
+use CGI qw/:standard/;
+
+sub start {
+	if( $blosxom::static_or_dynamic eq "dynamic" and $blosxom::path_info) {
+		my $p = path_info();
+		$p =~ s|/*$||;
+		$p =~ s|\.[^\.]*?$|.$blosxom::file_extension|;
+		unless ( -e $blosxom::datadir.$p ) {
+			while ( $p =~ s|/[^/]*?$|| ) {
+				if (-e $blosxom::datadir.$p) {
+					print redirect(-uri=>$blosxom::url.$p);
+					exit;
+				}
+			}
+			print redirect(-uri=>$blosxom::url);
+			exit;
+		}
+	}
+    return 0;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: redirecterror
+
+=head1 SYNOPSIS
+
+Put this plugin on your plugins directory and you are all set.
+It will check if the URL requested actually exists on the
+filesystem.  If it does, the plugin does nothing. If it doesnt, the
+plugin goes up $blosxom::path_info looking for the next valid path
+on your filesystem and when it finds one redirects the browser to it.
+If that also fails, the browser is redirected to $blosxom::url.
+You should put this plugin right at the start of your list by naming it
+something like 00redirecterror.
+
+=head1 VERSION
+
+1.0 Initial implementation
+
+=head1 AUTHOR
+
+Carlos Falquez <1.054572@gmail.com>
+
+http://www.stud.uni-karlsruhe.de/~ucarg/11tesis
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+redirecterror Blosxom plugin
+
+Copyright 2006, Carlos Falquez
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.

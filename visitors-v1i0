@@ -1,0 +1,150 @@
+# Blosxom Plugin: visitors
+# Author: Grahame Murray <blog@grahame.com>
+# Version: 1.0 (August 2, 2003)
+# http://www.grahame.com/computers/blog/visitors/
+# License: Public Domain
+# Desription: Computes how many people are "currently" visiting your 
+#             site and, if you have the login plugin installed, how
+#             many are logged in.  The timeout for how long to consider
+#             a person logged in is configurable.
+
+package visitors;
+
+use Storable;
+
+# -------------- Configuration Variables --------------
+
+
+# How many seconds after the last page view to consider a user active
+$timeout = 120
+  unless defined $timeout;
+
+
+# Debug Level: 0 is off, 1 is on
+$debug_level = 0
+  unless defined $debug_level;
+
+
+# -----------------------------------------------------
+
+
+$guests = 0, $members = 0, $total = 0;
+
+my $cachefile  = "$blosxom::plugin_state_dir/.visitors.cache";
+
+sub start() {
+1;
+}
+
+sub filter() {
+  # I'm doing this in filter so login can have a change to figure out the
+  # current user before we run
+
+ 
+  # Firstly, open the cache from disk, if it exists
+  local %cache = %{(-w $cachefile ? Storable::lock_retrieve($cachefile) : undef)};
+  local $now = time;
+
+  # Log the current user (either new or renew)
+  local $key = $ENV{'REMOTE_ADDR'} . ":" . $login::username;
+  $cache{$key} = $now;
+  debug(1, "Adding/Updating $key");
+
+
+
+  # Remove expired entries
+  for $key(keys %cache) {
+    local $value = $cache{$key};
+    
+    if($now-$value > $timeout) {
+      debug(1, "Deleting $key");
+      delete $cache{$key};
+    }
+  }
+
+
+  # Compute the number of guests and members
+  for $key (keys %cache) {
+    debug(1, "Checking $key");
+    if($key =~ /.*:.+/) {
+      $members++;
+    }
+    else {
+      $guests++;
+    }
+  }
+
+
+
+
+  # Save the cache back to disk
+  Storable::lock_store(\%cache, $cachefile);
+
+
+  $total = $guests + $members;
+
+  1;
+}
+
+sub debug(level, message) {
+
+  local ($level, $message) = @_;
+
+  if($debug_level >= $level) {
+     print STDERR "$message\n";
+  }
+}
+
+1;
+
+
+
+=head NAME
+
+Blosxom Plugin: visitors
+
+=head1 SYNOPSIS
+
+Computes how many people are "currently" visiting your site and, if you have the login plugin installed, how many are logged in.  The timeout (seconds) for how long to consider a person active in is customizable (default of 120), as well as configurable with the config plugin.
+
+This plugin simply provides the following variables to the templates:
+
+$visitors::guests is the number of unknown users
+
+$visitors::member is the number of logged-in users
+
+$visitors::total is the number of both guests and members
+
+
+I use something like the following in my header template, along with some HTML formatting:
+
+    $visitors::total User Online
+    $visitors::guests guests
+    $visitors::members members
+
+
+=head1 VERSION
+
+1.0
+
+=head1 AUTHOR
+
+Grahame Murray <blog@grahame.com>
+http://www.grahame.com/
+
+=head1 BUGS
+
+No known bugs.  Please notify me at blog@grahame.com
+
+=head1 CONFIGURATION
+
+$timeout: number of seconds of inactivity until a user is no longer considered active.  This value can be specified per directory, if the config plugin is installed.
+
+$debug_level: 0=off, 1=on.  This can also be specified per directory, if the config plugin is installed.
+
+
+=head1 LICENSE
+
+This source is submitted to the public domain.  Feel free to use and modify it.  If you like, a comment in your modified source attributing credit for my original work would be appreciated.
+
+THIS SOFTWARE IS PROVIDED AS IS AND WITHOUT ANY WARRANTY OF ANY KIND.  USE AT YOUR OWN RISK!

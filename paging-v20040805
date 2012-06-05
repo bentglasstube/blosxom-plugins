@@ -1,0 +1,128 @@
+# Blosxom Plugin: paging
+# Author(s): Kyo Nagashima <kyo@hail2u.net>
+# Version: 2004-08-05
+# Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+package paging;
+
+use strict;
+use vars qw($navi);
+
+# --- Configurable variables -----------
+
+# --- Plug-in package variables --------
+
+my($curr_path, $num_files, $pages, $page, $skip);
+
+# --------------------------------------
+
+use CGI qw(Delete param url);
+
+sub start {
+  Delete(-name => '-quiet');
+  $curr_path = "$blosxom::datadir/$blosxom::path_info";
+
+  if ((-d $curr_path) and $blosxom::path_info) {
+    return 1;
+  } elsif ($ENV{'PATH_INFO'}) {
+    return 0;
+  }
+
+  return 1;
+}
+
+sub filter {
+  my ($pkg, $files_ref) = @_;
+
+  foreach (keys %$files_ref) {
+    delete $files_ref->{$_} unless /^$curr_path/;
+  }
+
+  $num_files = scalar(keys %$files_ref);
+  $pages = $num_files / $blosxom::num_entries;
+  $pages = int($pages + 1) unless $pages == int($pages);
+  ($page) = (param("page") =~ /(\d+)/);
+  $page ||= 1;
+  $skip = $blosxom::num_entries * ($page - 1);
+
+  return 1;
+}
+
+sub sort {
+  return sub {
+    my ($files_ref) = @_;
+
+    $num_files = scalar(keys %$files_ref);
+    my @sorted = sort {$files_ref->{$b} <=> $files_ref->{$a}} keys %$files_ref;
+
+    return @sorted[$skip .. $num_files - 1];
+  };
+}
+
+sub head {
+  my ($pkg, $currentdir, $head_ref) = @_;
+
+  my $url;
+
+  # prefix
+  $navi .= qq!<div class="navi">\n<p>\n!;
+  $navi .= qq!Page $page of $pages:\n!;
+
+  # link to the first page
+  if ($page > 2) {
+    param('page' => 1);
+    $url = url(-path_info => 1, -query => 1);
+    $navi .= qq!<a href="$url" title="Go to first page">&#171;</a>\n!;
+  }
+
+  # link to previous page
+  if ($page > 1) {
+    param('page' => $page - 1);
+    $url = url(-path_info => 1, -query => 1);
+    $navi .= qq!<a href="$url" title="Go to previous page">&#8249;</a>\n!;
+  }
+
+  # links
+  my $j = $page;
+
+  if ($j <= 3) {
+    $j = 4;
+  } elsif (($j + 3) > $pages) {
+    $j = $pages - 3;
+  }
+
+  for (my $i = $j - 3; $i <= $j + 3; $i++) {
+    last if $i > $pages;
+    param('page' => $i);
+    $url = url(-path_info => 1, -query => 1);
+
+    if ($i == $page) {
+      # current page indicator is plain text
+      $navi .= qq!$i\n!;
+    } else {
+      # other page indicator is link
+      $navi .= qq!<a href="$url" title="Go to page $i">$i</a>\n!;
+    }
+  }
+
+  # link to next page
+  if ($page < $pages) {
+    param('page' => $page + 1);
+    my $url = url(-path_info => 1, -query => 1);
+    $navi .= qq!<a href="$url" title="Go to next page">&#8250;</a>\n!;
+  }
+
+  # link to the last page
+  if ($page < $pages - 1) {
+    param('page' => $pages);
+    $url = url(-path_info => 1, -query => 1);
+    $navi .= qq!<a href="$url" title="Go to last page">&#187;</a>\n!;
+  }
+
+  # postfix
+  $navi .= qq!</p>\n</div>!;
+
+  return 1;
+}
+
+1;

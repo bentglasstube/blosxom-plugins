@@ -1,0 +1,120 @@
+# -*- perl -*-
+# Blosxom Plugin: sublog
+# Author: Brian St. Pierre <brian@bstpierre.org>
+# Download: http://bstpierre.org/Projects/sublog
+# Version: 1
+# License: MIT style
+# Purpose: To allow weblog-like stuff to be included in a blosxom weblog
+# as a $sublog::sublog variable.
+
+# The posts in your sublog are similar in format to blosxom posts: the
+# first line is the title, the rest is the body. Including
+# $sublog::sublog in your template will give you a <div
+# class="sublog"> element that contains a <div class="sublog_title">
+# and <div class="sublog_body"> for each post.
+#
+# This does not support flavors.
+
+
+# INSPIRED BY / BASED ON:
+#
+# Blosxom Plugin: sideblog
+# Author: infozo <infozo@infozo.info> http://infozo.info
+# Version: 20030708
+# License: caveat emptor
+# Purpose: to read the first handful of lines from a sideblog file
+# containing not-quite-ready-for-prime-time blog material (be it
+# uncommented links, simple verbal quips, or unformulated thoughts)
+# into a variable made available to the head/foot files.
+
+# Copyright (c) 2004, Brian St. Pierre
+#
+# Permission to use, copy, modify, and distribute this software and its
+# documentation for any purpose, without fee, and without a written agreement
+# is hereby granted, provided that the above copyright notice and this
+# paragraph and the following two paragraphs appear in all copies.
+#
+# IN NO EVENT SHALL THE AUTHOR BE LIABLE TO ANY PARTY FOR DIRECT,
+# INDIRECT, SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES, INCLUDING LOST
+# PROFITS, ARISING OUT OF THE USE OF THIS SOFTWARE AND ITS DOCUMENTATION,
+# EVEN IF THE AUTHOR HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+# THE AUTHOR SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING, BUT NOT
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+# PARTICULAR PURPOSE.  THE SOFTWARE PROVIDED HEREUNDER IS ON AN "AS IS"
+# BASIS, AND THE AUTHOR HAS NO OBLIGATIONS TO PROVIDE MAINTENANCE,
+# SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
+
+package sublog;
+
+use FileHandle;
+use File::Find;
+use File::stat;
+
+# --- Configurable variables -----
+# Create your sublog data dir and point to its full path location
+# NOTE: This directory should not be under the same tree as your
+# regular blosxom posts! If it is, blosxom will pick up the posts in
+# your sublog... which is probably not what you want.
+#my $sublog_dir = "$blosxom::plugin_state_dir/sublog";
+my $sublog_dir = "/home/bst/blosxom-linklog";
+
+# how many entries would you like to be displayed in the sublog? 
+my $number_entries = 10;
+# --------------------------------
+
+my $sublog_data;
+
+use vars qw! %files %indexes %others !;
+
+sub sublog_find_entries {
+    my(%files, %indexes, %others);
+    find(
+      sub {
+        if ( 
+		# a match
+		$File::Find::name =~ m!^$sublog_dir/!
+
+		# and is readable
+		and (-r $File::Find::name)
+        ) {
+		# add the file and its associated mtime to the list of files
+		$files{$File::Find::name} = stat($File::Find::name)->mtime;
+	}
+      }, $sublog_dir
+    );
+
+    return (\%files, \%indexes, \%others);
+}
+
+sub start {
+        my ($files, $indexes, $others) = sublog_find_entries();
+        %files = %$files;
+	%indexes = %$indexes;
+	%others = ref $others ? %$others : ();
+
+	my %f = %files;
+
+	# Define a default sort subroutine
+	my $sort = sub {
+		my($files_ref) = @_;
+		return sort { $files_ref->{$b} <=> $files_ref->{$a} } keys %$files_ref;
+	};
+  
+	my ($title, $body);
+	my $fh = new FileHandle;
+
+	$sublog = "<div class=\"sublog\">\n";
+	foreach my $sb_entry ( &$sort(\%f, \%others) ) {
+		if (-f "$sb_entry" && $fh->open("< $sb_entry")) {
+			chomp($title = <$fh>);
+			chomp($body = join '', <$fh>);
+			$fh->close;
+		}
+		$sublog .= "    <div class=\"sublog_title\">" . $title . "</div>\n";
+		$sublog .= "    <div class=\"sublog_body\">" . $body . "</div>\n";
+	}
+	$sublog .= "</div>";
+	1;
+}
+1;

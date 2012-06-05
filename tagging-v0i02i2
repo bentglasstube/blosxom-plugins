@@ -1,0 +1,246 @@
+# -*- perl -*-
+# Blosxom Plugin: tagging
+# Author(s): Axel Beckert <blosxom@deuxchevaux.org>
+# Version: 0.02.2
+# Licensing: GPL v2 or newer, http://www.gnu.org/licenses/gpl.txt
+# Tagging web page: http://noone.org/blog?-tags=Tagging
+# Tagging download: http://noone.org/blosxom/tagging
+# Blosxom web page: http://www.blosxom.com/
+
+### Documentation:
+#
+# This is a plugin for blosxom.
+#
+# Installation:
+#
+#  Just drop it into your blosxoms plugin directory and it should start
+#  working. It needs a symbolic link supporting operating system, so it
+#  may not work under Windows. Unices should work fine, if you don't do
+#  ugly things with file systems. ;-)
+# 
+# What it does:
+#
+#  It allows you to tag Blosxom postings with keywords, filter
+#  postings based on that tags and show how often which tag was
+#  used. Should work together with Technorati Tags as described on
+#  http://www.technorati.com/help/tags.html although this feature is
+#  yet untested. (Feedback regarding this and other features is
+#  welcome!)
+#
+# How to use it:
+#
+#  Add an additional line after the title, starting with "Tags:".
+#  Between this Tag line and the body text there should be a blank
+#  line. (This is in conformance with other Plugins, e.g. the one for
+#  meta tags, which work the same way.)
+#
+#  Use $tagging::tag_list for the story tag list,
+#  $tagging::global_tag_list for a global tag list (e.g for head.html
+#  or foot.html) and $tagging::current_filter for the currently used
+#  tagging filter (if any)
+#
+# Plugin Order:
+#
+#  If you change the plugin order and have the categorytree plugin
+#  installed, it must come before multcat to work as intended.
+#
+#  If you have the moreentries plugin installed, you may change it's
+#  position in the plugin order to run after multcat.
+#
+# Known Bugs:
+#
+#  Being not as performant as I would like it to be.
+#
+# Version History:
+#
+#  0.01:   Initial release, based on Rael Dornfest's meta plugin.
+#  0.01.1: Additional documentation, small compatibility fix for newer
+#          Perl versions
+#  0.02:   Showing how often a tag has been used (in 3 different ways)
+#  0.02.1: Fixed an XSS issue
+#  0.02.2: Added documentation fixes and Technorati Tag support, see
+#          http://www.technorati.com/help/tags.html
+#
+
+package tagging;
+
+use File::Basename;
+use CGI;
+
+# Config
+
+my $tag_re = qr/Tags:\s*/i;
+my $split_re = qr/\s*,\s*/;
+my $tag_prefix = 'Tagged as: ';
+my $tag_suffix = ''; #' &raquo; ';
+my $global_tag_prefix = '<p style="text-align: justify;">'; # '<p>Available tags: ';
+my $global_tag_suffix = '</p>';
+my $current_filter_prefix = '<p>Current filter: &raquo;';
+my $current_filter_suffix = '&laquo;</p>';
+
+my $min_tag_no = 2;
+my $show_tag_no = 0;
+my $show_tag_no_by_size = 1;
+my $show_tag_no_by_color = 1;
+my $max_size = 250;
+my $min_size = 75;
+my $start_color = 'ff9900';
+my $end_color = '991100';
+#my $start_color = '0000ff';
+#my $end_color = 'ff0000';
+#my $start_color = 'ff9900';
+#my $end_color = '0000ff';
+
+# Init
+
+$tag_list = '';
+$global_tag_list = '';
+$current_filter = '';
+
+sub start { 
+1;
+}
+
+sub story {
+    my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    my %tags = ();
+    my $body = '';
+    my $in_header = 1;
+
+    foreach (split /\n/, $$body_ref) {
+	if (/^\s*$/) {
+	    $in_header = 0;
+	    $body .= "$_\n";
+	    next;
+	}
+
+	if ($in_header) {
+	    foreach my $tag (split($split_re, (m!^$tag_re(.+?)$!)[0])) {
+		$tags{$tag} = 1;
+	    }
+	    next;
+	}
+
+	$body .= "$_\n";
+    }
+    $$body_ref = $body;
+
+    $tag_list = '';
+    foreach my $tag (sort { lc($a) cmp lc($b) } keys %tags) {
+	$tag_list .= qq! <a href="$blosxom::url?-tags=$tag" rel="tag">$tag</a>,!;
+    }
+    $tag_list =~ s/,$//;
+    $tag_list = "$tag_prefix$tag_list$tag_suffix" if $tag_list;
+
+    return 1;
+}
+
+sub filter {
+    my ($pkg, $files_ref) = @_;
+    my $filter_tags = CGI::param('-tags');
+    $filter_tags =~ s/</[/gs; # No XSS here
+    $filter_tags =~ s/>/]/gs; # No XSS here
+
+    my %tags = ();
+
+    foreach my $key (keys %$files_ref) {
+	next if -l $key;
+	open(FILE, $key) or do { warn "Can't open $key: $!"; next; };
+	my $tags_found = 0;
+	my $empty_line_found = 0;
+	while ($_ = <FILE>) {
+	    last if /^\s*$/;
+	    if (m!^$tag_re(.+?)$!) {
+		foreach my $tag (split($split_re, $1)) {
+		    if (ref $tags{$tag}) {
+			push(@{$tags{$tag}}, $key);
+		    } else {
+			$tags{$tag} = [$key];
+		    }
+		}
+	    }
+	}
+    }
+
+    my $max = 1;
+    my $min = $min_tag_no;
+    foreach my $list (values %tags) {
+	my $no = scalar @$list;
+	$max = $no if $max < $no;
+	$min = $no if $min > $no || !$min;
+    }
+
+    my $diff = $max - $min;
+
+    foreach my $tag (sort { lc($a) cmp lc($b) } keys %tags) {
+	(my $url_tag = $tag) =~ s/\&/\%26/g;
+	(my $html_tag = $tag) =~ s/\&/\&amp;/g;
+	my $tag_no = scalar @{$tags{$tag}};
+	next if $tag_no < $min_tag_no;
+	my $tag_no_display = $show_tag_no ? " ($tag_no)" : '';
+	my $title = $tag_no == 1 ? "1 posting tagged" : "$tag_no postings tagged";
+	my $tag_percent = int($min_size+((($max_size-$min_size)/$diff)*($tag_no-$min+1)));
+	my $color = $diff ? &color_calc($tag_no, $min, $max) : '';
+	my $style = '';
+	$style .= qq!font-size: $tag_percent%;! if $show_tag_no_by_size && $diff;
+	$style .= qq!color: #$color;! if $show_tag_no_by_color && $diff;
+	$global_tag_list .= qq| <a href="$blosxom::url?-tags=$tag" title="$title" style="$style">$tag</a>$tag_no_display,\n|;
+    }
+
+    $global_tag_list =~ s/,$//;
+    $global_tag_list = "$global_tag_prefix$global_tag_list$global_tag_suffix" 
+	if $global_tag_list;
+
+    return 1 unless $filter_tags;
+
+    my @tags = split($split_re, $filter_tags);
+    my %localfiles = ();
+    foreach my $tag (@tags) {
+	my $files = $tags{$tag};
+	next unless ref $files;
+	foreach my $file (@$files) {
+	    $localfiles{$file} = $files_ref->{$file};
+	}
+    }
+
+    %$files_ref = %localfiles;
+
+    $current_filter = ($current_filter_prefix.
+		       join(', ', 
+			    map { s/\&/\&amp;/g; $_; } 
+			    sort { lc($a) cmp lc($b) } 
+			    @tags).
+		       $current_filter_suffix);
+
+#    use Data::Dumper;
+#    $debug = Dumper $filter_tags, $files_ref, \@tags, \%localfiles, \%tags;
+
+    1;
+}
+
+sub color_calc {
+    my ($tag_no, $min, $max) = @_;
+    my $diff = $max - $min;
+
+    my $result = [];
+
+    foreach my $i (0..2) {
+	my $s = &get_dec($start_color, $i*2);
+	my $e = &get_dec($end_color, $i*2);
+	my $diff_se = abs($s-$e);
+
+	my $rogob = ($diff_se/$diff)*($tag_no-$min);
+	$rogob = int($s < $e ? $s + $rogob : $s - $rogob);
+	$result->[$i] = sprintf('%02x', $rogob);
+    }
+
+    #use Data::Dumper;
+    return join('', @$result);
+}
+
+sub get_dec {
+    my ($color, $offset) = @_;
+    return hex(substr($color, $offset, 2));
+}
+
+1;

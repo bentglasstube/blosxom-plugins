@@ -1,0 +1,150 @@
+# -*- perl -*-
+# Blosxom Plugin: dept
+# Author(s): Axel Beckert <blosxom@deuxchevaux.org>, http://noone.org/blog
+# Version: 0.01
+# Licensing: GPL v2 or newer, http://www.gnu.org/licenses/gpl.txt
+# Dept plugin web page: http://noone.org/blog?-tags=dept
+# Dept plugin download: http://noone.org/blosxom/dept
+# Blosxom web page: http://blosxom.ookee.com/
+
+### Documentation:
+#
+# This is a plugin for blosxom.
+#
+# Installation:
+#
+#  Just drop it into your blosxoms plugin directory and it should start
+#  working. If you want, change some of the configuration variables
+#  below.
+# 
+# What it does:
+#
+#  It allows you to decorate Blosxom postings with "From the XYZ
+#  dept." like on Slashdot and other Slashsites.
+#
+# Configuration:
+#
+#  You can configure different texts based on regular expressions
+#  matched on the path. By default it looks if the path starts with
+#  and indicator for German or English language and uses and
+#  apropriate text in that language.
+#
+# How to use it:
+#
+#  Add an additional line after the title, starting with "Dept: ".
+#  Between this Dept line and the body text there should be a blank
+#  line. (This is in conformance with other Plugins, e.g. the one for
+#  meta tags, which work the same way.) After this keyword, the tags
+#  should be listed and separated by commata.
+#
+# Example:
+#
+#  The follwing two examples have the same effect.
+#
+#  | Story Headline
+#  | Dept: Slashdot Fan Club
+#  |
+#  | Story Body [...]
+#
+# Including the dept line into templates:
+#
+#  Use $dept::deptline in your templates.
+#
+# Known bugs and other ugly obstacles:
+#
+#  + None yet. :-)
+#
+# Version History:
+#
+#  0.01:   Initial release, losely based on my tagging plugin.
+#
+
+package dept;
+
+###
+### Config
+###
+
+# Texts by path
+
+my %path2text = (
+		'^/(Deutsch|de)($|/)' => 'Aus der <b>%s</b> Abteilung',
+		'^/(English|en)($|/)' => 'from the <b>%s</b> dept.',
+		'*' => 'From the <b>%s</b> dept.', # Default value. Keep it!
+		);
+
+# Regular expression
+
+my $dept_re = qr/Dept:/i;
+
+# Joining white space with:
+my $joinchar = '-';
+
+# Texts for tags
+
+my $dept_prefix = '<div class="dept">';
+my $dept_suffix = '</div>';
+
+# End of configuration.
+
+# Global variables
+
+$deptline = '';
+$dept = '';
+
+# Code
+
+sub start {
+    1;
+}
+
+sub story {
+    my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    my %localtags = ();
+    my $body = '';
+    my $in_header = 1;
+
+    $deptline = '';
+    $dept = '';
+
+    foreach (split /\n/, $$body_ref) {
+	$dept .= 'x';
+	if (/^\s*$/) {
+	    $in_header = 0;
+	    $body .= "$_\n";
+	    next;
+	}
+
+	if ($in_header) {
+	    if (/^$dept_re\s*(.+?)\s*$/) {
+		$dept = $1;
+		$dept =~ s/\s/$joinchar/gs;
+		my $fmtstr = $path2text{'*'};
+		foreach my $re (sort keys %path2text) {
+		    next if $re eq '*';
+		    if ($path =~ /$re/) {
+			$fmtstr = $path2text{$re};
+			last;
+		    }
+		}
+		$deptline = 
+		    $dept_prefix.
+		    sprintf($fmtstr, $dept).
+		    $dept_suffix;
+		$in_header = 0;
+		next;
+	    }
+	}
+
+	$body .= "$_\n";
+    }
+    $$body_ref = $body;
+
+    return 1;
+}
+
+1;
+
+
+
+

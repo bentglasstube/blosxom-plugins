@@ -1,0 +1,118 @@
+# Blosxom Plugin: ping_weblogs_com_xmlrpc
+# Author(s): Tatsuhiko Miyagawa <miyagawa@bulknews.net> 
+
+# Changes:
+# 0.06	Thu Sep 18 14:13:12 JST 2003
+#	Fixed touch again...
+# 0.05	Mon Aug 25 16:17:49 JST 2003
+#	Fixed touch using utime() function
+# 0.04	Mon Aug 18 02:56:57 JST 2003
+#	Don't retry anytime
+# 0.03  Wed Aug 13 01:16:35 JST 2003
+#	Don't retry when at least one of remote pings succeed
+# 0.02	Mon Aug 11 18:24:54 JST 2003
+# 	Added $timeout variable
+# 0.01 	Mon Aug 11 09:00:00 JST 2003
+# 	first release
+
+package ping_weblogs_com_xmlrpc;
+use strict;
+use vars qw($VERSION @ping_urls $timeout); 
+$VERSION = 0.06;
+
+# --- Configurable variables -----
+
+# What URL should this plugin ping?
+@ping_urls = qw(
+http://rpc.weblogs.com/RPC2
+http://ping.blo.gs/
+) unless defined @ping_urls;
+$timeout = 5 unless defined $timeout;
+
+my $cache = "$blosxom::plugin_state_dir/ping_weblogs_com_xmlrpc.touch";
+my $Debug = 1;
+# --------------------------------
+
+use FileHandle;
+use File::stat;
+
+# Keep track of the newest story's mtime
+my $newest = 0;
+
+sub start {
+    1;
+}
+
+sub filter {
+  my($pkg, $files_ref) = @_;
+
+  $newest = $files_ref->{( sort { $files_ref->{$b} <=> $files_ref->{$a} } keys %$files_ref )[0]};
+
+  1;
+}
+
+sub end {
+  # If no timestamped touch-file or newest is newer than the touch-file...
+  if ( !-e $cache or $newest > stat($cache)->mtime ) {
+    my @response = send_pings();
+    scalar(grep $_->{flerror}, @response) == @ping_urls and return 0;
+    # Touch the touchfile (creates if doesn't already exist)
+    my $now = time;
+    open TOUCH, ">$cache";
+    print TOUCH, time;
+    close TOUCH;
+
+    return 1;
+  }
+
+  return 1;
+}
+
+sub send_pings {
+    require XMLRPC::Lite;
+    return map {
+	warn "pinging $_" if $Debug;
+        XMLRPC::Lite->proxy($_, timeout => $timeout)
+	    ->call('weblogUpdates.ping', $blosxom::blog_title, $blosxom::url)
+	    ->result;
+    } @ping_urls;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: ping_weblogs_com_xmlrpc
+
+=head1 SYNOPSIS
+
+Purpose: Notifies weblogs.com [http://www.weblogs.com] and other sites
+that your weblog has been updated upon encountering any new story
+using XML-RPC weblogUpdates API.
+
+Maintains a touch-file
+($blosxom::plugin_state_dir/ping_weblogs_com_xmlrpc.touch) to which
+to compare the newest story's creation date. 
+
+=head1 REQUIREMENT
+
+This plugin requires XMLRPC::Lite module to work.
+
+=head1 AUTHOR
+
+Tatsuhiko Miyagawa <miyagawa@bulknews.net>, http://shibuya.pm.org/
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Copyright 2003, Tatsuhiko Miyagawa
+
+This program is licensed under the GPL or Perl Artistic License.
+
+=cut

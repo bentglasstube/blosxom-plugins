@@ -1,0 +1,52 @@
+# Blosxom Plugin: Podcast
+# Author(s): Peter Bouda
+# Version: 0.1
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+package podcast;
+
+# --- Configurable variables -----
+# --------------------------------
+
+$enclosure;
+
+sub start {
+  1;
+}
+
+sub story {
+	my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+	$enclosure = undef;
+
+	#print "$filename\n$path\n";
+	open(F,"<$blosxom::datadir/$path/$filename.txt");
+	@lines = <F>;
+	close(F);
+
+	foreach (@lines) {
+		if (/\.mp3/ and /embed/) {
+        	#$$body_ref="Podcast";
+		    chomp();
+		    (@tiles) = split(/ /);
+		    foreach (@tiles) {
+		      if (/^src/) {
+		          s/src="(.*?)"/$1/;
+		          $src = $_;
+		      }
+		      if (/^size/) {
+		          s/size="(.*?)"(.*)/$1/;
+		          $length = $_;
+		      }
+		    }
+    		$enclosure = '<enclosure url="'.$src.'" length="'.$length.'" type="audio/mpeg"/>';
+		}
+	}
+
+	return 1;
+}
+
+1;
+
+__END__
+

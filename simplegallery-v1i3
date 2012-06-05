@@ -1,0 +1,368 @@
+# Blosxom simplegallery plugin
+# Copyright (C) 2004  Jonathan Batchelor
+
+# Documentation and Licensing:
+#  See the bottom of this file or type: perldoc gallery
+
+package simplegallery;
+
+# --- Configuration variables -----
+
+# Define the category that will be used for the gallery
+# This is a subdirectory of the blosxom datadir - you should be able
+# to leave it as '' for the whole of your blosxom installation.
+$sg_category = 'photos';
+
+# The server local path that contains the images.
+# This should be accessible via the web using the same path as the
+# gallery category.
+# For example if the category 'photos' is defined above, and the path
+# '/var/www/html' is the document root of your server, then the
+# directory '/var/www/html/photos' should contain subdirectories
+# containing the pictures in each album.
+$sg_server_path = '/var/www/html';
+
+# The CSS class to apply to each thumbnail <div>
+$sg_class = 'thumb';
+# The CSS class to apply to the summary thumbnail <div>
+$sg_summary_class = 'summary_thumb';
+
+# The text used for the link title for thumbnails
+$sg_linktitle = "View larger picture";
+
+# File with name of picture to show on summary pages
+# This file contains the filename (without extension) of the image
+# to display on pages other than the page specifically for this gallery.
+$sg_summary_file = "00.txt";
+
+# The size to generate thumbnail images
+$sg_geom_thumb = "120x120";
+
+# The size to generate sample images for summary pages
+$sg_geom_summary = "160x160";
+
+# ---------------------------------
+
+use CGI qw/:standard/;
+use Image::Magick;
+
+sub start {
+  # For now restrict to dynamic rendering
+  # Can someone please test static rendering and let me know if it works
+  unless ( $blosxom::static_or_dynamic eq 'dynamic' ){
+    return 0;
+  }
+
+  return 1;
+}
+
+sub story {
+  my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+  
+  unless ( $path =~ /^\/$sg_category/ ){
+    # Do nothing if this story isn't in the right category
+    return 1;
+  }
+  
+  my $path_info = $blosxom::path_info;
+  $path_info =~ s/\.\w*$//;  
+  my $story_path = "$path/$filename";
+  $story_path =~ s!^/!!;
+
+  my $album_dir = "$sg_server_path$path/$filename";
+
+  opendir(ALBUM, "$album_dir");
+  my @allfiles = grep !/^\./, readdir ALBUM;
+  closedir(ALBUM);
+
+  my %pictures;
+
+  # Find all relevant files in the directory
+  foreach my $file (@allfiles){
+    next unless $file =~ /\.jpg|-caption\.txt$/i;
+    my $name = $file;
+    if ( $file =~ /-thumb\.jpg$/i ){
+      $name =~ s/-thumb\.jpg$//i;
+      $pictures{$name}{'thumb'} = $file;
+    }
+    elsif ( $file =~ /-summary\.jpg$/i ){
+      $name =~ s/-summary\.jpg$//i;
+      $pictures{$name}{'summary'} = $file;
+    }
+    elsif ( $file =~ /-caption\.txt$/i ){
+      $name =~ s/-caption\.txt$//i;
+      $pictures{$name}{'cap_file'} = $file;
+    }
+    else {
+      $name =~ s/\.jpg//i;
+      $pictures{$name}{'file'} = $file;
+    }
+  }
+  
+  if ( $story_path eq $path_info ){
+    # Display the full gallery if we are on the page for that gallery
+    
+    foreach $pic (sort keys %pictures){
+      # Ignore this picture if there is no base image file
+      next unless defined($pictures{$pic}{'file'});
+
+      # Create a thumbnail if necessary
+      unless ( defined($pictures{$pic}{'thumb'}) ){
+        my $file = $pictures{$pic}{'file'};
+	my $dest = $file;
+	$dest =~ s/\.jpg$/-thumb\.jpg/i;
+	resize_image("$album_dir/$file", "$album_dir/$dest", $sg_geom_thumb) and
+	  $pictures{$pic}{'thumb'} = $dest;
+      }
+   
+      # Get the caption, if it exists
+      if ( defined($pictures{$pic}{'cap_file'}) ){
+        open(CAPTION, "$album_dir/$pictures{$pic}{'cap_file'}");
+        while(<CAPTION>){
+          chomp;
+          $pictures{$pic}{'cap_text'} .= $_;
+        }
+        close(CAPTION);
+      } else {
+        $pictures{$pic}{'cap_text'} = "";
+      }
+   
+      # Set the img alt text
+      my $alt_text = substr($pictures{$pic}{'cap_text'}, 0, 30);
+      if( length($pictures{$pic}{'cap_text'}) > 30 ){
+        $alt_text .= "...";
+      }
+      elsif ( length($pictures{$pic}{'cap_text'}) == 0 ){
+        $alt_text = "No Caption";
+      }
+
+      # Add the thumbnail to the end of the story's body
+      my $html = div({ -class=>"$sg_class" },
+                   a({ -href=>"$path/$filename/$pictures{$pic}{'file'}",
+  		       -title=>"$sg_linktitle" },
+  	             img({ -src=>"$path/$filename/$pictures{$pic}{'thumb'}",
+  	       	           -alt=>"$alt_text" }),
+		     $pictures{$pic}{'cap_text'}
+	           )
+    	         );
+      $$body_ref .= $html . "\n";
+    }
+
+  }
+  elsif ( scalar keys %pictures ) {
+    # Only display a summary picture on other pages
+
+    # Find out which picture to use as the summary picture
+    if ( -f "$album_dir/$sg_summary_file" ){
+      open(SUMM, "$album_dir/$sg_summary_file");
+      $summary_pic = readline(SUMM);
+      chomp $summary_pic;
+      close(SUMM);
+    } else {
+      $summary_pic = (sort keys %pictures)[0];
+    }
+
+    # Generate a summary thumbnail (usually larger than ordinary thumbnails)
+    unless ( defined($pictures{$summary_pic}{'summary'}) ){
+      my $file = $pictures{$summary_pic}{'file'};
+      my $dest = $file;
+      $dest =~ s/\.jpg$/-summary\.jpg/i;
+      resize_image("$album_dir/$file", "$album_dir/$dest", $sg_geom_summary) and
+        $pictures{$summary_pic}{'summary'} = $dest;
+    }
+
+    # Insert into body before the orginal body text
+    my $html = div({ -class=>"$sg_summary_class" },
+                 a({ -href=>"$path/$filename\.$blosxom::flavour",
+		     -title=>"View this entire album" },
+		   img({ -src=>"$path/$filename/$pictures{$summary_pic}{'summary'}",
+		         -alt=>"$$title_ref" })
+		 ),
+		 $$body_ref
+	       );
+    $$body_ref = $html . "\n";
+
+  }
+  return 1;
+}
+
+# Subroutine to do the image resizing - could easily be changed to
+# use a different image library if required
+sub resize_image {
+  my ($source, $destination, $geometry) = @_;
+  my $image=Image::Magick->new;
+  my $status;
+
+  $status = $image->Read($source);
+  $status =~ /(\d+)/;
+  (warn "$status" and return undef) if $1;
+  
+  $status = $image->Profile(undef);
+  $status =~ /(\d+)/;
+  (warn "$status" and return undef) if $1;
+  
+  $status = $image->Scale(geometry=>"$geometry");
+  $status =~ /(\d+)/;
+  (warn "$status" and return undef) if $1;
+
+  $status = $image->Write($destination);
+  $status =~ /(\d+)/;
+  (warn "$status" and return undef) if $1;
+  
+  undef $image;
+  return 1;
+}
+
+__END__
+
+=head1 NAME
+
+Blosxom simplegallery plugin
+
+=head1 SYNOPSIS
+
+Use this plugin to create picture galleries within blosxom in a
+very simple way. There is no need for any extra tags in your
+stories or to create the thumbnails beforehand. The plugin will
+only display the full gallery on the dedicated story page, and
+just a summary image on all other pages.
+
+=head1 INSTALLATION AND CONFIGURATION
+
+Drop the simplegallery plugin into your Blosxom plugins folder.
+
+Edit the options in the configuration section - in particular
+make sure the correct server path is used, this should be one
+level above the blosxom category for your galleries/albums.
+
+You should place your albums in paths beneath the server path
+and gallery category (if you are using one). Then for each article
+within your blosxom gallery category (under $datadir) the plugin 
+will look for an equivalent directory in the server path.
+It will read the .jpg files from that directory, creating
+thumbnail files (-thumb.jpg) as necessary. Files with the
+same name as the images but the ending -caption.txt, will
+be used as the captions for each thumbnail. The variable
+$sg_summary_file names the file that the plugin will read to
+determine which image to use on summary pages.
+
+For example, using the category 'photos' for your galleries, if
+the article 'album.txt' exists, the plugin will look to generate
+a gallery from the jpg images in $sg_server_path/photos/album. It
+will create thumbnails and use the captions in the relevant caption
+files.
+
+=head2 File layout summary
+
+Here is an ASCII art representation of how you should lay out the
+directories, presuming you have set the gallery category to 'photos'.
+
+ |
+ |---> Blosxom datadir
+ |        |
+ |        |---> photos
+ |        |       |
+ |                |---> album.txt
+ |
+ |---> Document Root
+ |        |
+ |        |---> photos
+ |        |       |
+ |                |---> album
+ |                |       |
+ |                        |---> image1.jpg
+ |                        |---> image1-caption.txt
+ |                        |---> image2.jpg
+		
+
+=head2 Styling with CSS
+
+You'll definitely want to use some CSS to style the output, I use
+something like the following:
+
+ div.thumb {
+   float: left;
+   border: 1px solid;
+   padding: 5px;
+   margin: 0 5px 5px 0;
+   text-align: center;
+   width: 120px;
+   height: 150px;
+ }
+
+ div.thumb a {
+   text-decoration: none;
+ }
+
+ div.thumb img {
+  border: 0;
+  padding: 0;
+  margin: 0;
+ }
+
+ div.album a img {
+   display: block;
+   float: left;
+   border: 1px solid;
+   padding: 5px;
+   margin: 5px 5px 5px 0;
+ }
+
+ div.album p {
+   padding-top: 1em;
+ }
+
+=head2 Using mod_rewrite
+
+I use the following in the .htaccess in my webserver DOCUMENT_ROOT:
+
+ RewriteEngine on
+ RewriteRule ^$ /url/path/to/blosxom.cgi [L,QSA]
+ RewriteCond %{REQUEST_FILENAME} !-f
+ RewriteCond %{REQUEST_FILENAME} !-d
+ RewriteRule ^(.*)$ /url/path/to/blosxom.cgi/$1 [L,QSA]
+ RewriteCond %{REQUEST_FILENAME} !-f
+ RewriteRule ^(photos/.*)$ /url/path/to/blosxom.cgi/$1 [L,QSA]
+
+The last two lines mean that for any path beginning with photos,
+(the gallery category) any existing files on the server are accessed
+(i.e. the image files) normally, otherwise the path is passed to
+blosxom. This means that blosxom itself is transparent to the client
+and the images can be accessed using a sensible URL.
+
+In fact you can even leave out the last 2 lines and the !-d line. This
+allows any files that exist in the same heirarchy as your blosxom install
+ but on your webserver to be accessed.
+
+=head1 VERSION
+
+$Revision: 1.3 $
+
+$Date: 2004/03/25 09:43:59 $
+
+=head1 AUTHOR
+
+Jonathan Batchelor <jmb@atuin.co.uk>, L<http://atuin.co.uk/>
+
+=head1 LICENSE
+
+Blosxom simplegallery plugin
+
+Copyright (C) 2004, Jonathan Batchelor
+
+This library is free software; you can redistribute it and/or
+modify it under the terms of the GNU Lesser General Public
+License as published by the Free Software Foundation; either
+version 2.1 of the License, or (at your option) any later version.
+
+This library is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+Lesser General Public License for more details.
+
+You should have received a copy of the GNU Lesser General Public
+License along with this library; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+
+A copy of the GNU Lesser General Public License is also available from:
+L<http://www.gnu.org/copyleft/lesser.html>

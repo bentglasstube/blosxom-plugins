@@ -1,0 +1,152 @@
+#!/usr/bin/perl
+# ---------------------------------------------------------------------
+# ldweather: Livedoor Weather から今日のお天気を取得する
+# Author: Fukazawa Tsuyoshi <fukaz55@fo.main.jp>
+# Version: 2006-02-11
+# http://fukaz55.main.jp/
+# ---------------------------------------------------------------------
+package ldweather;
+
+use strict;
+use LWP::UserAgent;
+use FileHandle;
+use vars qw($link $telop $description $image $title $max $min $area $pref $city);
+
+my $AGENT_NAME = 'blsxom livedoor Weather Web Service Plugin';
+my $TIMEDOUT = 7;
+my $CACHEDIR = "$blosxom::plugin_state_dir/cache";	# XMLのキャッシュ用ディレクトリ
+
+my $CITY = 70;	# 都市番号
+my $RPC = "http://weather.livedoor.com/forecast/webservice/rest/v1?city=$CITY&day=today";	# WebサービスのURL
+
+my %weather;	# 結果保存用
+
+# ------------------------------------------------------------------------
+sub start {
+	# キャッシュ用ディレクトリの作成
+	if (!-e $CACHEDIR) {
+		my $mkdir_r = mkdir($CACHEDIR, 0755);
+		warn $mkdir_r
+		? "blosxom : aws plugin > \$cachedir, $CACHEDIR, created.\n"
+		: "blosxom : aws plugin > mkdir $CACHEDIR missed:$!";
+		$mkdir_r or return 0;
+	}
+
+	# livedoor weather から今日のお天気を取得
+	# 条件：今日のデータがないか、取得してから６時間が経過している
+	my $filename = getTodayFileName();
+	if (!-e $filename || -M $filename > 0.25) {
+		getXML($RPC, $filename);
+	}
+	return 1;
+}
+
+sub date {
+	my($pkg, $path, $date_ref, $mtime, $dw, $mo, $mo_num, $da, $ti, $yr) = @_;
+
+# この日付のお天気情報を取得する
+	getWetherInfo($yr, $mo_num, $da);
+	return 1;
+}
+
+sub story {
+	my($pkg, $path, $fn, $story_ref, $title_ref, $body_ref) = @_;
+
+# Weather記法をお天気情報に置き換える
+	$$body_ref =~ s/<\$ldweather::(\w+?)>/$weather{$1}/ge;
+	return 1;
+}
+
+sub foot {
+	my($pkg, $path, $foot_ref) = @_;
+
+# 今日の天気情報を取得し直す
+	my ($ss, $mi, $hh, $dd, $mm, $yy, $wd, $yd, $tz) = localtime(time);
+	$yy += 1900; $mm++;
+	getWetherInfo($yy, $mm, $dd);
+	return 1;
+}
+
+# ------------------------------------------------------------------------
+sub getXML {
+	my ($url, $file) = @_;
+
+	my $ua = new LWP::UserAgent;
+	$ua->agent($AGENT_NAME);
+	$ua->timeout($TIMEDOUT);
+	my $res = $ua->mirror($url, $file);
+
+	return (-e $file) ? 1 : 0;
+}
+
+# ------------------------------------------------------------------------
+sub getWetherInfo() {
+	my ($year, $month, $date) = @_;
+
+# デフォルト値
+	$weather{title} = '';
+	$weather{link} = '';
+	$weather{area} = '';
+	$weather{pref} = '';
+	$weather{city} = '';
+	$weather{telop} = '';
+	$weather{description} = '';
+	$weather{image} = '';
+	$weather{max} = '-';
+	$weather{min} = '-';
+
+# 引数で渡された日付のお天気情報をXMLから取得し、プラグイン変数に設定する
+	my $filename = getFileName($year, $month, $date);
+	if (!-e $filename) {
+		$weather{description} = "Not found";
+	}
+
+	my $content = readText($filename);
+	if (!$content =~ /<\?xml .*? \?>/) {
+		$weather{description} = "Not XML";
+		remove($filename);
+	}
+
+	$weather{title} = $1 if ($content =~ /<title>(.*?)<\/title>/);
+	$weather{link} = $1 if ($content =~ /<link>(.*?)<\/link>/);
+	$weather{area} = $1 and $weather{pref} = $2 and $weather{city} = $3 if ($content =~ /<location area="(.*?)" pref="(.*?)" city="(.*?)" \/>/);
+	$weather{telop} = $1 if ($content =~ /<telop>(.*?)<\/telop>/);
+	$weather{description} = $1 if ($content =~ /<description>(.*?)<\/description>/s);
+	$weather{image} = qq(<a href="$1" border="0" title="$weather{title}"><img src="$2" width="$3" height="$4" style="border:none;" alt="$weather{telop}" /></a>) if ($content =~ /<image>.<title>.*?<\/title>.<link>(.*?)<\/link>.<url>(.*?)<\/url>.<width>(.*?)<\/width>.<height>(.*?)<\/height>.*?<\/image>/s);
+	$weather{max} = $1 if ($content =~ /<max>.<celsius>(.*?)<\/celsius>.<fahrenheit>.*?<\/fahrenheit>.*?<\/max>/s);
+	$weather{min} = $1 if ($content =~ /<min>.<celsius>(.*?)<\/celsius>.<fahrenheit>.*?<\/fahrenheit>.*?<\/min>/s);
+
+	setWeatherParam();
+}
+
+sub setWeatherParam {
+	($telop, $link, $image, $title, $description, $max, $min, $area, $pref, $city) = 
+		($weather{telop}, $weather{link}, $weather{image}, $weather{title}, $weather{description}, $weather{max}, $weather{min}, $weather{area}, $weather{pref}, $weather{city});
+}
+
+# ------------------------------------------------------------------------
+sub getTodayFileName {
+	my ($ss, $mi, $hh, $dd, $mm, $yy, $wd, $yd, $tz) = localtime(time);
+	$yy += 1900; $mm++;
+	return getFileName($yy, $mm, $dd);
+}
+
+# ------------------------------------------------------------------------
+sub getFileName {
+	my ($yy, $mm, $dd) = @_;
+	return $CACHEDIR . "/" . sprintf("%04d%02d%02d.xml", $yy, $mm, $dd);
+}
+
+# ------------------------------------------------------------------------
+sub readText {
+	my $filename = shift;
+	my $fd = new FileHandle;
+	$fd->open($filename, "r");
+	my $content = join('', <$fd>);
+	$fd->close();
+
+	return $content;
+}
+
+# ------------------------------------------------------------------------
+1;

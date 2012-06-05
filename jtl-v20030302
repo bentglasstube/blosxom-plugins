@@ -1,0 +1,93 @@
+# Blosxom Plugin: jtl					   -*- perl -*-
+# Author: Todd Larason jtl@molehill.org>
+# Version: 20030302
+
+package jtl;
+
+$google_link_text ||= qq!<a href="http://www.google.com/search?q=%s">Google</a>!;
+
+$timestamp = 0;
+my $filter = undef;
+
+use CGI;
+
+my $files;
+
+sub escape {
+    local ($_) = @_;
+
+    s/([^a-zA-Z0-9])/sprintf("%%%02x",ord($1))/seg;
+    s/%20/+/g;
+    return $_;
+}
+
+
+sub do_log_jtl {
+    my $ref = CGI::referer();
+    if ($ref ne '' &&
+	$ref !~ m!^(http://)?molelog2?.molehill.org(/|$)!) {
+	open REF,">>$blosxom::datadir/referers";
+	print REF "$ref /$blosxom::path_info $blosxom::path_info_yr $blosxom::path_info_mo $blosxom::path_info_da\n";
+	close REF;
+    }
+}
+
+sub google {
+    $google = undef;
+
+    $google = sprintf($google_link_text, 
+		      escape($meta::google || $meta::keywords))
+	if (defined($meta::google) or defined($meta::keywords));
+}
+
+
+sub start {
+    $blosxom::num_entries = CGI::param('numentries') 
+	if defined CGI::param('numentries');
+    1;
+}
+
+sub filter {
+    my ($pkg, $files_ref) = @_;
+    $files = $files_ref;
+
+    $filter = CGI::param('filter');
+    if (defined $filter && $filter eq 'NoSmut') {
+	foreach (keys %$files_ref) {
+	    delete $files_ref->{$_} if ($_ =~ m:/Smut/:);
+	}
+    }
+    
+    1;
+}
+
+sub story {
+    my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    my $pathname = "$blosxom::datadir$path/$filename.$blosxom::file_extension";
+    $timestamp = $files->{$pathname};
+    google();
+
+    if (defined $filter && $filter eq 'NoSmutPics' && $path =~ m:/Smut/:) {
+	$$body_ref =~ s:<(/?)img(.*?)>:[\1img\2]:gims;
+    }
+    1;
+}
+
+sub head {
+    do_log_jtl();
+    $remote_host = CGI::remote_host();
+    $now = $^T;
+}
+
+sub expr {
+    my ($self, $attr) = @_;
+    $attr->{expr} =~ s:DOL:\$:g;
+    
+    return eval $attr->{expr};
+}
+sub interp {
+    my ($self, $attr) = @_;
+    my $bit = $attr->{bit};
+    return &$blosxom::interpolate($blosxom::template->('', "jtl.$bit", $blosxom::flavour));
+}
+1;

@@ -1,0 +1,123 @@
+# Blosxom plugin: storytitle
+# Author(s): Struan Donald <code@exo.org.uk>
+# Version: 0.6
+# Documentation: see bottom of file or perldoc title
+
+package storytitle;
+
+# ------------------ Config variables ---------------------
+
+# default seperator to add to story title
+
+my $sep = ' : ';
+
+# do we default to the right aligned title
+# 1 for right aligned, 0 for left
+
+my $right = 1;
+
+# seperator for right aligned title 
+
+my $right_sep = ''
+    || $sep;
+
+# seperator for left aligned title
+
+my $left_sep = ''
+    || $sep;
+
+# ---------------------------------------------------------
+
+sub start { 1; }
+sub head {
+    my ($p, $dir, $head) = @_;
+    my $title;
+    if (!$dir) {
+        $title = "$blosxom::path_info_yr $blosxom::path_info_mo";
+        
+    } elsif ($dir =~ m#(.*?)/?([\-\.\w]+)\.(\w+)$# and $2 ne 'index') {
+        $file = join('/', $blosxom::datadir, $1, "$2.$blosxom::file_extension");
+        my $fh = new FileHandle;
+        if (-f "$file" && $fh->open("< $file")) {
+            chomp($title = <$fh>);
+            $fh->close;
+        }
+    }
+    if (defined $title and $title =~ /\S/) {
+        $page_title_right = $right_sep . $title;
+        $page_title_left = $title . $left_sep;
+        $page_title = defined $right ? $page_title_right : $page_title_left;
+    } else { # these need to be reset otherwise we'll get the last value
+        $page_title_right = undef;
+        $page_title_left = undef;
+        $page_title = undef;
+    } 
+}
+
+1;
+
+__END__
+=head1 NAME
+
+Blosxom Plug-in: storytitle
+
+=head1 SYNOPSIS
+
+Allows you to include the story title in the page header for individually views blosxom stories.
+
+=head2 QUICK START
+
+Put title in your plug-ins directory.
+
+If required change the $sep variable. This controls the seperator that goes at the start of the story title. E.g. if $sep is ' : ' and the story title is 'A blosxom entry' then the plugin will return ' : A blosxom entry'.
+
+Now all individually displayed stories can have their title in the pages title tag, or anywhere else in the page header you want. Just place $storytitle::page_title where you want to display the story title.
+
+=head2 LEFT AND RIGHT ALIGNED TITLES
+
+If you have a need for a left aligned title (i.e. you want to have 'story title : somethign else') then you can use either $storytitle::page_title_left or set the value of $right in the configuration to 0. In that case $storytitle::page_title will have the seperator at the left.
+
+You can also individually configure the left and right sided seperators with the left_sep and right_sep configuration options. $storytitle::page_title_left and $storytitle::page_title_right will access the left and right sided titles.
+
+=head1 VERSION
+
+0.6
+
+=head2 CHANGES
+
+0.6 - Now uses the users file extension setting rather than always .txt
+
+0.5 - deals with filenames with like foo.bar.txt and foo-bar.txt (thanks to
+      Antti Vähä-Sipilä for pointing this out)
+      catches titles containing only white space.
+
+0.4 - bugfix to stop title values hanging around under static generation
+
+0.3 - fixed left_title to actually be a left title
+
+0.2 - introduced left and right options
+
+=head1 AUTHOR
+
+Struan Donald <code@exo.org.uk>, http://exo.org.uk/code/
+
+=head2 CREDITS
+
+Lim Chee Aun <http://phoenity.com/> for the left/right sided titles idea.
+
+Anthony DeLorenzo <anthony.delorenzo@gmail.com> for fix to make it use the users file extension setting.
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 COPYRIGHT
+
+Copyright (C) 2003-2005 Struan Donald. 
+
+This program is free software; you can redistribute
+it and/or modify it under the same terms as Perl itself.
+
+=cut

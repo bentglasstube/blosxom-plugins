@@ -1,0 +1,137 @@
+#!/usr/bin/perl			-*- perl -*-
+#
+# uainclude -- Conditionally include a file based on the User-Agent
+#              of the browser
+#
+# Author: Joey Gibson <joey@joeygibson.com>
+# Version: $Id: uainclude,v 1.2 2003/03/02 04:36:45 jgibson Exp $
+#
+# History:
+# $Log: uainclude,v $
+# Revision 1.2  2003/03/02 04:36:45  jgibson
+# Added licenses to google and uainclude.
+#
+# Revision 1.1.1.1  2003/03/02 04:25:57  jgibson
+#
+#
+
+package uainclude;
+
+use CGI qw/:standard/;
+use FileHandle;
+
+# --- User Variables ---
+%file_mapping = ("gecko" => "gecko.css",
+				 "IE"    => "ie.css",
+				 "lynx"  => "empty.css");
+
+$default_file = "default.css";
+# --- End of User Variables ---
+
+$included_content = "";
+
+sub start
+{
+	1;
+}
+
+sub include_file
+{
+	my ($file_name) = @_;
+	my $path_name = $blosxom::datadir . "/" . $file_name;
+	my $fh = new FileHandle;
+	
+	if (-f $path_name)
+	{
+		$fh->open($path_name);
+
+		foreach my $line (<$fh>)
+		{
+			$included_content .= $line;
+		}
+	}
+}
+	
+sub head
+{
+	my($pkg, $currentdir, $head_ref) = @_;
+	
+	my $ua = user_agent();
+	my $included = 0;
+	
+	while (my ($regexp, $file_to_include) = each %file_mapping)
+	{
+		if ($ua =~ /$regexp/i)
+		{
+			include_file($file_to_include);
+			$included = 1;
+			
+			last;
+		}
+	}
+
+	include_file($head_ref, $default_file) if (! $included);
+	1;
+}
+
+sub end
+{
+	1;
+}
+
+1;
+
+=head1 NAME
+	
+uainclude: Include content based on the User-Agent of the browser.
+	
+=head1 SYNOPSIS
+
+Purpose: Based on the type of browser in use, include different
+content, specifically style sheets, though it could be used
+for all sorts of content.
+
+=head1 VERSION
+
+0.1
+
+=head1 USAGE
+
+Regexes can be added to the %file_mapping hash with the values
+being the files to load. The file specified is relative to
+$blosxom::datadir, and does _not_ need to actually exist. Such
+is the case with the entry for "lynx".
+
+=head1 AUTHOR
+
+Joey Gibson <joey@joeygibson.com>, http://www.joeygibson.com
+
+=head1 BUGS
+
+Send bug reports and comments to joey@joeygibson.bom
+
+=head1 LICENSE
+
+uainclude - Blosxom plugin
+	
+Copyright (C) 2003, Joey Gibson <joey@joeygibson.com>
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files
+(the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify,
+merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished
+to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,.
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE. 
+			

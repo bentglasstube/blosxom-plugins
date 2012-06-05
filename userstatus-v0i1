@@ -1,0 +1,111 @@
+# Blosxom Plugin: userstatus
+# Author(s): Mike Mason <mike@mikemason.ca>
+# Version: 0.1
+# Documentation: See the bottom of this file or type: perldoc userstatus
+
+package userstatus;
+
+# --- Configurable variables ---
+
+# Name of file in data directory where links to other blogs resides
+$status_datafile = "userstatus.list";
+
+$currently_class = "status1";
+$status_class = "status2";
+
+# ------------------------------
+
+$status;
+
+sub start {
+	return 1;
+}
+
+sub head {
+	local $_;
+
+	$status = generatestatus();
+	return 1;
+}
+
+sub generatestatus {
+	open(IN, "$blosxom::datadir/$status_datafile") or die "userstatus couldn't open status file '$blosxom::datadir/$status_datafile': $!";
+	my $username = <IN>;
+	chomp $username;
+	my @statuses;
+	my $status_count = 0;
+	while(my $line = <IN>) {
+		chomp $line;
+		push @statuses, $line;
+		$status_count++;
+	}
+	my $picked_status = "configuring userstatus";
+	if($status_count > 0) {
+		$picked_status = $statuses[int(rand($status_count))];
+	}
+	return "<p class=\"$currently_class\">$username is currently&#8230;</p><p class=\"$status_class\">$picked_status</p>";
+}
+
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plugin: userstatus
+
+=head1 SYNOPSIS
+
+Provides a $userstatus::status variable which will display a status message
+about what the blog author is currently getting up to.
+
+=head1 DESCRIPTION
+
+This plugin will provide a variable you can use ($userstatus::status) which
+contains a brief status message about what the blog author is currently doing.
+Multiple statuses can be defined, in which case the plugin will select a
+random one for each page.
+
+=head1 CONFIGURATION
+
+There are three user-configurable variables to customize the operation of
+userstatus.  These are as follows:
+
+=item B<$status_datafile>: Configures the name of the file in your data
+directory from which status information is read. The first line of the file
+should be the blogger's name, and all other lines individual statuses.
+
+=item B<$currently_class>: CSS class to use for the first "Mike is currently..."
+paragraph.
+
+=item B<$status_class>: CSS class for the paragraph containing the actual
+status message.
+
+=head1 VERSION
+
+0.1
+
+=head1 AUTHOR
+
+Mike Mason <mike@mikemason.ca>, http://mikemason.ca
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+Blosxom Plugin Docs: http://www.blosxom.com/documentation/developers/
+
+=head1 BUGS
+
+There are certain to be some.  If you find any, let the author know.
+
+=head1 LICENSE 
+
+Copyright 2003, Mike Mason
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. 

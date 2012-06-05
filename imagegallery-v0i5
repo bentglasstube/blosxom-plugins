@@ -1,0 +1,171 @@
+# Bloxsom Plugin: ImageGallery
+# Author: Fletcher T. Penney
+# Version: 0.5
+
+package imagegallery;
+
+# --- Configurable variables ----
+
+# URL for images directory - will be added to beginning of images for the web browser to find them
+$images_url = "/images/galleries";
+
+# Filepath for images directory
+# This gets added to the gallery to find the files
+# NOTE: This is a change in behavior from version 0.1
+$images_path = "/Library/WebServer/Documents/images/galleries";
+
+
+# Default thumbnail sub-directory name
+$thumbdir="thumbnails";
+
+# Default image sub-directory name
+$imagesdir="images";
+
+# Default comments sub-directory name
+$commentsdir="comments";
+
+# Default number of columns
+$columns = 3;
+
+# HTML Code for gallery pieces
+$galleryhead = "<table width=\"100%\" border=0 >\n";
+
+$galleryrowstart = "<tr>\n";
+
+$galleryrowend = "</tr>\n";
+
+$gallerycolstart = "<td align=center>\n";
+
+$gallerycolend = "</td>\n";
+
+$galleryfoot = "</table>\n";
+
+
+# Message to display in category view
+$gallerymessage = "<br>You must click on the individual story to see the images.  Try the \"permanent link\" button.";
+
+# HTML Code for single image view
+
+$imagehead = qq!<table width="100%" border=0>
+<tr><td align="center">
+!;
+
+$imagefoot = qq!</td></tr></table>!;
+
+
+# Extensions for valid image types to display
+$imagetypes = "jpg|gif|png";
+
+# -------------------------------
+$path_noflavour = "";
+$gallery="";
+$gallerypath="";
+$comments = "";
+
+use File::Find;
+use CGI;
+
+sub start {
+	$path_noflavour = $blosxom::path_info;
+	if ($path_noflavour !~ s/\.[^\.]*$//) {
+		$path_noflavour =~ s/\/$//;
+		$path_noflavour .= "\/index";
+		$path_noflavour =~ s/^([^\/])/$1/;
+	}
+	$path_noflavour =~ s/^\/*//;
+
+}
+
+
+sub story {
+	$gallery="";
+	$comments="";
+	my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+	if ($$body_ref =~ /<!-- imagegallery\s*(\S*)\s*-->/i) {
+		$gallerypath= $1 . "\/" if $1 ne "";
+
+		$gallerypath =~ s/\/\//\//g;
+	} else {
+		return 1;
+	}
+
+	if (($path_noflavour =~ /index$/) || ($path_noflavour =~ /\/$/)) {
+		$gallery = "<br> You must view this story individually to <a href=\"$blosxom::url$path/$filename.$blosxom::flavour\">see the images</a>.)";
+		
+		if ($blosxom::flavour eq "rss") {
+			$gallery = "&lt;br&gt; You must view this story individually to &lt;a href=&quot;$blosxom::url$path/$filename.$blosxom::flavour&quot; see the images&lt/a&gt;.)";
+		}
+		return 1;
+	}
+
+	$gallery_url = "$images_url/$gallerypath";
+	$gallerypath = "$images_path/$gallerypath";
+
+	# If this is a request for a single photo, display it, and exit
+	if (CGI::param("image")) {
+		$imagefile = CGI::param("image");
+		$gallery = $imagehead;
+		$gallery.= "<img src=\"$gallery_url" . "$imagesdir/$imagefile\">";
+		$gallery .= $imagefoot;
+
+		# Try and read comments
+		$imagefile =~ s/($imagetypes)$/txt/i;
+		open (COMMENT, "<$gallerypath/$commentsdir/$imagefile");
+		$comments = join '', <COMMENT>;
+		close COMMENT;
+		return 1;
+	}
+
+	# Now, find out how many images there are, and where
+	my(@images);
+
+	find(sub {
+		$File::Find::name =~ /($imagetypes)$/i
+		and
+		push (@images, $File::Find::name)
+		;}, $gallerypath . $imagesdir);
+	
+	# Sort them.
+		@images = sort @images;
+
+	# Now fill out gallery
+	if (scalar(@images) > 0) {
+		$gallery = $galleryhead . $galleryrowstart;
+		my $count = 0;
+		foreach $image (@images) {
+			$count++;
+			if ($count gt $columns) {
+				$count = 1;
+				$gallery.= $galleryrowend . $galleryrowstart;
+			}
+			$image =~ s/$images_path/$images_url/;
+			$thumb = $image;
+			$thumb =~ s/(.*)$imagesdir/$1$thumbdir/;
+
+			$imagefile = $image;
+			$imagefile =~ s/.*?([^\/]*)$/$1/;
+
+			$gallery.= qq!$gallerycolstart
+<a href="$blosxom::url/$path_noflavour.$blosxom::flavour?image=$imagefile">
+<img src="$thumb" alt="Thumbnail" border=1><br>$imagefile</a>
+$gallerycolend!;
+
+		}
+		$gallery.= $galleryrowend . $galleryfoot;
+	
+	} else {
+		$gallery = "No images to display... <br>";
+	}
+
+
+	1;
+}
+
+1;
+
+
+__END__
+
+
+Documentation is Pending!!

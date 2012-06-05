@@ -1,0 +1,220 @@
+# Blosxom Plugin: dynamic_cache
+# Author: MayimMayim
+# Version: 2004-09-05
+
+package dynamic_cache;
+
+use strict;
+use CGI::Carp qw(fatalsToBrowser);       #エラー時にブラウザへ表示
+
+# --- Configurable variables -----------
+
+my $cache_dir = $blosxom::dynamic_cache_cache_dir;
+my $redirect_url = $blosxom::dynamic_cache_redirect_url;
+my $log_filename = $blosxom::dynamic_cache_log_filename;
+my $log_filemax = $blosxom::dynamic_cache_log_filemax;
+my $target_flavour = $blosxom::dynamic_cache_target_flavour;
+my %replace_flavour = %blosxom::dynamic_cache_replace_flavour;
+my $post_recache_all = $blosxom::dynamic_cache_post_recache_all;
+my %post_recache = %blosxom::dynamic_cache_post_recache;
+
+# --------------------------------------
+
+use CGI qw(:standard);
+use FileHandle;
+my $fh = new FileHandle;
+my $cachefile;
+my $stories;
+my $ymd;
+
+sub start {
+	return 0 unless $cache_dir;
+
+	-d $cache_dir or mkdir("$cache_dir", 0755) or ( warn "blosxom : dynamic_cache plugin : couldn't mkdir $cache_dir." and return 1 );
+
+	return 0 if (!-d $cache_dir or !-w $cache_dir);
+
+	$stories = 0;
+	my $recache = CGI::param('recache');	# 再キャッシュパラメータ
+	my ($path, $file, $ext) = (' 'x200, ' 'x128, ' 'x32);	#パス分解用
+
+	# flavour置換 (廃止した旧flavourへのアクセスを置き換える)
+	foreach my $old_flavour (keys %replace_flavour) {
+		($blosxom::flavour eq $old_flavour) 
+			and $blosxom::path_info =~s/$blosxom::flavour$/$replace_flavour{$old_flavour}/
+			and $blosxom::flavour = $replace_flavour{$old_flavour}
+			and last;
+	}
+
+	# ロボット対策 (reindex/recacheの実行や対象外flavourへのアクセスを拒否)
+	my ($agent,$uri,$method) = ($ENV{HTTP_USER_AGENT}, $ENV{REQUEST_URI}, request_method());
+	if( $agent=~/(msnbot)|(Googlebot)|(Yahoo! Slurp)|(NaverBot)|(Ask Jeeves)|(inktomi)|(InfoSeek)/i
+		 && (CGI::param('reindex') || $recache ne'' || $target_flavour!~/$blosxom::flavour/ || $method eq 'POST')
+	){
+		print "Status: 403 Forbidden\nContent-type:text/html\n\n";
+		print "<h3>403 Forbidden</h3><p>You don't have permission to access this file.</p>";
+		logput("DENY ");
+		exit(0);
+	}
+
+	# recache指定が無い、かつPOST時、既定のrecacheパラメータを適用
+	if($recache eq'' && $method eq 'POST') {
+		($post_recache_all eq '1') and $recache ='all'
+		or defined $post_recache{$blosxom::flavour} and $recache = $post_recache{$blosxom::flavour};
+	}
+
+	# キャッシュ全クリア
+	# 【flavourの記述例】<input type="hidden" name="recache" value="all">
+	if($recache=~/all/i){
+		require File::Path;
+		File::Path::rmtree($cache_dir) and logput("CLEAR","ALL");
+	}
+
+	# キャッシュ対象ファイルパス (日付指定もパスとみなしキャッシュ対象とする）
+	$cachefile = $blosxom::path_info;
+	defined $blosxom::path_info_yr and $cachefile .="/$blosxom::path_info_yr"
+		and defined $blosxom::path_info_mo_num and $cachefile .="/$blosxom::path_info_mo_num"
+		and defined $blosxom::path_info_da and $cachefile .="/$blosxom::path_info_da";
+	unless ($blosxom::path_info =~ /\.$blosxom::flavour$/) {
+		$cachefile =~ s!/$!!;
+		$cachefile .= "/index.$blosxom::flavour";
+	}
+
+	# 投稿エントリのキャッシュを削除
+	# 【flavourの記述例】<input type="hidden" name="recache" value="page">
+	if($recache =~/page/i || $method eq 'POST') {
+		($path, $file, $ext) = ($cachefile =~m!(?:(.*)/)?(.+)(\..+)!)
+			and delete_cache($path, $file, 0);
+	}
+
+	# index.*のキャッシュを探して削除
+	# 【flavourの記述例】<input type="hidden" name="recache" value="page,index">
+	if($recache =~/index/i){
+		($path, $file, $ext) = ($cachefile =~m!(?:(.*)/)?(.+)(\..+)!)
+			and delete_cache($path, 'index', 1);
+	}
+
+	# 日付パスのindex.*のキャッシュを削除
+	# 【flavourの記述例】<input type="hidden" name="recache_date" value="$yr/$mo_num/$da">
+	if(param('recache_date') =~/(\d{4})\/(\d{2})\/(\d{2})/) {
+		$ymd = "/$1/$2/$3";
+		delete_cache($ymd, 'index', 1);
+		($path, $file, $ext) = ($cachefile =~m!(?:(.*)/)?(.+)(\..+)!)
+			and delete_cache($path.$ymd, 'index', 1);
+	}
+
+	# 指定キャッシュの削除(;区切りで複数可)
+	# 【flavourの記述例】<input type="hidden" name="recache_entries" value="foo.wikieditish;foo/bar.wikieditish">
+	if(param('recache_entries')) {
+		my @recache_entries = split(/;/, param('recache_entries'));
+		foreach my $entry (@recache_entries) {
+			($entry ne'' && $entry!~/\.\./)
+				and ($path, $file, $ext) = ($entry =~m!(?:(.*)/)?(.+)(\..+)!)
+					and delete_cache($path, $file, 0);
+		}
+	}
+
+	# キャッシュしないケース
+	if( $ENV{'QUERY_STRING'} ne '' || $target_flavour!~/$blosxom::flavour/) {
+		logput("PASS ");
+		$cachefile ='';
+		return 0;
+	}
+
+	# キャッシュがすでに存在する？
+	if(-f "$cache_dir/$cachefile"){
+		if($redirect_url eq''){		#ファイルを読み込んで出力
+			if($fh->open("< $cache_dir/$cachefile")){
+				print join('', <$fh>);
+				$fh->close;
+				logput("HIT! ");
+				exit(0);
+			}
+		}else{						#リダイレクトを使用
+			my $redirect = "$redirect_url/$cachefile";
+#			print redirect($redirect);
+			print header(-Location=>$redirect);		# keep url
+			logput("HIT! ");
+			exit(0);
+		}
+	}
+
+	return 1;
+}
+
+sub story {
+	# 記事数を数える
+	$stories += 1;
+	1;
+}
+
+sub last {
+	# 記事がない場合はキャッシュしない
+	return 0 if(!$stories);
+	#リダイレクトを使用する場合は、コンテンツのみファイル保存
+	($redirect_url ne'') and ($cachefile ne'' && %blosxom::files) and save_cache();
+}
+
+sub end {
+	# 記事がない場合はキャッシュしない
+	return 0 if(!$stories);
+	#ファイルを読み込んで出力する場合は、content-typeを含めてファイル保存
+	($redirect_url eq'') and ($cachefile ne'' && %blosxom::files) and save_cache();
+}
+
+# pathを上位に遡ってファイル名が一致するキャッシュを削除する
+sub delete_cache {
+	my ($path, $fn, $up) = @_;
+	return 0 if($fn eq'');
+	$path =~ m!^/! or $path = "/$path";
+	$path =~ s!/$!!;
+
+	do{
+		opendir(DIR, "$cache_dir$path")
+		and grep { /^${fn}\.[^\.]+$/ && unlink("$cache_dir$path/$_") && logput("CLEAR","$path/$_") } readdir(DIR)
+		and closedir(DIR);
+	} while ($up and $path =~ s/(\/*[^\/]*)$// and $1);
+	1;
+}
+
+# $blosxom::outputの内容をキャッシュに保存する
+sub save_cache {
+
+	# ディレクトリ作成
+	my ($path, $file, $ext) = ($cachefile =~m!(?:(.*)/)?(.+)(\..+)!);
+	if($path ne ''){
+		require File::Path;
+		File::Path::mkpath("$cache_dir/$path",0,0755);
+	}
+
+	# キャッシュファイル出力
+	if ($fh->open("> $cache_dir/$cachefile")) {
+		print $fh $blosxom::output;
+		close $fh;
+		logput("SAVE ");
+	}
+}
+
+# ログ出力
+sub logput{
+	return 1 unless($log_filemax>0);
+
+	my ($msg, $text) = @_;
+	$text eq'' and $text = "$ENV{REQUEST_URI}\t$ENV{HTTP_USER_AGENT}\t$ENV{HTTP_REFERER}";
+
+	# 最大サイズ時バックアップ作成
+	if( (stat($log_filename))[7] > $log_filemax){
+		unlink "$log_filename.bak";
+		rename $log_filename,"$log_filename.bak";
+	}
+
+	#ログ書き込み
+	if($fh->open(">> $log_filename"))
+	{
+		print $fh "$msg: $text\n";
+		$fh->close;
+	}
+	1;
+}
+
+1;

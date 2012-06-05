@@ -1,0 +1,191 @@
+# Blosxom Plugin: extensionless
+# Author(s): Frank Hecker <hecker@hecker.org>
+# Version: 0.2
+# Documentation: See the bottom of this file or type: perldoc extensionless
+
+package extensionless;
+
+use strict;
+
+# --- Configurable variables -----
+
+my $hide_category = 0;                  # set to 1 to have an extensionless
+                                        # entry URI hide a category of the
+                                        # same name as the entry
+
+my $debug = 0;                          # set to 1 to print debug messages
+
+# --------------------------------
+
+sub start {
+    1;
+}
+
+sub filter {
+    my ($pkg, $files_ref) = @_;
+
+    warn "extensionless: \$path_info: '$blosxom::path_info' (before)\n"
+        if $debug > 0;
+
+    # Check for the following situation:
+    #
+    #   * the requested URI does not include a file extension
+    #   * the requested URI does not *exactly* name a category OR
+    #     we want the URI to always resolve to an entry if one exists
+    #   * there is an entry corresponding to the URI
+    #
+    # If the above conditions hold then we update the URI (more specifically,
+    # the path component of the URI) to include the flavour's file extension.
+    # (The flavour used will be the default flavour, a flavour specified
+    # using the flav parameter, or a flavour set by another plugin.)
+
+    $blosxom::path_info !~ m!\.!
+	and (! -d "$blosxom::datadir/$blosxom::path_info" || $hide_category)
+	and $$files_ref{"$blosxom::datadir/$blosxom::path_info.$blosxom::file_extension"}
+	and $blosxom::path_info .= ".$blosxom::flavour";
+
+    warn "extensionless: \$path_info: '$blosxom::path_info' (after)\n"
+	if $debug > 0;
+
+    1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom plugin: extensionless
+
+=head1 SYNOPSIS
+
+Make Blosxom recognize extensionless URIs corresponding to individual
+entries. See http://www.w3.org/Provider/Style/URI for motivation.
+
+=head1 VERSION
+
+0.2
+
+=head1 AUTHOR
+
+Frank Hecker <hecker@hecker.org>, http://www.hecker.org/
+
+=head1 DESCRIPTION
+
+This plugin allows Blosxom to recognize extensionless URIs for
+entries, as recommended by http://www.w3.org/Provider/Style/URI and
+elsewhere.  In other words, if you are requesting a page for an
+individual entry then you can omit the file extension that would
+normally be required for specifying the flavour, unless the extension
+is required to disambiguate the URI in the case where the entry has
+the same name as a Blosxom category.
+
+For example, if you have an entry C<foo/bar.txt> in your Blosxom data
+directory then by using this plugin you can use a URI like
+
+  http://www.example.com/blog/foo/bar
+
+to request the entry rather than a URI like
+
+  http://www.example.com/blog/foo/bar.html
+
+unless there is an existing category C<foo/bar> (i.e., there is a
+subdirectory of that name in the Blosxom data directory). If there is
+such a name conflict then the plugin will cause Blosxom to display the
+category and not the individual entry.
+
+(You can change this behavior using a configurable variable as
+described below. The plugin's default behavior matches the behavior of
+Apache when using the MultiViews option, where Apache will display the
+index for an existing directory C<foo/bar> in preference to displaying
+a file C<foo/bar.html>.)
+
+When an entry is requested using an extensionless URI the existing
+value of the Blosxom C<$flavour> variable will determine the flavour
+used for the entry. Normally this value will be either that specified
+by the C<flav> parameter (if it is present) or the default flavour
+configured into Blosxom; however another plugin could override this
+value if desired. For example, a separate plugin could do content
+negotiation (e.g., using the HTTP Accept header) to determine what
+flavour should be served for an entry.
+
+Thus assuming that C<foo/bar.txt> exists in the Blosxom data directory
+(and does not conflict with a category C<foo/bar>) and the default
+flavour is "html" then the following URIs are all equivalent:
+
+  http://www.example.com/blog/foo/bar
+  http://www.example.com/blog/foo/bar.html
+  http://www.example.com/blog/foo/bar?flav=html
+
+This plugin was inspired by the cooluri plugin by Rob Hague
+http://www.blosxom.com/plugins/link/cooluri.htm and the cooluri2
+plugin by Mark Ivey http://www.blosxom.com/plugins/link/cooluri2.htm
+but has much less ambitious goals; the code is correspondingly much
+simpler.
+
+=head1 INSTALLATION AND CONFIGURATION
+
+Copy this plugin into your Blosxom plugin directory. You do not
+normally need to rename the plugin; however see the discussion below.
+
+Change the value of the configurable variable C<$hide_category> to 1
+if you want an extensionless URI to display an entry instead of a
+category of the same name. As described above, the default behavior is
+that in the event of a name conflict the category is displayed in
+preference to the entry, so that displaying the entry in that case
+requires explicitly adding a file extension to the URI. If you change
+the plugin's behavior from the default then the category can be
+displayed only by using a URI referencing an abbreviation for the
+category.
+
+You can also change the value of the variable C<$debug> to 1 if you
+need to debug the plugin's operation; the plugin will print to the web
+server's error log the original path component of the URI and the
+value after any modification is done.
+
+This plugin supplies only a filter subroutine and can normally coexist
+with other plugins with filter subroutines; however if the other
+plugins' filter subroutines depend on the standard interpretation of
+the Blosxom variable C<$path_info> (i.e., that requests for individual
+entries have a period '.' in C<$path_info>) then you should rename
+this plugin (e.g., to "00extensionless") to ensure that it is loaded
+first and can modify C<$path_info> to match the standard
+interpretation before other plugins reference its value.
+
+Also, if you have a plugin that overrides the value of the Blosxom
+C<$flavour> variable then you should ensure that that plugin's code
+runs prior to this plugin's filter subroutine being executed.
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+Blosxom Plugin Docs: http://www.blosxom.com/documentation/users/plugins.html
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list:
+http://www.yahoogroups.com/group/blosxom
+
+=head1 LICENSE
+
+extensionless Blosxom plugin Copyright 2004 Frank Hecker
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

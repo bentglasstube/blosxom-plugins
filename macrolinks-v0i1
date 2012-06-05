@@ -1,0 +1,147 @@
+# Blosxom Plugin: macrolinks
+# Author(s): Robert Jones <rjones@devzero.org>
+# Version: 0+1i
+# Documentation: See the bottom of this file or type: perdoc macrolinks
+
+package macrolinks;
+
+# --- Configurable Variables ---
+
+my %transforms=( 
+ 'google' => 'http://www.google.com/search?q=#q#',
+ 'amazon' => 'http://www.amazon.com/exec/obidos/ASIN/#asin#/mtmolel-20',
+);
+
+# ------------------------------
+
+sub start {
+	return 1;
+}
+
+sub head {
+	my $head_ref=$_[2];
+	&transform($head_ref);
+}
+
+sub story {
+	my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+	&transform($body_ref);
+	&transform($title_ref);
+	&transform($story_ref);
+}
+
+sub foot {
+	my $foot_ref=$_[2];
+	&transform($foot_ref);
+}
+
+
+sub replace {
+	my ($token, $arg, $text)=@_;
+    my $replacement=$transforms{$token};
+
+    $arg=$text if !$arg;
+    $arg=~s/\s/+/g;
+
+    $replacement=~s/#\w+#/$arg/;
+
+	return qq{<a href="$replacement">$text</a>};
+}
+
+sub transform {
+	my $text=$_[0];
+    my $arg;
+
+    foreach $token (keys %transforms) {
+        if($transforms{$token}=~/#(\w+)#/) {
+            $arg=$1;
+        } else {
+            $arg="arg";
+        }
+
+        $$text=~s{<$token(\s+$arg="(.*?)")?>(.*?)</$token>}
+        {&replace($token, $2, $3)}meg;
+    }
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plugin: macrolinks
+
+=head1 SYNOPSIS
+
+Searches test for custom HTML-like macros and replaces them with
+user-specified links.
+
+=head1 DESCRIPTION
+
+Simply add a new entry to the %transforms hash following the model:
+
+'keyword' => 'http://www.foo.com/cgi?arg=#foo#'
+
+This will translate:
+
+<keyword foo="bar">
+
+to:
+
+<a href="http://www.foo.com/cgi?arg=bar">
+
+with a matching closing tag.
+
+If you specify in your template for an argument to be used, but one is not
+provided for a particular instance of the tag, the text between the tag will
+have its spaces escaped, and be used as the argument.  This allows for
+quick-tagging for search engine strings.
+
+=head1 VERSION
+
+0+1i
+
+=head1 AUTHOR
+
+Robert Jones <rjones@devzero.org>, http://www.devzero.org
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 TODO
+
+Current functionality is very limited, and designed mainly to replace a batch
+of plugins that have come up recently that all fit the "make a tag to link to
+a search engine" model.  This will replace those in a more general manner, but
+is still fairly limited.
+
+Eventually, I would like to offer this as a more robust keyword substitution
+tool, in general.  For the near future, however, I plan on allowing multiple
+arguments in macro tags, as well as providing more complex substituion
+functionality, such as allowing calls to custom subroutines to generate
+replacement text.
+
+Until at least that much is done, macrolinks will remain in imaginary number
+versions.
+
+=head1 BUGS
+
+Address any bug reports to the author.
+
+=head1 LICENSE 
+
+Copyright (c) 2003 Robert Jones <rjones@devzero.org>
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.

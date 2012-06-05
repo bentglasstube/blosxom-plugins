@@ -1,0 +1,155 @@
+# Blosxom Plugin: FmtCat
+# Author:         Uncle Roger (http://www.sinasohn.net/notebooks/)
+# Based on:       prettycategory by Randall Hand (yerase@yeraze.com)
+# Version:        1.0
+# Date:           01/03/2005      
+# License:        GPL            
+#
+# This plugin is based heavily on prettycategory by Randall Hand 
+#
+# FmtCat
+#
+# Formats Categories nicely with separators.
+# 
+# Usage:
+# 
+#   Simply include "$fmtcat::fmtcat" in your story flavour file
+#   where you want the formatted category to show up.
+#
+# Configuration:
+#
+#   There are three variables that control what this plugin does
+#   and what the output looks like.  See the configuration section
+#   for a complete description of each.
+#
+# Update History:
+#
+#   Date        Version Pgmr    Description
+#   01.01.2005  V1.0    RLS     Initial Released Version
+#
+
+package fmtcat;
+
+use CGI::Carp qw( fatalsToBrowser );
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# Configuration Section
+#
+
+# There are three variables that can be changed to control how
+# fmtcat works.  They are:
+#
+# cap_flag
+# spacer
+# home_text
+#
+# Each is described in detail below.  The default values are
+# all valid so you don't even have to do anything, if you don't
+# mind your categories looking the way mine do.
+
+#
+
+# cap_flag controls whether or not each level of the category
+# tree is to be capitalized.  If set to "Y", then the first
+# letter of each category level will be capitalized.  For example,
+#
+# food/dinner/meat
+#
+# would become
+#
+# Food/Dinner/Meat
+#
+# If you don't want capitalization, (You know who you are, e. e.)
+# set this flag to "N" (or, actually, any value other than "Y").
+
+$cap_flag       = "Y";
+
+# spacer is the text that will separate each level of the
+# category tree.  Possible spacers include:
+#
+#    Spacer     Description     Sample
+#    ------     --------------  ---------------------------
+#    " > "      Yahoo Style     Food > Dinner > Meat
+#    " :: "     Arts & Crafts   Food :: Dinner :: Meat
+#    " | "      Unix Geek       Food | Dinner | Meat
+#    ", "       Librarian       Food, Dinner, Meat
+#
+# Feel free to make up your own, of course.
+
+$spacer         = " :: ";
+
+# home_text is used to add a top level category to the category
+# tree.  If you don't want one, uncomment the first definition
+# by removing the number sign (#) at the start of the line and
+# adding one at the start of the second definition (the line
+# where it is given the value "Home" by default.
+#
+# Examples:
+#
+# Given a hierarchy of:
+#
+#       /Food
+#       /Food/Dinner/
+#       /Food/Dinner/Meat
+#       /Food/Dinner/Veg
+#       /Drink
+#       /Drink/Coffee
+#       /Drink/Coffee/Sumatra
+#
+# With a home_text of "Home", and a spacer of " > ", these would be
+# displayed as follows:
+#
+#       Home > Food
+#       Home > Food > Dinner
+#       Home > Food > Dinner > Meat
+#       Home > Food > Dinner > Veg
+#       Home > Drink
+#       Home > Drink > Coffee
+#       Home > Drink > Coffee > Sumatra
+#
+# With no home_text defined and the same spacer, the categories
+# would look like this:
+#
+#       Food
+#       Food > Dinner
+#       Food > Dinner > Meat
+#       Food > Dinner > Veg
+#       Drink
+#       Drink > Coffee
+#       Drink > Coffee > Sumatra
+#
+# It's your choice as to what you prefer.
+
+# Remove the number sign from this line to disable the home category
+#$home_text;
+
+# Put your text in this variable (and leave the previous line alone)
+# if you want a top level category added.
+$home_text      = "Home";
+
+#
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+$fmtcat;
+
+sub start {
+    1;
+}
+
+sub story {
+    my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    $fmtcat = $path;
+    if ($cap_flag eq "Y") {
+       $fmtcat =~ s:\b([a-z]):uc($1):eg;
+    }
+    $fmtcat =~ s:^/::g;
+    $fmtcat =~ s:\/:$spacer:g;
+    if ($home_text) {
+       $fmtcat =  $home_text . $spacer . $fmtcat;
+    }
+
+    1;
+}
+
+
+1;

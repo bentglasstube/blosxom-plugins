@@ -1,0 +1,19 @@
+package linkblog;
+
+# Load my linkblog by execing blosxom.
+
+my $script = '/home/nelson/blosxom/linkblog/blosxom.cgi';
+sub start {
+    # Only do this work for HTML
+    return if $blosxom::flavour ne 'html';
+
+    # We signal to the script which data we want via PATH_INFO
+    $oldPI = $ENV{PATH_INFO};
+    $ENV{PATH_INFO} = '/index.include';
+    $data = `$script`;
+    $ENV{PATH_INFO} = $oldPI;
+    1;  
+}
+1;
+
+    

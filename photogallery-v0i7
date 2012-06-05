@@ -1,0 +1,430 @@
+# Blosxom Plugin: photogallery
+# Author(s): DeWitt Clinton <dewitt@unto.net>
+# Version: 0.7
+# Documentation: See the bottom of this file or 
+# type: perldoc photogallery
+
+
+package photogallery;
+
+# --- Configurable variables -----
+
+# Set this to the standard width of the screen.  This will effect the
+# size of the thumbnail and large version of each image.
+my $screen_width = 600;
+
+# Set this to the number of columns in the thumbnail display.
+my $columns = 3;
+
+# Set this to the padding (in pixels) between columns
+my $padding = 10;
+
+# Set to the images dir (must be writable by the owner of the httpd process)
+my $image_dir = "/home/httpd/vhosts/unto.net/httpdocs/images";
+
+# Set to public image URL (the same directory as $image_dir, as seen
+# by the web browser)
+my $public_url = "/images";
+
+# Set a content MIME type for each of the valid image types
+my %content_types = ( 'jpg' => 'image/jpeg',
+                      'jpeg' => 'image/jpeg',
+                      'gif' => 'image/gif',
+                      'png' => 'image/png' );
+
+# The filename, per photo directory, of the captions file
+# Must be readable and have a different extension than blosxom files
+my $captions_file = "captions.pg";
+
+
+# --------------------------------
+
+$start = time( );
+
+use Digest::MD5 qw( md5_hex );
+use CGI;
+use Image::Magick;
+
+# Automatically build the list of valid image types
+my $imagetypes = join( '|', keys %content_types );
+
+# The gallery HTML is populated here.
+$photogallery;
+
+# Prepare the cache dir if necessary
+if ( !-d $image_dir )
+{
+  mkdir ( $image_dir ) or
+    die( "Couldn't make dir $image_dir: $!" );
+}
+
+# -----------------------------
+
+sub start 
+{
+  return $blosxom::static_or_dynamic eq 'dynamic' ? 1 : 0;
+}
+
+sub story
+{
+  my ( $pkg, $path, $filename, $story_ref, $title_ref, $body_ref ) = @_;
+
+  my @images = find_images( $blosxom::datadir . $path );
+
+  if ( CGI::param( 'image' ) )
+  {
+    print_image( $path, CGI::param( 'image' ), @images );
+  }
+  else
+  {
+    print_gallery_thumbs( $path, @images );
+  }
+
+  return 1;
+}
+
+sub print_gallery_thumbs
+{
+  my ( $path, @images ) = @_;
+
+  my $pad = $padding / 2;
+  $photogallery = "<center><table cellpadding=\"$pad\"><tr>";
+
+  my $count = 1;
+
+  foreach my $image ( @images )
+  { 
+    my $source_file = "$blosxom::datadir/$path/$image"; 
+    my $hashed_file = get_hashed_filename( "$path/$image", 'THUMB' );
+    my $cached_file = "$image_dir/$hashed_file";
+    cache_image( $source_file, $cached_file, 'THUMB' );
+
+
+    my $thumbnail_url = "$public_url/$hashed_file";
+    my $large_url = "$blosxom::url$path?image=$image";
+    $photogallery .= "<td><a href=\"$large_url\">";
+    $photogallery .= "<img border=\"0\" src=\"$thumbnail_url\"></a></td>";
+
+    if ( $count % $columns == 0 )
+    {
+      $photogallery .= "</tr>";
+    }
+
+    $count++;
+  }
+
+  $photogallery .= "</tr></table></center>";
+}
+
+
+sub print_image
+{
+  my ( $path, $image, @images ) = @_;
+
+  my $source_file = "$blosxom::datadir/$path/$image"; 
+  my $hashed_file = get_hashed_filename( "$path/$image", 'FULL' );
+  my $cached_file = "$image_dir/$hashed_file";
+  my $full_url = "$public_url/$hashed_file";
+  cache_image( $source_file, $cached_file, 'FULL' );
+
+  my $hashed_file = get_hashed_filename( "$path/$image", 'LARGE' );
+  my $cached_file = "$image_dir/$hashed_file";
+  cache_image( $source_file, $cached_file, 'LARGE' );
+  my $large_url = "$public_url/$hashed_file";
+
+  my $prev_image = get_prev_image( $image, @images );
+  my $next_image = get_next_image( $image, @images );
+  
+  my $caption = get_caption( $path, $image );
+
+  $photogallery =  "<p><b>$image</b></p>";
+  $photogallery .= "<p align=\"center\">";
+  $photogallery .= ( $prev_image ? 
+    "<a href=\"$blosxom::url$path?image=$prev_image\">&lt;&lt; prev </a>" : 
+    "&lt;&lt; prev " );
+  $photogallery .= "<a href=\"$blosxom::url$path\">" . 
+    "&nbsp;&nbsp; gallery &nbsp;&nbsp; </a>";
+  $photogallery .= ( $next_image ? 
+    "<a href=\"$blosxom::url$path?image=$next_image\"> next &gt;&gt;</a>" : 
+     "next &gt;&gt;" );
+  $photogallery .= "</p>";
+  $photogallery .= "<p><b>$caption</b></p>" if defined $caption;
+  $photogallery .= "<center><a href=\"$full_url\">" . 
+    "<img border=\"0\" src=\"$large_url\"></a></center>";
+}
+
+
+sub get_prev_image
+{
+  my ( $image, @images ) = @_;
+
+  my $prev_image = "";
+
+  foreach my $i ( @images )
+  {
+    last if ( $image eq $i );
+    $prev_image = $i
+  }
+
+  return $prev_image;
+}
+
+sub get_next_image
+{
+  my ( $image, @images ) = @_;
+  return get_prev_image( $image, reverse @images );
+}
+
+sub get_hashed_filename
+{
+  my ( $path, $size ) = @_;
+
+  my ( $extension ) = $path =~ m|\.(\w+)$| or
+    die( "Couldn't find extension in '$path'" );
+
+  return ( md5_hex( "$path:$size" ) . ".$extension" );
+}
+
+sub cache_image
+{
+  my ( $source_file, $cached_file, $size ) = @_;
+
+  return if ( -e $cached_file ) &&
+            ( ( stat( $source_file ) )[9]  < ( stat( $cached_file ) )[9] );
+
+  my $image = new Image::Magick( ) or
+    die( "Couldn't instantiate image" );
+
+  my $error = $image->Read( $source_file );
+  die ( $error ) if $error;
+
+  $image = resize_image( $image, $size );
+
+  $error = $image->Write( $cached_file );
+  die ( $error ) if $error;
+}
+
+
+sub resize_image
+{
+  my ( $image, $size ) = @_;
+
+  my $iw = $image->Get( 'width' );
+  my $ih = $image->Get( 'height' );
+
+  my $width = get_width( $size );
+
+  if ( $iw > $width )
+  {
+    $height = ( ( $width * $ih ) / $iw );
+    $image->Scale( width => $width, height => $height );
+  }
+
+  return $image;
+}
+
+sub get_width
+{
+  my ( $size ) = @_;
+
+  if ( $size eq 'THUMB' )
+  {
+    return $screen_width / $columns - ( ( $columns - 1 ) * $padding );
+  }
+  elsif ( $size eq 'LARGE' )
+  {
+    return $screen_width;
+  }
+  elsif ( $size eq 'FULL' )
+  {
+    return 10000;
+  }
+  else
+  {
+    die( "Unknown size $size" );
+  }
+}
+
+
+sub find_images
+{
+  my ( $path ) = @_;
+ 
+  opendir( DIR, $path ) or
+    die( "Couldn't open dir $path: $!" );
+
+  my @images;
+
+  foreach my $dentry ( readdir( DIR ) )
+  {
+    my $can_read = -r "$path/$dentry";
+
+    if ( $dentry =~ m|\.($imagetypes)$| && $can_read )
+    {
+      push( @images, "$dentry" );
+    }
+  }
+
+  closedir( DIR ) or
+    die( "Couldn't close dir $path: $!" );
+
+  return image_sort( @images );
+}
+
+
+sub image_sort
+{
+  my ( @images ) = @_;
+
+  return sort { $a <=> $b } @images;
+}
+
+sub get_caption
+{
+  my ( $path, $image ) = @_;
+
+  my $captions_path = "$blosxom::datadir/$path/$captions_file";
+
+  if ( !-e $captions_path || !-r $captions_path )
+  {
+    return undef;
+  }
+
+  open ( CAPTIONS, $captions_path ) or
+    die( "Couldn't open $captions_path for reading: $!" );
+
+  while ( <CAPTIONS> )
+  {
+    my ( $filename, $caption ) = $_ =~ m|(.*?):\s*(.*?)$|;
+
+    if ( $filename eq $image )
+    {
+       return $caption;
+    }
+  }
+
+  close ( CAPTIONS ) or
+    die( "Couldn't close $captions_path: $!" );
+
+  return undef;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: photogallery
+
+=head1 REQUIREMENTS
+
+ Image::Magick, CGI, Digest::MD5
+ Some configuration required
+
+=head1 SYNOPSIS
+
+The photogallery plug-in for Blosxom enables the Blosxom CGI to
+automatically display a directory full of images at various
+resolutions.
+
+This plug-in enables two new story views.  The default view generates
+a list of thumbnails for all the image files in a directory, and the
+single image view displays a larger version along with navigation
+buttons.
+
+Images are stored in standard Blosxom content directories.  Simply put
+all of the images you would like to display in a directory and add
+text file (e.g., about.txt) in that directory to enable that gallery.
+
+To make the display of scaled images efficient, a reduced size
+thumbnail is automatically generated and cached if necessary when a
+gallery page is viewed.  The generated images are cached in a
+directory that is publicly accessible via the web browser. 
+
+=head1 INSTALLATION
+
+You will likely need to change two configuration variables in this
+script.  First, set $image_dir to the location of a directory on your
+filesystem that can be accessed by your web server.  Second, set
+$public_url to the location at which that directory will appear when
+being served.  It is likely that this will be outside your Blosxom
+data directory, as you want your web server to serve the file
+directly, rather than going through the blosxom.cgi.  
+
+In other words, $image_dir and $public_url are the same directory, but
+seen firstly from the local filesystem point of view and secondly from
+a web client point of view
+
+This directory will need to be writable by the same user/group that
+runs your web server.
+
+To display the photogallery, simply add this line to your story.html
+(or whatever story.flavour you prefer):
+
+  $photogallery::photogallery
+
+Captions for individual images can be displayed by adding a readable
+text file (default "captions.pg", can be changed in the configuration
+above) in each photo directory with the format:
+
+  [image name]: [caption]
+
+For example:
+
+  IMG_3022: my cat, fluffy
+  IMG_3023: another picture of my cat, fluffy
+  IMG_3024: yet another picture of my cat, fluffy
+  
+
+=head1 VERSION
+
+0.3
+
+=head1 AUTHOR
+
+DeWitt Clinton <dewitt@unto.net> http://www.unto.net/
+
+=head1 THANKS
+
+Thanks to Fletcher T. Penney, whose ImageGallery plug-in provided much
+needed guidance (and a good number of code snippits).
+
+Thanks to Chaz Hickman, who spotted (and corrected) a number of bugs
+and provided invaluable feedback on the documentation.
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Numerous, no doubt.
+
+=head1 LICENSE
+
+Blosxom 
+Copyright 2003, Rael Dornfest
+
+photogallery 
+Copyright 2004, DeWitt Clinton
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

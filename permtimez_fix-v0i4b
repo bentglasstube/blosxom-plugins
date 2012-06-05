@@ -1,0 +1,282 @@
+# Blosxom Plugin: permtimez
+# Author: Stu MacKenzie <http://groups.yahoo.com/group/blosxom/messages>
+# Version: v0.4b 2004-09-15 (7)
+# License: MIT/Public Domain
+# permtimez home: http://www.enilnomi.net/download.html
+# Documentation at the bottom of this file or type: perldoc permtimez
+
+## READ ME ##
+# Howdy, TJ ;-)
+#
+# Well, sorry for any problems this is causing you. On a positive 
+# note, now that all your files are named using a YYYYMMDD format, 
+# they'll *sort* just fine using a path-based sorting plugin (I have 
+# one)...of course, you're still screwed for post dates. So, we'd 
+# better hurry up and fix this little problem, eh? ;-)
+#
+# My first thoughts are this:
+# 1) the server doesn't have the Time::Local 'timelocal_nocheck'
+#    routine available, and that's what's causing the 500 error.
+#    This version uses plain old Time::Local, which every new-ish 
+#    perl should have (AFAIK). So, with any luck, this version 
+#    will run just fine.
+# 2) maybe a bad "date" in one of your file names is making 
+#    Time::Local 'localtime_nocheck' freak out...it is a surprisingly 
+#    delicate routine, and an out-of-range month value can bring it 
+#    to its knees (like, a month number of 13, or -1). However, I'm 
+#    fairly certain I accounted for all errors like that in the code...
+#    so I'm really hoping the error is caused by thought 1)
+#
+# Anyway, give this version a shot. if it works, try the other one; 
+# if the other one fails (and this one works), we'll know right where 
+# the problem is.
+#
+# Good luck (for both our sakes ;-)
+#
+#############
+
+package permtimez_fix;
+
+use strict;
+##use CGI;
+#use Time::Local 'timelocal_nocheck';     # really hoping everyone has this one....
+use Time::Local;                          # because this one needs all kind of sanity
+use Time::localtime;                      # date_info needs this
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+#
+#  Configuration Section
+#
+# # # # # # # # # # # # # # # # #
+#
+# Enter a format string that reflects your date-based 
+# file naming convention. Valid formats are:
+#   YYYYMMDD  : as in "20040620new_cat.txt" -- a post from 2004 June 20, about a new cat
+#   YYYYDDMM  : as in "20042006new_cat.txt" -- a post from 2004 20 June, about a new cat
+#   MMDDYYYY  : as in "20040620new_cat.txt" -- a post from June 20 2004, about a new cat
+#   DDMMYYYY  : as in "20040620new_cat.txt" -- a post from 20 June 2004, about a new cat
+#   YYMMDD    : as in "040620new_cat.txt"   -- a post from '04 June 20, about a new cat
+#   YYDDMM    : as in "042006new_cat.txt"   -- a post from '04 June 20, about a new cat
+#   MMDDYY    : as in "062004new_cat.txt"   -- a post from June 20 '04, about a new cat
+#   DDMMYY    : as in "200604new_cat.txt"   -- a post from 20 June '04, about a new cat
+# ex: my $format = 'YYYYMMDD';
+my $format = 'YYYYMMDD';
+#
+# NOTE: using the YYYYMMDD or YYMMDD format gets 
+# you the ability to sort "by-category, by-date", 
+# using the sortz plugin !!
+#
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+use vars qw'$cur_format $tod';
+$cur_format = $format;      # for use by other plugins
+
+# set up a hash of arrays --
+#   keys are format "prototypes", and the array elements are:  
+#   [0] the element number in the @regxstrs array that holds 
+#       regexp strs to extract date bits from the format, and 
+#   [1], [2], and [3] are the array elements into which we'll 
+#       load the regexp results
+my %formats = (YYYYMMDD => [0,0,1,2], 
+               YYYYDDMM => [0,0,2,1], 
+               MMDDYYYY => [1,1,2,0], 
+               DDMMYYYY => [1,2,1,0], 
+               YYMMDD   => [2,0,1,2], 
+               YYDDMM   => [2,0,2,1], 
+               MMDDYY   => [2,1,2,0], 
+               DDMMYY   => [2,2,1,0]);
+                                          # 3 patterns express all 8 formats
+my @regxstrs = ('(\d\d\d\d)(\d\d)(\d\d)','(\d\d)(\d\d)(\d\d\d\d)','(\d\d)(\d\d)(\d\d)');
+
+my @formats = @{$formats{$format}};       # get the decoder ring for our format
+my $len = length($format);                # minimum number of digits needed in file name
+
+
+sub start {
+  1;
+}
+
+
+# this sub generates properly formatted date-info 
+# strings for new filenames created by wikieditish
+sub date_info {
+  my $use_hr = shift;
+  my $use_mn = shift;
+  
+  my $c_time = ctime();                    # get current seconds
+                                           # convert seconds into date items
+  my(undef,$mo,$da,$ti,$yr) = ($c_time =~ /(\w{3}) +(\w{3}) +(\d{1,2}) +(\d{2}:\d{2}):\d{2} +(\d{4})$/ );
+
+  my ($hr,$mn) = split /:/, $ti;           # convert time into hours & minutes
+  
+  $format !~ m/YYYY/ and $yr =~ s/^\d\d//;
+  $da = sprintf("%02d", $da);              # pad to two digits
+  $hr = sprintf("%02d", $hr);
+  $mn = sprintf("%02d", $mn);
+  my $mo_num = $blosxom::month2num{$mo};   # hitch a ride on blosxom's converter
+
+  # magically arrange date items to match user's format
+  my @t = ($yr, $mo_num, $da);
+  my @out;
+  $out[0] = $t[$formats[1]];
+  $out[1] = $t[$formats[2]];
+  $out[2] = $t[$formats[3]];
+  
+  # add TOD bits as requested
+  if ($use_hr) {
+    $out[3] = $hr;
+    if ($use_mn) {
+      $out[4] = $mn;
+    }
+  }
+  
+  return join '', @out;
+  
+}
+
+
+# this function parses an incoming file name 
+# into appropriate date items per the array 
+# that belongs to the selected format proto
+sub fname_to_date {
+  my $fname = shift;
+
+  my ($yr, $mo, $da, $hr, $mn, $sc);      # date/time vars
+  my @t;                                  # [0] will hold yr, [1] will hold mo, [2] will hold da
+
+  $fname =~ s/^.*\///;                    # delete path up to the file name
+
+  if ($fname =~ m/^\d{$len,}\D.*$/) {     # confirm minimum number of digits are present
+
+                                          # parse date items from file name; 
+                                          # magically put the right bits into 
+                                          # the right vars
+    ($t[$formats[1]], $t[$formats[2]], $t[$formats[3]]) = ($fname =~ m/$regxstrs[$formats[0]]/);
+    $yr = $t[0]; $mo = $t[1]; $da = $t[2];
+
+    # a bit of tweaking for timelocal()
+    $yr = ($yr+2000) % 2000;       # make all years proper 4-digit
+    $mo --;                        # subtract 1 from month, because timelocal is crazy
+    $mo = $mo % 12;                # can't be out-of-range, because timelocal is lame
+    $hr = sprintf("%02d", $hr);    # compensate for slop, emptiness in time values
+    $mn = sprintf("%02d", $mn);
+    $sc = sprintf("%02d", $sc);
+    
+    #return timelocal_nocheck($sc,$mn,$hr,$da,$mo,$yr);   # fake an mtime
+    return timelocal($sc,$mn,$hr,$da,$mo,$yr);   # fake an mtime
+  }
+}
+
+
+# here's where it all happens:
+# we read blosxom's list of files, calculating the 
+# user's desired "mtimes" from date-info in entry 
+# file names; every successful calculation replaces 
+# the "real" mtime and blosxom's none the wiser
+sub filter {
+  my ($pkg, $files_ref, $others_ref) = @_;
+  
+  my $temp;
+  foreach my $key (keys %$files_ref) {
+    $temp = fname_to_date($key) and $temp or next;
+    $$files_ref{$key} = $temp;
+  }
+
+  1;
+}
+
+
+# makes a TOD available to story templates;
+# minutes are included only if they're significant
+sub story {
+  $tod = $blosxom::hr12;
+#  if ($blosxom::min ne '00') {$tod .= ":$blosxom::min";}
+  $blosxom::min ne '00' and $tod .= ":$blosxom::min";
+  $tod .= $blosxom::ampm;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: permtimez_fix
+
+=head1 SYNOPSIS
+
+permtimez uses date info in entry file names to calculate desired 
+mtimes; these are then swapped in for the 'real' mtimes blosxom 
+gathers during the entries() sub. The "cost" is that bloggers 
+must add date info to file names before using permtimez; the benefit 
+is that post dates and sort order become "permanent," freed from 
+the volatility of 'real' mtimes.
+
+
+=head1 CONFIGURABLE VARIABLES
+
+Enter a format for the date info that will lead off every 
+entry file name (choices appear in the config section, above)
+
+
+=head1 INSTALLATION
+
+Once a format is entered, just drop this file into your 
+blosxom plugins folder. Blog on.
+
+
+=head1 USAGE
+
+NOTE: the only way this plugin will be effective is if your 
+entry file names start with at least 6 digits of date info, 
+per the format selected in the config section.
+
+Once that's done, just sit back and let permtimez provide you with 
+reliable, repeatable entry sorts and post dates.
+
+A modified version of the wikieditish plugin is available; it's 
+is built to automatically add properly formatted date-info bits 
+to files created by wiki-editing. The modified wikieditish is 
+included in the full permtimez package.
+
+The sortz plugin is also available for changing the sorting order 
+of posts. When your date-info format is either YYYYMMDD or YYMMDD 
+sortz allows you to sort by-category, by-date...handy for indexes.
+
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list:
+http://www.yahoogroups.com/group/blosxom
+
+
+=head1 VERSION
+
+2004-09-15 (v0.4b)  - split up filtering and sorting; integrated 
+                      with wikieditish; cleanup
+2004-09-14 (v0.3)   - parsing now works under 'strict'
+2004-09-12 (v0.2)   - it's alive
+
+=head1 LICENSE
+
+this Blosxom Plug-in
+Copyright 2004, Stu MacKenzie
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

@@ -1,0 +1,33 @@
+<!-- blosxom theme .graffiti -->
+
+<!-- blosxom content_type text/html -->
+
+<!-- blosxom head -->
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-Strict.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+
+<head>
+<style>
+A { text-decoration: none; }
+.graffiti_admin_submit { padding-top: 20px; }
+.graffiti_admin_response { color: #ff0000; font-size: 16pt; font-weight: bold; padding: 0px 0px 10px 0px; }
+</style>
+</head>
+
+<body>
+
+<h2>Graffiti Administration: <a href="$blosxom::url">$blosxom::blog_title</a></h2>
+
+$graffiti::admin
+
+</body>
+</html>
+
+<!-- blosxom date -->
+
+<!-- blosxom story -->
+
+<!-- blosxom foot -->
+

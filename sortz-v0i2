@@ -1,0 +1,222 @@
+# plugin:  sortz
+# author:  stu
+# version: 0.2 (5)
+# support: experimental
+
+# Blosxom uses entry file "modification times" (mtime) as 
+# keys for sorting blog entries, and as the values from which 
+# "posted on" dates and times are derived. It's a great system, 
+# until something changes an entry file's mtime -- you edit a 
+# post, upload it a day late, or re-upload an entire site. Such 
+# actions change mtimes, which in turn change the sort order 
+# and displayed dates of your posts. Not good.
+#
+# The sortz plugin overcomes this problem by deriving mtime 
+# values from each entry file's *name* -- date bits in entry 
+# file names are converted to mtime, which is then passed on 
+# to blosxom, which then always sorts and dates your posts 
+# the same way. Edit posts, re-upload your site; to blosxom's 
+# mind, nothing has changed.
+#
+# With sortz, you never need chastise yourself for not being 
+# geeky enough to use the 'touch' command to change a file's 
+# mtime. You'll never need to embed date-and-time "meta tags" 
+# within your entry files, and you won't require the services 
+# of a "caching" plugin to maintain your posts' datse and sort 
+# order. No more retro-editing and re-indexing!
+#
+# However, you don't get this "for free." In order for sortz 
+# to work its magic, *you* have to include date information in 
+# your entry file names. You can still use descriptive file 
+# names; you just have to start off each file's name with at 
+# least six characters of date info. Here's how:
+#
+# If your post for June 20, 2004 is named "new_cat.txt", rename 
+# the file to "040620new_cat.txt". When sortz runs, it reads 
+# the date info from the file name, convert it to an mtime, 
+# sends the mtime to blosxom, and Bob's your uncle. Optionally, 
+# you can include time-of-day info in your file name as well. 
+# Let's say you posted twice on June 20th:
+# 0406201030new_cat.txt -- 10:30 am story about the new cat
+# 0406201600new_couch.txt -- 4pm story about the new couch you
+#                            got after getting the new cat ;-)
+#
+# Sortz requires that you pick a single format for date info, 
+# that you stick with it (i.e. you can't mix and match date 
+# info formats). Times are always optional, but date info 
+# always has to be presented in the same way.
+#
+# On the plus side, you can pick from a variety of date info 
+# formats. Here's what sortz currently supports:
+# YYMMDD     -- as in  '04, June 20
+# YYYYMMDD   -- as in 2004, June 20
+# YYDDMM     -- as in  '04, 20 June
+# YYYYDDMM   -- as in 2004, 20 June
+# MMDDYY     -- as in June 20, '04
+# MMDDYYYY   -- as in June 20, 2004
+# DDMMYY     -- as in 20 June, '04
+# DDMMYYYY   -- as in 20 June, 2004
+#
+# - - - - - - - - - - - - - - -
+# USAGE
+# Enter a date-info format below; drop into your plugins folder; blog on
+#
+# Default sort is by descending date (blosxom's normal)
+# To sort by ascending date, add "?sorder=1" to the URL (no quotes)
+# If your date-info format is YY(YY)MMDD, you can sort 
+# by-category, by-date -- add "?sorder=2" (desc) or "?sorder=2" (asc) 
+# to the URL (no quotes)
+# - - - - - - - - - - - - - - -
+# 
+# Enjoy!
+
+# TO DO
+# 1) better scheme for parsing; one that allows me to 'use strict' ;-)
+# 2) add str output to provide links to sort modes
+# 3) return times in $sortz::time, to give access to seconds ;-)
+# 4) whatever else people ask for
+
+package sortz;
+
+#use strict;
+use CGI;
+use File::Basename;
+use Time::Local;
+use Time::Local 'timelocal_nocheck';
+
+use vars qw'$sorder';                     # this is for the sort-mode feature
+
+
+# -- config -----
+# Enter a format string that reflects your date-based file naming convention. 
+# Valid formats are:
+#   YYYYMMDD  : as in "20040620new_cat.txt" -- a post from 2004 June 20, about a new cat
+#   YYYYDDMM  : as in "20042006new_cat.txt" -- a post from 2004 20 June, about a new cat
+#   MMDDYYYY  : as in "20040620new_cat.txt" -- a post from June 20 2004, about a new cat
+#   DDMMYYYY  : as in "20040620new_cat.txt" -- a post from 20 June 2004, about a new cat
+#   YYMMDD    : as in "040620new_cat.txt" -- a post from '04 June 20, about a new cat
+#   YYDDMM    : as in "042006new_cat.txt" -- a post from '04 June 20, about a new cat
+#   MMDDYY    : as in "062004new_cat.txt" -- a post from June 20 '04, about a new cat
+#   DDMMYY    : as in "200604new_cat.txt" -- a post from 20 June '04, about a new cat
+# ex: my $format = 'YYYYMMDD';
+my $format = 'YYMMDD';
+
+# ---------------
+
+
+
+# This is so clumsy... tell me how to do it better/smarter!
+
+# set up a hash of arrays --
+#  keys are format "prototypes", and the array elements are:  
+#  [0]a regexp str to match the format, and 
+#  [1], [2], and [3] are the variable names into which 
+#    we'll load the regexp results
+my %formats = (YYYYMMDD => ['(\d\d\d\d)(\d\d)(\d\d)', 'yr','mo','da'], 
+               YYYYDDMM => ['(\d\d\d\d)(\d\d)(\d\d)', 'yr','da','mo'], 
+               MMDDYYYY => ['(\d\d)(\d\d)(\d\d\d\d)', 'mo','da','yr'], 
+               DDMMYYYY => ['(\d\d)(\d\d)(\d\d\d\d)', 'da','mo','yr'], 
+               YYMMDD   => ['(\d\d)(\d\d)(\d\d)', 'yr','mo','da'], 
+               YYDDMM   => ['(\d\d)(\d\d)(\d\d)', 'yr','da','mo'], 
+               MMDDYY   => ['(\d\d)(\d\d)(\d\d)', 'mo','da','yr'], 
+               DDMMYY   => ['(\d\d)(\d\d)(\d\d)', 'da','mo','yr']);
+
+my @formats = @{$formats{$format}};       # get the decoder ring for our format
+my $len = length($format);                # minimum number of digits needed in file name
+
+
+sub start {
+  1;
+}
+
+# this function parses an incoming file name 
+# into appropriate date items per the array 
+# that belongs to the selected format proto
+sub fname_to_date {
+  my $fname = shift;
+
+#my ($yr, $mo, $da);
+#my ($hr, $mn, $sc);
+
+  $fname =~ s/^.*\///;                    # delete path to the file name
+
+  if ($fname =~ m/^\d{$len,}\D.*$/) {     # confirm minimum number of digits up front
+
+    my $aa = $formats[1];          # contents of these vars are simply var *names*
+    my $bb = $formats[2];
+    my $cc = $formats[3];
+                                   # parse date items from the file name; 
+                                   # magically put the right bits into the 
+                                   # right vars
+    ($$aa, $$bb, $$cc) = ($fname =~ m/$formats[0]/);
+
+
+    # a bit of tweaking for timelocal()
+    $yr = ($yr+2000) % 2000;       # make all years proper 4-digit
+    $mo --;                        # subtract 1 from month, because timelocal is crazy
+    $mo = $mo % 12;                # can't be out-of-range, because timelocal is stupid
+    $hr = sprintf("%02d", $hr);    # compensate for slop, emptiness
+    $mn = sprintf("%02d", $mn);
+    $sc = sprintf("%02d", $sc);
+    
+    return timelocal_nocheck($sc,$mn,$hr,$da,$mo,$yr);   # make an mtime
+  }
+}
+
+sub filter {
+  my ($pkg,$files_ref,$others_ref) = @_;
+
+  my $temp;
+  foreach my $key (keys %$files_ref) {   # swap filename-as-mtime for real mtime
+    $temp = fname_to_date($key) and $temp or next;
+    $$files_ref{$key} = $temp;
+  }
+
+  1;
+}
+
+# $sorder dictates sort order and mode
+# 0 (default) currently sorts descending by mtime
+# 1 currently sorts ascending by mtime
+# 2 currently sorts descending by path [only when format is YY(YY)MMDD]
+# 3 currently sorts ascending by path [only when format is YY(YY)MMDD]
+# (2 and 3 have the effect of sorting by-category, by-date ;-)
+sub sort {
+  return sub {
+    my($files_ref) = @_;
+    if ($sorder eq 2 and ($format =~ m/^YY/)) {
+      map { $_->[1] }
+        sort { $b->[0] cmp $a->[0] || $b->[1] cmp $a->[1] }
+          map { [ dirname( $_ ), $_ ] }  # effectively gives us by-category by-date
+            keys %$files_ref;
+      }
+    elsif ($sorder eq 3 and ($format =~ m/^YY/)) {
+      map { $_->[1] }
+        sort { $a->[0] cmp $b->[0] || $a->[1] cmp $b->[1] }
+          map { [ dirname( $_ ), $_ ] }  # effectively gives us by-category by-date
+            keys %$files_ref;
+      }
+    elsif ($sorder eq 1) {
+      return sort { $files_ref->{$a} <=> $files_ref->{$b} } keys %$files_ref;
+      }
+    else {
+      return sort { $files_ref->{$b} <=> $files_ref->{$a} } keys %$files_ref;
+    }
+  };
+}
+
+
+# users can specify sort direction and mode
+sub head {
+  my($pkg, $path, $head_ref) = @_;
+  $path and $path =~ s//\//;
+
+  $sorder = (CGI::param("sorder"));
+  $sorder = $sorder % 4;
+  
+  1;
+}
+
+1;
+
+__END__

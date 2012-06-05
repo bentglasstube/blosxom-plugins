@@ -1,0 +1,183 @@
+# Blosxom Plugin: RecentWritebacks
+# Author: Fletcher T. Penney
+# Version: 0.2
+
+package recentwritebacks;
+
+# --- Configurable variables -----
+
+$writebacks_extension = "wb";
+
+$writebacksdir = "$blosxom::plugin_state_dir/writeback";
+
+$switch_word = "recent";	# This defines the term that needs to be added to the url
+				# ie "http://some.host/weblog/?recent=5"
+				# This finds posts with comments in last 5 days
+
+$use_datestamp = 1;			# Use embedded datestamp, rather than file modification date
+
+$date_field = "date";		# What variable contains the date
+
+$use_UK_dates = 0;			# Default is mm/dd/yy (US)
+							# Set to 1 to use dd/mm/yy (UK)
+
+# --------------------------------
+
+
+
+use CGI qw/:standard/;
+use FileHandle;
+use File::stat;
+use Time::Local;
+
+my $time = time();
+
+my $fh = new FileHandle;
+
+sub start {
+	if (CGI::param($switch_word)) {
+		$time_window = CGI::param($switch_word);
+		$time =  $time - $time_window*60*60*24;
+		return 1;
+	} else {
+		return 0;
+	}
+}
+
+sub filter {
+	my ($pkg, $files_ref) = @_;
+	my @files_list = keys %$files_ref;
+
+	foreach $file (@files_list) {
+		$realfile = $file;
+		$file =~ s/$blosxom::datadir/$writebacksdir/;
+		$file =~ s/txt$/$writebacks_extension/;
+		if ($fh->open("$file")) {
+			$keep =0;
+			
+			$stats = stat($file)->mtime;
+
+			if ( $use_datestamp == 1 ) {
+				while ( $line = <$fh> ) {
+					if ($line =~ /^$date_field\:\s*(.*)/) {
+						$datestamp = $1;
+						
+						$stat2 = parsedate($datestamp);
+						if ($stat2 gt $stats) {
+							$stats = $stat2;
+						}				
+					}
+				}
+			}
+
+			if ($stats lt $time) {
+				delete $files_ref->{$realfile};
+			}				
+
+		} else {
+			# No writebacks available
+			delete $files_ref->{$realfile};
+		}
+	}
+	1;
+}
+
+
+sub parsedate {
+	my ($datestring) = @_;
+	#warn "Parsing $datestring\n";
+	
+	# Possible formatting
+	# Month can be 3 letter abbreviation or full name (in English)
+	# Time must be hh:mm or hh:mm:ss  in 24 hour format
+	# Year must be yyyy
+	# The remaining 1 or 2 digits are treated as date
+	# ie: May 25 2003 18:40 
+	# order is not important as long as pieces are there
+		
+	# Convert the datestring to a time() format
+
+	# Find "Shorthand" Date
+	if ( $datestring =~ /\d\d?\/\d\d?\/\d\d\d?\d?/) {
+		if ( $use_UK_dates eq 0) {
+			# Use US Formatting
+			$datestring =~ s/(\d\d?)\/(\d\d?)\/(\d\d\d?\d?)//;
+			$mon = $1 - 1;
+			$day = $2;
+			$year = $3;
+		} else {
+			# Use UK Formatting
+			$datestring =~ s/(\d\d?)\/(\d\d?)\/(\d\d\d?\d?)//;
+			$mon = $2 - 1;
+			$day = $1;
+			$year = $3;
+		}
+		
+		# Now, clean up year if 2 digit
+		# You may change the 70 to whatever cutoff you like
+		$year += 2000 if ($year < 70 );
+		$year += 1900 if ($year < 100);
+	}
+	
+	# Find Month
+	$mon = 0 if ($datestring =~ s/(Jan|January)//i);
+	$mon = 1 if ($datestring =~ s/(Feb|February)//i);
+	$mon = 2 if ($datestring =~ s/(Mar|March)//i);
+	$mon = 3 if ($datestring =~ s/(Apr|April)//i);
+	$mon = 4 if ($datestring =~ s/(May)//i);
+	$mon = 5 if ($datestring =~ s/(Jun|June)//i);
+	$mon = 6 if ($datestring =~ s/(Jul|July)//i);
+	$mon = 7 if ($datestring =~ s/(Aug|August)//i);
+	$mon = 8 if ($datestring =~ s/(Sep|September)//i);
+	$mon = 9 if ($datestring =~ s/(Oct|October)//i);
+	$mon = 10 if ($datestring =~ s/(Nov|November)//i);
+	$mon = 11 if ($datestring =~ s/(Dec|December)//i);
+
+	# Find Time
+	if ($datestring =~ s/(\d\d?):(\d\d)(:\d\d)?//) {
+		$hour = $1;
+		$min = $2;
+		$sec = $3;
+	}
+	
+	if ($datestring =~ s/(\d\d\d\d)//) {
+		$year = $1;
+	}
+	
+	if ($datestring =~ s/(\d\d?)//) {
+		$day = $1;
+	}
+	
+	return timelocal($sec,$min,$hour,$day,$mon,$year);
+	
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: recentwritebacks
+
+=head1 DESCRIPTION
+
+RecentWritebacks locates stories with comments posted within a specified period of time. If you are like me, you find it hard to keep up with comments posted to older articles.  This plugin is designed to assist with that.  You can also use it to make it easier for visitors to your site to locate the "Hot Topics" where writebacks are being submitted.
+
+To use it, simply install the plugin and configure the $writebacks_extension and $writebacksdir variables.  They should match whatever you used in the writebacks plugin.
+
+You can then use a url similar to:
+	http://some.host/weblog/index.html?recent=5
+to locate posts with comments written in the last 5 days.  You can also create links on your site to make this easier for your visitors.
+
+You are also welcome to change the $switch_word variable to whatever you like to fit your site.
+
+=head1 AUTHORS
+
+Fletcher T. Penney - http://fletcher.freeshell.org
+
+=head1 LICENSE
+
+This source is submitted to the public domain.  Feel free to use and modify it.  If you like, a comment in your modified source attributing credit for my original work would be appreciated.
+
+THIS SOFTWARE IS PROVIDED AS IS AND WITHOUT ANY WARRANTY OF ANY KIND.  USE AT YOUR OWN RISK!

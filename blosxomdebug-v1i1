@@ -1,0 +1,250 @@
+# Blosxom debug tool
+# blosxomdebug
+#
+# Fletcher T. Penney
+# Version 1.1 - October 6, 2003
+#
+# THIS SOFTWARE IS PROVIDED AS IS AND WITHOUT ANY WARRANTY OF ANY KIND.
+# USE AT YOUR OWN RISK!
+
+package blosxomdebug;
+
+use File::stat;
+
+my $debug = "";		# Placeholder for html content
+
+my $permissions = "";
+my %debugfilelist = (	'Blosxom Script' => $0,
+					'Data Directory' => $blosxom::datadir,
+					'Plugin Directory' => $blosxom::plugin_dir,
+					'Plugin State Directory' => $blosxom::plugin_state_dir,
+					'Static Directory' => $blosxom::static_dir);
+my $debugfile = "";
+my $debugmode = "";
+my $debugaction = "";
+my @debugplugins = "";
+
+sub debug {
+	# Here is where we run diagnostics and generate html output
+	
+	add_header();
+	debug_files_directories();
+	debug_blosxom_settings();
+	debug_plugins();
+	debug_security();
+	
+	$debug .= "<br /><br />";
+	$blosxom::output = $debug . $blosxom::output;
+	1;
+}
+
+sub add_header {
+ 	$debug = "<h1>Debug Mode is Enabled</h1>
+ 	<h3>AKA Blosxom Made Easy</h3>
+ 	<h4>by Fletcher T. Penney</h4>
+ 	Remove the blosxomdebug file from your cgi directory to disable.<br />
+  	This information is designed to be useful in debugging problems with your blosxom installation.  <br />
+  	It may be possible to make use of this information in attacking your web site, so it should not be active unless necessary.<br /><br />
+  	For more information, or to leave comments or suggestions, visit <a href=\"http://fletcher.freeshell.org/computers/web/blosxom/debug/\">my website</a>.";
+  	}
+  	
+sub debug_files_directories {
+	$debug .= "<h3>File and Directory Paths and Permissions</h3>
+		<table border=1>\n
+		<tr><td>File/Directory</td>
+		<td>Path</td>
+		<td>Blosxom Variable</td>
+		<td>Permissions</td>
+		<td>Minimum Permissions</td>
+		<td>Actions to Take</td></tr>\n";
+	
+	foreach  ( sort keys %debugfilelist) {
+		$debug .= "<tr><td>$_<br /></td><td>$debugfilelist{$_}</td><td>";
+		$debugfile = $debugfilelist{$_};
+		
+		if (-e $debugfile) {
+			$debugmode = sprintf("%4o",stat($debugfile)->mode);
+			$debugmode =~ s/.*(\d\d\d)$/$1/;
+
+			# Here we can verify certain permissions and color code errors
+			if ($_ =~ /Blosxom Script/) {
+				$debugmode = "<font color=\"#ff0000\">$debugmode</font>" if ( $debugmode !~ /^[5|7][5|7]/);
+				$debugmode = "<font color=\"#ffff00\">$debugmode</font>" if ( $debugmode !~ /^\d[5|7][5|7]/);
+				$debug .= "N/A";
+			}
+
+			if ($_ =~ /Data Directory/) {
+				$debugmode = "<font color=\"#ff0000\">$debugmode</font>" if ( $debugmode !~ /^[5-7]/);
+				$debugmode = "<font color=\"#ffff00\">$debugmode</font>" if ( $debugmode !~ /^\d[5-7][5-7]/);
+				$debug .= "\$datadir";
+			}
+
+			if ($_ =~ /Plugin Directory/) {
+				$debugmode = "<font color=\"#ff0000\">$debugmode</font>" if ( $debugmode !~ /^[5-7]/);
+				$debugmode = "<font color=\"#ffff00\">$debugmode</font>" if ( $debugmode !~ /^\d[5-7][5-7]/);
+				$debug .= "\$plugin_dir";
+			}
+
+			if ($_ =~ /Plugin State Directory/) {
+				$debugmode = "<font color=\"#ff0000\">$debugmode</font>" if ( $debugmode !~ /^[7]/);
+				$debugmode = "<font color=\"#ffff00\">$debugmode</font>" if ( $debugmode !~ /^\d[7]/);
+				$debug .= "\$plugin_state_dir";
+			}
+
+			if ($_ =~ /Static Directory/) {
+				$debugmode = "<font color=\"#ff0000\">$debugmode</font>" if ( $debugmode !~ /^[7]/);
+				$debugmode = "<font color=\"#ffff00\">$debugmode</font>" if ( $debugmode !~ /^\d[7]/);
+				$debug .= "\$static_dir";
+			}
+
+			# If no error, then code green
+			$debugmode = "<td><font color=\"#00ff00\">$debugmode</font>" if ( $debugmode !~ /font color/);
+			$debugaction = "Fix the permissions on this file/folder" if ($debugmode !~ /(ff0000|00ff00)/);
+			$debug .= "</td>$debugmode";
+		} else {
+			$debug .= "\$static_dir" if ( $_ =~ /Static Directory/);
+			$debug .= "\$datadir" if ( $_ =~ /Data Directory/);
+			$debug .= "\$plugin_dir" if ( $_ =~ /Plugin Directory/);
+			$debug .= "\$plugin_state_dir" if ( $_ =~ /Plugin State Directory/);
+			$debug .= "N/A" if ( $_ =~ /Blosxom Script/);
+
+			$debug .= "</td><td><font color=\"#ff0000\">File Not Found</font>";
+			$debugaction = "Create the file/folder specified in the Path column; OR <br> Correct the variable so that it points to the correct location";
+
+			
+		}
+		$debug .= "</td><td>";
+		$debug .= "550/555" if ($_ =~ /(Blosxom Script|Data Directory|Plugin Directory)/);
+		$debug .= "770/777" if ($_ =~ /(Plugin State Directory|Static Directory)/);
+		
+		$debug .= "</td><td>$debugaction</td></tr>\n";
+		$debugaction = "";
+	}
+	
+
+$debug .="</table>
+<ul>
+<li>The Minimum permissions depend on the user and group ids of the Blosxom cgi, and the web server.
+<li>The number on the right is more likely to work with any setup.
+<li>The number on the left is more conservative from a security perspective and should be the \"bare minimum.\"
+<li>This is intended to be a guide and may have to be changed on some systems.
+</ul>";
+
+}
+
+
+sub debug_blosxom_settings {
+	$debug .= "<h3>Blosxom Settings</h3>
+<table border=1>
+<tr>
+	<td>Article File Extension</td><td>\$file_extension</td> <td>$blosxom::file_extension</td> <td>Comments</td>
+</tr><tr>
+	<td>Blosxom URL</td> <td>\$url</td> <td>$blosxom::url</td> <td>The url to access this blog</td>
+</tr><tr>
+	<td>Default Flavour</td> <td>\$default_flavour</td><td>$blosxom::default_flavour</td><td></td>
+</tr><tr>
+	<td>Blog Title</td> <td>\$blog_title</td> <td>$blosxom::blog_title</td><td></td>
+</tr><tr>
+	<td>Depth</td> <td>\$depth</td><td>$blosxom::depth</td><td></td>
+</tr><tr>
+	<td>Max. Number of Entries</td> <td>\$num_entries</td><td>$blosxom::num_entries</td><td></td>
+</tr><tr>
+	<td>Show Future Entries?</td> <td>\$show_future_entries</td><td>$blosxom::show_future_entries</td><td></td>
+</tr><tr>
+	<td>Generate Static Entries?</td> <td>\$static_entries</td><td>$blosxom::static_entries</td><td></td>
+</tr><tr>
+	<td>Static Flavours</td> <td>\@static_flavours</td><td>@blosxom::static_flavours</td><td></td>
+</tr></table>
+
+<h3>Server Settings</h3>
+(Not all of these will be filled in...)
+<table border=1>
+<tr>
+	<td>Server Name</td> <td>$ENV{'SERVER_NAME'}</td> <td></td>
+</tr><tr>
+	<td>Script Name</td> <td>$ENV{'SCRIPT_NAME'}</td> <td>The server settings: http://$ENV{'SERVER_NAME'}$ENV{'SCRIPT_NAME'}<br /> should match \$url: $blosxom::url<br>(Sort of)</td>
+</tr><tr>
+	<td>Server Software</td> <td>$ENV{'SERVER_SOFTWARE'}</td> <td></td>
+</tr><tr>
+	<td>Web Server Document Root</td> <td>$ENV{'DOCUMENT_ROOT'}</td> <td></td>
+</tr><tr>
+	<td>Cookies for this page</td> <td>$ENV{'HTTP_COOKIE'}</td> <td></td>
+</tr><tr>
+	<td>CGI Path Info</td> <td>$ENV{'PATH_INFO'}</td> <td></td>
+</tr><tr>
+	<td>User ID of Blosxom</td> <td>$></td> <td></td>
+</tr><tr>
+	<td>User Name of Blosxom</td> <td>" . getpwuid("$>") . "</td> <td></td>
+</tr><tr>
+	<td>Group ID of Blosxom</td> <td>$)</td> <td></td>
+</tr><tr>
+	<td>User Name of Blosxom</td> <td>" . getgrgid("$)") . "</td> <td></td>
+</tr></table>
+";
+
+}
+
+sub debug_plugins {
+	$debug .="<h3>Plugins</h3>
+		(Listed in load order)
+		<table border=1>
+		<tr><td>Plugin</td><td>Permissions</td><td>Enabled?</td><td>Comment</td></tr>";
+
+	if ( $blosxom::plugin_dir and opendir PLUGINS, $blosxom::plugin_dir ) {
+		foreach my $plugin ( grep { /^\w+$/ && -f "$blosxom::plugin_dir/$_"  } sort readdir(PLUGINS) ) {
+			$debug .= "<tr><td>$plugin</td><td>";
+			if (-r "$blosxom::plugin_dir/$plugin") {
+				$debugmode = sprintf("%4o",stat("$blosxom::plugin_dir/$plugin")->mode);
+				$debugmode =~ s/.*(\d\d\d)$/$1/;
+				$debugmode = "<font color=\"#ff0000\">$debugmode</font>" if ( $debugmode !~ /^[4-7][4-7]/);
+				$debugmode = "<font color=\"#ffff00\">$debugmode</font>" if ( $debugmode !~ /^\d[4-7][4-7]/);
+				$debugmode = "<font color=\"#00ff00\">$debugmode</font>" if ( $debugmode !~ /font color/);
+		
+				$debug .= $debugmode;
+			} else {
+				$debug .= "File not Found\?";
+			}
+			$debug .=  "</td><td>";
+			$plugin =~ s/^\d*//;
+			if ($blosxom::plugins{$plugin} eq 1) {
+				$debug .= "<font color=\"#00ff00\">Yes</font></td><td>";
+			} else {
+				$debug .= "<font color=\"#ff0000\">No</font></td><td>This may be disabled on purpose... More help in future releases";
+			}
+			$debug .= "</td></tr>\n";
+		}
+	}
+ 	$debug .= "</table>";
+}
+
+sub debug_security {
+	$debug .="<h3>Security Issues</h3>
+		<table border=1>
+		<tr>
+		<td>Folder</td><td>Path</td><td>At Risk?</td></tr>
+		<td>Web Server Document Root</td><td>$ENV{'DOCUMENT_ROOT'}</td><td>N/A</td></tr>";
+
+	foreach  ( sort keys %debugfilelist) {
+		next if ($_ =~ /(Static Directory|Blosxom Script)/);
+		$debug .= "<tr><td>$_<br /></td><td>$debugfilelist{$_}</td><td>";
+		# If the directory being examined is within the server document root, 
+		# But not "underneath" the redirected blosxom location,
+		# It may be accessed directly from a web browser
+		# Unless an .htaccess file is set up
+		if (($debugfilelist{$_} =~ /^$ENV{'DOCUMENT_ROOT'}/) && ($debugfilelist{$_} !~ /^$ENV{'DOCUMENT_ROOT'}$ENV{'SCRIPT_NAME'}/)) {
+			$debug .= "<font color=\"#ffff00\">Yes</font>";
+		} else {
+			$debug .= "<font color=\"#00ff00\">No</font>";
+		}
+		$debug .= "</td></tr>\n";
+ 	}
+ 	
+ 	$debug .= "</table>\n
+		If a directory is noted to be \"At Risk\" this simply means that it is contained
+		within your web server's path.  <br />
+		Someone could gain access to it by entering the url into their web browser.<br />
+		Use of an .htaccess file is recommended for extra security (Setting this up is beyond the scope of this program.)<br />";
+
+}
+
+1;

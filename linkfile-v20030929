@@ -1,0 +1,50 @@
+#!/usr/bin/perl 
+# Blosxom Plugin: linkfile
+# Author: Mike Hostetler <thehaas@binary.net>
+# Version: 20030929
+# http://users.binary.net/thehaas
+# License: BSD
+
+## based on Nelson Minar's "asin" plugin, available at:
+#				http://www.nelson.monkey.org/~nelson/weblog/
+#
+# linkfile enabled you to easily link to file in a repository in your
+# system.  This way you can keep files out of your Blosxom directories,
+# but still easy to link to.
+# to use:
+# <a href="linkfile:label.tex">this is a LaTeX file</a>
+# which turns into:
+# <a href="http://users.binary.net/thehaas/blogfiles/label.tex>this is a
+# LaTeX file</a>
+
+# Installation:
+#   Modify the $respository
+#   Put linkfile into your plugins directory
+
+
+package linkfile;
+
+$respository = "http://users.binary.net/thehaas/blogfiles/";
+sub start {
+    1;
+}
+
+sub rewriteURL{
+    my ($url) = @_;
+    $url =~ s%"linkfile:(.+)"%$respository."/".$1%ies;
+    return $url;    
+}
+
+# Modify the body of stories by rewriting asin: URIs to real URLs
+sub story {
+    my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    # Rewrite any <a href="linkfile:..."> tag in the post body
+    $$body_ref =~ s/(<a\s[^>]*href="linkfile:[^>]+>)/rewriteURL($1)/geis;
+    1;
+}
+sub head {
+	  my($pkg, $currentdir, $head_ref) = @_;
+    $$head_ref =~ s/(<a\s[^>]*href="linkfile:[^>]+>)/rewriteURL($1)/geis;
+    1;
+}
+1;

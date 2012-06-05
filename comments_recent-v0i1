@@ -1,0 +1,130 @@
+## Blosxom Plugin: Comments-Recent
+## Author: William Morgan <wmorgan-comments-recent@masanjin.net>
+## Version: 0.1
+## Date: January 18, 2004
+
+package comments_recent;
+
+use File::Find;
+use FileHandle;
+use POSIX;
+
+## --- Configurable variables -----
+## REQUIRED: you must set these to match what the 'comments' plugin does
+my $comment_dir = "$blosxom::plugin_state_dir/comments";
+my $comment_flavor = "comments"; # what the URLs should use
+my $file_extension = "comments"; # what the files on disk use
+
+## OPTIONAL:
+my $timerange = 7 * 24 * 60 * 60; # min age (in seconds) of comments to list
+## --------------------------
+
+## --- Output variables -----
+$html_list; # a list of links separated by <br/>s. it's easy enough to
+            # change the exact format below by modifying the map() call below,
+	    # if you wish.
+## --------------------------
+
+sub start {
+    my @list;
+    my $now = time();
+    my $fh = new FileHandle;
+
+    find({ wanted => sub {
+        if(/\.$file_extension$/) {
+            my @s = stat($_);
+	    if(($now - $s[9]) <= $timerange && $fh->open($File::Find::name)) {
+		eval join("", <$fh>);
+		$fh->close;
+
+		## transform the filename into a url
+	        s/\.$file_extension//;
+	        s/$comment_dir//;
+		$_ .= ".$comment_flavor";
+	
+		while(my ($key, $val) = each %{$saved_comments}) {
+		    if(($now - $val->{"time"}) <= $timerange) {
+			push @list, {
+				     time => $val->{"time"},
+				     title => $val->{"title"},
+				     author => $val->{"name"},
+				     link => $_ };
+
+		    }
+		}
+	    }
+	}
+    },
+	   no_chdir => 1 },
+	 $comment_dir);
+    
+    @list = sort { $b->{"time"} <=> $a->{"time"} } @list;
+
+    ## generate the html list
+    @list = map { "<a href=\"" . $_->{"link"} . "\">" . $_->{"title"} . "</a> by " . $_->{"author"} } @list;
+    $html_list = join("<br/>\n", @list) . "<br/>";
+}
+
+## this function is unused by default, but you can modify the map() above to
+## use it if you want timestamps in the list
+sub when_to_string {
+  my $t = shift;
+
+  $t /= (60 * 60);
+
+  if($t < 0) { return "in the future (wtf?)"; }
+  elsif($t < 24) { return POSIX::floor($t) . " hours ago"; }
+  elsif($t < 48) { return "one day ago"; }
+  else { return POSIX::floor($t / 24) . " days ago"; }
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: comments_recent
+
+=head1 SYNOPSIS
+
+Purpose: Generate a list of recent comments.
+
+=head1 VERSION
+
+0.1
+
+=head1 DESCRIPTION
+
+comments_recent generates the HTML text of a list of recent comments. This is a
+nice addition to a sidebar, with links to each one. You can change the time
+threshold for comments to be listed with the variable $timerange.
+
+=head1 AUTHORS
+
+William Morgan <wmorgan-comments-recent@masanjin.net>
+
+=head1 BUGS
+
+A find() executed every time this plugin is run. If you have a busy system or
+many many comments, this may be slow. Some form of caching would address this,
+though the optimal solution would involve tweaking the 'comments' plugin.
+
+=head1 LICENSE
+
+comments_recent blosxom plugin
+Copyright 2004 William Morgan
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.

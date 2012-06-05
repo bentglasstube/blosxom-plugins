@@ -1,0 +1,614 @@
+# Blosxom Plugin: calendar                                         -*- perl -*-
+# Author: Todd Larason (jtl@molehill.org)
+# Version: 0+6i
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/blosxom
+# Calendar plugin Home/Docs/Licensing:
+#   http://molelog.molehill.org/blox/Computers/Internet/Web/Blosxom/Calendar/
+
+package calendar;
+
+# --- Configuration Variables ---
+
+@monthname = qw/January February March 
+                April   May      June 
+                July    August   September 
+                October November December/ if ($#monthname != 11);
+@monthabbr = qw/Jan    Feb       Mar 
+                Apr    May       Jun 
+                Jul    Aug       Sep  
+                Oct    Nov       Dec/ if ($#monthabbr != 11);
+@downame   = qw/Sunday Monday    Tuesday Wednesday Thursday 
+                Friday Saturday/ if ($#downame != 6);
+@dowabbr = qw/Sun Mon Tue Wed Thu Fri Sat/ if ($#dowabbr != 6);
+
+$first_dow = 0
+    if not defined $first_dow;
+
+# set to 0 to disable attempted caching
+$use_caching    = 1 unless defined $use_caching;
+$months_per_row = 3 unless defined $months_per_row;
+$debug_level    = 1 unless defined $debug_level;
+# -------------------------------------------------------------------
+
+use Time::Local;
+
+$month_calendar  = '';
+$year_calendar 	 = '';
+$calendar 	 = '';
+$prev_month_link = '';
+$next_month_link = '';
+$prev_year_link  = '';
+$next_year_link  = '';
+
+my $package    = "calendar";
+my $cachefile  = "$blosxom::plugin_state_dir/.$package.cache";
+my $cache;
+my $save_cache = 0;
+my $files;
+
+sub debug {
+    my ($level, @msg) = @_;
+
+    if ($debug_level >= $level) {
+	print STDERR "$package debug $level: @msg\n";
+    }
+    1;
+}
+
+sub load_template {
+    my ($bit) = @_;
+    return $blosxom::template->('', "$package.$bit", $blosxom::flavour);
+}
+
+sub report {
+    my ($bit, $year, $month, $day, $dow) = @_;
+    my ($monthname, $monthabbr) = ($monthname[$month-1], $monthabbr[$month-1]);
+    my ($downame,   $dowabbr)   = ($downame[$dow],       $dowabbr[$dow]);
+    my $year2digit = sprintf("%02d", $year % 100);
+
+    my $url = $blosxom::url;
+    $url   .= sprintf("/%04d/", $year) if defined  $year;
+    $url   .= sprintf("%02d/", $month) if defined $month;
+    $url   .= sprintf("%02d/",   $day) if defined   $day;
+
+    my $date = '';
+    $date .= "$year"   if defined  $year;
+    $date .= "/$month" if defined $month;
+    $date .= "/$day"   if defined   $day;
+    my $count = $cache->{stories}{$date};
+
+    my $f = load_template($bit);
+    $f =~ s/((\$[\w:]+)|(\$\{[\w:]+\}))/$1 . "||''"/gee;
+    return $f;
+}
+
+sub days_in_month {
+    my ($year, $month) = @_;
+    my $days = (31,28,31,30,31,30,31,31,30,31,30,31)[$month-1];
+    if ($month == 2 &&
+	($year % 4 == 0 &&
+	 (($year % 100 != 0) ||
+	  ($year % 400 == 0)))) {
+	$days++;
+    }
+    return $days;
+}
+
+sub pseudo_now {
+  my ($year, $month, $day);
+
+  if (defined($blosxom::path_info_yr)) {
+    $year  = $blosxom::path_info_yr     + 0;
+    $month = $blosxom::path_info_mo_num + 0;
+    $day   = $blosxom::path_info_da     + 0;
+    if ($month == 0 && $cache->{stories}{$year}) {
+	for ($month = 12; $month > 0; $month--) {
+	    last if $cache->{stories}{"$year/$month"};
+	}
+    }
+    $month ||= 12;
+  } else {
+      my $now;
+      # is this a single-article view? 
+      # XXX this probably doesn't work for static
+      if ($blosxom::path_info =~ m!\.!) {
+	my $filename = $blosxom::path_info;
+	# replace whatever flavour with the file extension
+	$filename =~ s!\..*!.$blosxom::file_extension!;
+	# remove any dated dirs, if present
+	$filename =~ s!/\d+/.*/!/!;
+	# and convert from an URL relative to a filename
+	$filename = "$blosxom::datadir/$filename";
+	# at this point, it's our best guess at a filename
+	# if it's not in the index, oh well, we tried - fall back to present
+	$now = $files->{$filename} || $^T;
+      } else {
+	$now = $^T;
+      }
+      # no date given at all, do this month and highlight today
+      my @now = localtime($now);
+      $year   = $now[5] + 1900;
+      $month  = $now[4] + 1;
+      $day    = $now[3] + 0;
+    }
+    return ($year, $month, $day);
+}
+
+sub build_prev_month_link {
+  my ($year, $month) = @_;
+  my $year_orig  = $year;
+  my $month_orig = $month;
+
+  while (1) {
+    $month--;
+    if ($month <= 0) { # == 0 is right, <= 2xprotects against infinite loop bug
+      $year--;
+      $month = 12;
+      # XXX assumption: once a log is active, no full years are skipped
+      if ($cache->{stories}{"$year"} == 0) {
+	  return report('prev_month_nolink',
+			$month_orig == 1 ? $year_orig-1 : $year_orig,
+			$month_orig == 1 ? 12           : $month_orig-1);
+      }
+    }
+    if ($cache->{stories}{"$year/$month"}) {
+      return report('prev_month_link', $year, $month);
+    }
+  }
+}
+
+sub build_next_month_link {
+  my ($year, $month) = @_;
+  my $year_orig  = $year;
+  my $month_orig = $month;
+
+  while (1) {
+    $month++;
+    if ($month == 13) {
+      $year++;
+      $month = 1;
+      # XXX assumption: once a log is active, no full years are skipped
+      if ($cache->{stories}{"$year"} == 0) {
+	  return report('next_month_nolink',
+			$month_orig == 1 ? $year_orig-1 : $year_orig,
+			$month_orig == 1 ? 12           : $month_orig-1);
+      }
+    }
+    if ($cache->{stories}{"$year/$month"}) {
+	return report('next_month_link', $year, $month);
+    }
+  }
+}
+
+sub build_prev_year_link {
+  my ($year) = @_;
+
+  $year--;
+  return report($cache->{stories}{"$year"} ? 
+		'prev_year_link': 'prev_year_nolink',
+		$year);
+}
+
+sub build_next_year_link {
+  my ($year) = @_;
+  my $results;
+
+  $year++;
+  return report($cache->{stories}{"$year"} ? 
+		'next_year_link': 'next_year_nolink',
+		$year);
+}
+
+sub build_month_calendar {
+    my ($year, $month, $highlight_dom) = @_;
+    my $results;
+
+    my (@now, $monthstart, @monthstart);
+    my ($day, $days, $wday);
+    my $future_dom = 0;
+
+    @now = localtime($^T);
+    $future_dom = $now[3]+1 if ($year == $now[5]+1900 && $month == $now[4]+1);
+
+    $days  	= days_in_month($year, $month);
+    $monthstart = timelocal(0,0,0,1,$month-1,$year-1900);
+    @monthstart = localtime($monthstart);
+
+    $results  = report('month_head',        $year, $month);
+    $results .= report('month_sub_head',    $year, $month);
+    $wday = $first_dow;
+    do {
+	$results .= report('month_sub_day', $year, $month, undef, $wday);
+	$wday++;
+	$wday %= 7;
+    } while ($wday != $first_dow);
+    $results .= report('month_sub_foot',    $year, $month);
+
+    # First, skip over the first partial week (possibly empty)
+    # before the month started
+    for ($wday = $first_dow; $wday != $monthstart[6]; $wday++, $wday %= 7) {
+	$results .= report('week_head',     $year, $month) 
+	    if ($wday == $first_dow);
+	$results .= report('noday',         $year, $month, undef, $wday);
+    }
+
+    # now do the month itself
+    for ($day = 1; $day <= $days; $day++) {
+	$results .= report('week_head',     $year, $month, $day) 
+	    if ($wday == $first_dow);
+	my $tag;
+	if ($day == $highlight_dom) {
+	    if ($cache->{stories}{"$year/$month/$day"}){$tag='this_day_link'}
+	    else {$tag = 'this_day_nolink'}} 
+	elsif ($cache->{stories}{"$year/$month/$day"}){$tag = 'day_link'}
+	elsif ($future_dom && $day >= $future_dom) {$tag = 'day_future'} 
+	else {$tag = 'day_nolink'}
+	$results .= report($tag,            $year, $month, $day, $wday);
+	$wday = 0 if (++$wday == 7);
+	$results .= report('week_foot',     $year, $month)
+	    if ($wday == $first_dow);
+    }
+
+    # and finish up the last week, if any left
+    if ($wday != $first_dow) {
+	for(; $wday != $first_dow; $wday++, $wday %= 7) {
+	    $results .= report('noday',     $year, $month, undef, $wday);
+	}
+	$results .= report('week_foot',     $year, $month);
+    }
+
+    $results .= report('month_foot',        $year, $month);
+
+    return $results;
+}
+
+sub build_year_calendar {
+    my ($year, $highlight_month) = @_;
+    my $results;
+    my $month;
+    my $future_month = 0;
+
+    @now = localtime($^T);
+    $future_month = $now[4]+1 if ($year == $now[5]+1900);
+
+    $results = report('year_head', $year);
+    for ($month = 1; $month <= 12; $month++) {
+	$results .= report('quarter_head', $year) 
+	    if ($month % $months_per_row == 1);
+	my $tag;
+	if ($month == $highlight_month) {
+	    if ($cache->{stories}{"$year/$month"}) {$tag = 'this_month_link'}
+	    else {$tag = 'this_month_nolink'}}
+	elsif ($cache->{stories}{"$year/$month"}) {$tag = 'month_link'} 
+	elsif ($future_month && $month >=$future_month){$tag = 'month_future'} 
+	else {$tag = 'month_nolink'}
+	$results .= report($tag, $year, $month);
+	$results .= report('quarter_foot', $year) 
+	    if ($month % $months_per_row == 0);
+    }
+    $results .= report('year_foot', $year);
+
+    return $results;
+}
+
+sub build_calendar {
+  return report('calendar');
+}
+
+
+sub cached {
+    my ($sub, $cachetag, @args) = @_;
+    my $cachekey = join '/',@args,$blosxom::flavour;
+    return $cache->{$cachetag}{$cachekey} ||= 
+	(debug(1, "cache miss $cachetag @args $blosxom::flavour") and
+	 ($save_cache = 1) and 
+	 $sub->(@args));
+}
+
+sub prime_cache {
+    my ($num_files) = @_;
+    return 0 if !$use_caching;
+    eval "require Storable";
+    if ($@) {
+	debug(1, "cache disabled, Storable not available"); 
+	$use_caching = 0; 
+	return 0;
+    }
+    if (!Storable->can('lock_retrieve')) {
+	debug(1, "cache disabled, Storable::lock_retrieve not available");
+	$use_caching = 0;
+	return 0;
+    }
+    $cache = (-r $cachefile ? Storable::lock_retrieve($cachefile) : undef);
+    # >= rather than ==, so that if we're being used along with a search
+    # plugin that reduces %files, rather than dumping the cache and showing
+    # a limited calendar, we'll display the full thing (if available) .  I 
+    # think that's preferable as well as being more efficient.
+    # XXX improvement: rather than dumping the whole thing, just update the
+    # count and dump the current month (and sometimes the previous month
+    # and year)
+    @now = localtime;
+    $now[4] += 1;
+    $now[5] += 1900;
+    $today = "$now[5]/$now[4]/$now[3]";
+    if ($cache && 
+	$cache->{num_files} >= $num_files && 
+	$cache->{today} eq $today) {
+	debug(1, "Using cached state");
+	return 1;
+    }
+    $cache = {num_files => $num_files, today => $today};
+    return 0;
+}
+
+sub save_cache {
+    return if (!$use_caching || !$save_cache);
+    debug(1, "Saving cache");
+    -d $blosxom::plugin_state_dir
+	or mkdir $blosxom::plugin_state_dir;
+    Storable::lock_store($cache, $cachefile);
+}
+
+sub start {
+    debug(1, "start() called, enabled");
+
+    while (<DATA>) {
+	chomp;
+	last if /^(__END__)?$/;
+	my ($flavour, $comp, $txt) = split ' ',$_,3;
+	$txt =~ s:\\n:\n:g;
+	$blosxom::template{$flavour}{"$package.$comp"} = $txt;
+    }
+    return 1;
+}
+
+sub filter {
+  my ($pkg, $files_ref) = @_;
+  debug(1, "filter() called");
+
+  $files = $files_ref;
+
+  my $num_files = scalar keys %$files;
+  my @latest = (sort {$b <=> $a} values %$files);
+  while ($latest[0] == $^T) {
+      $num_files--;
+      shift @latest;
+  }
+  return 1 if prime_cache($num_files);
+
+  debug(1, "cache miss: %stories");
+
+  foreach (keys %{$files}) {
+    next if ($_ == $^T);
+    my @date  = localtime($files->{$_});
+    my $mday  = $date[3];
+    my $month = $date[4] + 1;
+    my $year  = $date[5] + 1900;
+    $cache->{stories}{"$year"}++;
+    $cache->{stories}{"$year/$month"}++;
+    $cache->{stories}{"$year/$month/$mday"}++;
+  }
+  debug(1, "filter() done");
+  return 1;
+}
+
+sub head {
+  debug(1, "head() called");
+  my ($year, $month, $day) = pseudo_now();
+  if ($year < 1970) {
+      debug(0,"Bad year $year requested ($year, path_info $ENV{PATH_INFO}, year to 2000");
+      $year = 2000;
+  }
+  $prev_month_link = cached(\&build_prev_month_link, "pml", $year,$month);
+  $next_month_link = cached(\&build_next_month_link, "nml", $year,$month);
+  $prev_year_link  = cached(\&build_prev_year_link,  "pyl", $year);
+  $next_year_link  = cached(\&build_next_year_link,  "nyl", $year);
+  $month_calendar  = cached(\&build_month_calendar,  "mc",  $year,$month,$day);
+  $year_calendar   = '';
+  for (my $y = (localtime)[5]+1900; $cache->{stories}{$y}; $y--) {
+      my $varname = "year_calendar_$y";
+      if ($y == $year) {
+	  $year_calendar = cached(\&build_year_calendar, "yc",$year,$month);
+	  $$varname      = $year_calendar;
+      } else {
+	  $$varname      = cached(\&build_year_calendar, "yc", $y);
+      }
+  }
+  $year_calendar   = cached(\&build_year_calendar,   "yc",  $year,$month)
+      unless $year_calendar;
+  $calendar        = cached(\&build_calendar,        "c",   $year,$month,$day);
+ 
+  save_cache();
+  
+  debug(1, "head() done, length(\$month_calendar, \$year_calendar, \$calendar) = ", length($month_calendar), length($year_calendar), length($calendar));
+  return 1;
+}
+
+# these look better (to me), but don't use <caption> like they 'should', and
+# the year one assumes 3 columns
+#html month_head <table class="month-calendar"><tr class="month-calendar-head"><th align="left">$prev_month_link</th><th colspan="5"><a title="$monthname $year" href="$url">$monthname</a></th><th align="right">$next_month_link</th></tr>\n
+#html year_head <table class="year-calendar"><tr class="year-calendar-head"><th align="left">$prev_year_link</th><th><a title="$year" href="$url">$year</a></th><th align="right">$next_year_link</th></tr><tr><th class="year-calendar-subhead" colspan=$months_per_row>Months</th></tr>\n
+
+1;
+__DATA__
+error month_head <table class="month-calendar"><caption class="month-calendar-head">$prev_month_link<a title="$monthname $year ($count)" href="$url">$monthname</a>$next_month_link</caption>\n
+error month_sub_head <tr>\n
+error month_sub_day <th class="month-calendar-day-head $downame">$dowabbr</th>\n
+error month_sub_foot </tr>\n
+error week_head <tr>\n
+error noday <td class="month-calendar-day-noday $downame">&nbsp;</td>\n
+error day_link <td class="month-calendar-day-link $downame"><a title="$downame, $day $monthname $year ($count)" href="$url">$day</a></td>\n
+error day_nolink <td class="month-calendar-day-nolink $downame">$day</td>\n
+error day_future <td class="month-calendar-day-future $downame">$day</td>\n
+error this_day_link <td class="month-calendar-day-this-day $downame"><a title="$downame, $day $monthname $year (current) ($count)" href="$url">$day</a></td>\n
+error this_day_nolink <td class="month-calendar-day-this-day $downame">$day</td>\n
+error week_foot </tr>\n
+error month_foot </table>\n
+error prev_month_link <a title="$monthname $year ($count)" href="$url">&larr;</a>
+error next_month_link <a title="$monthname $year ($count)" href="$url">&rarr;</a>
+error prev_month_nolink &larr;
+error next_month_nolink &rarr;
+error year_head <table class="year-calendar"><caption class="year-calendar-head">$prev_year_link<a title="$year ($count)" href="$url">$year</a>$next_year_link</caption><tr><th class="year-calendar-subhead" colspan="$months_per_row">Months</th></tr>\n
+error quarter_head <tr>\n
+error month_link <td class="year-calendar-month-link"><a title="$monthname $year ($count)" href="$url">$monthabbr</a></td>\n
+error month_nolink <td class="year-calendar-month-nolink">$monthabbr</td>\n
+error month_future <td class="year-calendar-month-future">$monthabbr</td>\n
+error this_month_link <td class="year-calendar-this-month"><a title="$monthname $year ($count)" href="$url">$monthabbr</a></td>
+error this_month_nolink <td class="year-calendar-this-month">$monthabbr</td>
+error quarter_foot </tr>\n
+error year_foot </table>\n
+error prev_year_link <a title="$year ($count)" href="$url">&larr;</a>
+error next_year_link <a title="$year ($count)" href="$url">&rarr;</a>
+error prev_year_nolink &larr;
+error next_year_nolink &rarr;
+error calendar <div class="calendar"><table><tr><td>$calendar::month_calendar</td><td>$calendar::year_calendar</td></tr></table></div>
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: calendar
+
+=head1 SYNOPSIS
+
+Purpose: Provides a Radio-style archive navigation calendar
+
+  * $calendar::calendar -- side-by-side month and year calendars
+  * $calendar::month_calendar -- month calendar only
+  * $calendar::year_calendar -- year calendar only
+  * $calendar::year_calendar_2003 -- year calendar for 2003; these are built for every year with stories.
+
+=head1 VERSION
+
+0+6i
+
+6th test release
+
+=head1 AUTHOR
+
+Todd Larason  <jtl@molehill.org>, http://molelog.molehill.org/
+
+=head1 BUGS
+
+None known; address bug reports and comments to me or to the Blosxom
+mailing list [http://www.yahoogroups.com/groups.blosxom].
+
+=head1 Customization
+
+=head2 Configuration variables
+
+C<@monthname>, C<@monthabbr>, C<@downame> and C<@dowabbr> contain the
+long and short forms of the names of the months and days of the week; 
+@downame and @dowabbr should always start with Sunday, regardless of
+$first_dow.
+
+C<$first_dow> sets the plugin's idea of the first day day of the week;
+use 0 for Sunday, 1 for Monday, and so on; using a number outside the
+range [0..6] will cause undefined behavior, possibly including a 
+nuclear meltdown.
+
+C<$use_caching> controls whether or not to try to cache statistics and
+formatted results; caching requires Storable, but the plugin will work
+just fine without it.
+
+C<$months_per_row> controls how many months are on each row of the
+year calendar.  This should be a number that evenly divides 12 (1, 2,
+3, 4, 6 or 12), but nothing checks for that.
+
+C<$debug_level> can be set to a value between 0 and 5; 0 will output
+no debug information, while 5 will be very verbose.  The default is 1,
+and should be changed after you've verified the plugin is working
+correctly.
+
+=head2 Classes for CSS control
+
+There's an (over)abundance of classes used, available for CSS customization.
+
+  * C<calendar> -- the calendar as a whole
+  * C<month-calendar> -- the month calendar as a whole
+  * C<month-calendar-head> -- the head of the month calendar (ie,
+    "March")
+  * C<month-calendar-day-head> -- a column head in the month calendar
+    (ie, a day-of-week abbreviation)
+  * C<month-calendar-day-noday>, C<month-calendar-day-link>,
+    C<month-calendar-day-nolink>, C<month-calendar-day-future>,
+    C<month-calendar-day-this-day> -- the day squares on the month
+    calendar, for days that don't exist (before or after the month
+    itself), that don't have stories, that do have stories, that are
+    in the future, or are that currently selected, respectively
+  * Day-of-week-name -- each day square is also given a class matching
+    its day of week, from C<@downame>; this can be used to hilight
+    weekends
+  * C<year-calendar> -- the year calendar as a whole
+  * C<year-calendar-head> -- the head of the year calendar (ie,
+    "2003")
+  * C<year-calendar-subhead> -- ie, "Months"
+  * C<year-calendar-month-link>, C<year-calendar-month-nolink>,
+    C<year-calendar-month-future>, C<year-calendar-this-month> -- the
+    month squares on the year calendar, for months with stories,
+    without, in the future, and currently selected, respectively.
+
+=head2 Flavour-style files
+
+If you want a format change that can't be made by CSS, you can
+override the HTML generated by creating files similar to Blosxom's
+flavour files.  They should be named calendar.I<bit>.I<flavour>; for
+available I<bit>s and their default meanings, see the C<__DATA__>
+section in the plugin.
+
+=head1 Installation
+
+1. Download and unpack (if you're reading this, you've probably
+   already done that)
+2. Copy it to your plugins directory.  Make sure it's world-readable.
+3. Modify a C<head> or C<foot> file to include C<$calendar::calendar>,
+   C<$calendar::month_calendar> or C<$calendar::year_calendar>
+4. Try it out -- load your blog in your browser.  If you see a calendar, great!
+5. Look at your error log.  Verify you have an 'enabled' line.
+6. If you're wanting to verify caching is working, load the page
+   again, and now look for an error log line "calendar debug 1: Using
+   cached state"
+7. Once you're satisfied it's working, edit the C<$debug_level> configuration
+   variable to C<0>.  There are a couple other configuration variables you may 
+   wish to change, too.
+
+=head1 Caching
+
+If the Storable module is available and $use_caching is set, various
+bits of data will be cached; this includes the information on what
+days have stories (and are thus linkable, and what months and years
+are included in the next/forward lists), the contents of any flavour
+files, and the final formatted output of any calendars generated.  
+
+The cache will be flushed whenever a story is added (but not when one
+is removed), so in normal use should be invisible.  If you're making
+template changes however, or are removing stories, you may wish to
+either disable the cache (by setting $use_caching to 0) or manually
+flush the cache; this can be done by removing
+$plugin_state_dir/.calendar.cache, and is always safe to do.
+
+=head1 LICENSE
+
+this Blosxom Plug-in
+Copyright 2003, Todd Larason
+
+(This license is the same as Blosxom's)
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+

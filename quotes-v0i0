@@ -1,0 +1,150 @@
+# Blosxom Plugin: quotes
+# Author(s): Bob Schumaker <cobblers@pobox.com>
+# Version: 0.0
+# Documentation: See the bottom of this file or type: perldoc quotes
+
+package quotes;
+
+# --- Configurable variables -----
+
+my $before_quotes = qq{<span class="quotes">};
+my $after_quotes = qq{</span>};
+
+# What the trailing part of the path to the quotes is
+my $quotes_path = qq{/thoughts/quotes};
+
+# Link the 'current' quote to the quotes path
+my $quotes_link = 1;
+
+# Remove all of the 'quotes' stories unless we're at the quotes path location
+my $delete_quotes = 1;
+
+# Pop off the top quote story? (And leave the rest)
+my $pop_quotes = 1;
+
+# Handle cleanup, if we need it
+my $quotes_dir;
+my $quotes_url;
+my $current_quote;
+my $files_ref;
+
+# --------------------------------
+
+$quotes; # use as $quotes::quotes in flavour templates
+
+use FileHandle;
+use Data::Dumper;
+
+my $fh = new FileHandle;
+
+sub start {
+  $quotes_url = $blosxom::url;
+  $quotes_url .= "/" unless( $quotes_url =~ /\/$/ || $quotes_path =~ /^\// );
+  $quotes_url .= $quotes_path;
+  $quotes_dir = $blosxom::datadir;
+  $quotes_dir .= "/" unless( $quotes_dir =~ /\/$/ || $quotes_path =~ /^\// );
+  $quotes_dir .= $quotes_path;
+  if ($quotes_link) {
+    $before_quotes = "<a href=\"$quotes_url\">$before_quotes";
+    $after_quotes .= '</a>';
+  }
+  1;
+}
+
+sub filter {
+	my ($pkg, $files) = @_;
+	my @sorted = sort { $files->{$b} <=> $files->{$a} } grep(/$quotes_dir/, keys %$files);
+	if (@sorted) {
+		$current_quote = $sorted[0];
+    	$fh->open("< $sorted[0]") and my $titles = <$fh>, $quotes = join('', $before_quotes, <$fh>, $after_quotes), $fh->close;
+		$files_ref = $files;
+	}
+	return 1;
+}
+
+sub head {
+	my($pkg, $currentdir, $head_ref) = @_;
+	if ($quotes_path !~ /$currentdir/) {
+		if ($pop_quotes) {
+			delete $files_ref->{$current_quote};
+		}
+		if ($delete_quotes) {
+			foreach (grep(/$quotes_dir/, keys %$files_ref)) {
+				delete $files_ref->{$_};
+			}
+		}
+	}
+	else {
+		$quotes = "";
+	}
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: quotes
+
+=head1 SYNOPSIS
+
+Purpose: Populates $quotes::quotes with the contents of the newest of any story
+with '$quotes::quotes_path' in its path.
+
+Handle a story directory full of 'quotes'. The newest quote is stored in a globally
+accessible variable for use in flavours. The disposition of any remaining quotes is
+configurable.
+
+Configurable variables:
+
+   $quotes::before_quotes: prepend the quote with this
+   $quotes::after_quotes: put this after the quote
+   $quotes::quotes_path: the full path to the quotes category
+   $quotes::quotes_link: link the quote to the quotes category
+   $quotes::delete_quotes: remove the quote stories unless we're displaying the quotes category
+   $quotes::pop_quotes: remove the story containing the newest quote
+
+=head1 VERSION
+
+0.0
+
+=head1 AUTHOR
+
+Bob Schumaker  <cobblers@pobox.com>, http://www.cobblers.net/blog
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Blosxom
+Copyright 2003, Rael Dornfest 
+This Blosxom Plug-in
+Copyright 2003, Bob Schumaker 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

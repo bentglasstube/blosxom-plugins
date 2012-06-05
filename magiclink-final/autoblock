@@ -1,0 +1,82 @@
+# Blosxom Plugin: autoblock
+# Author: Bruce Alderson
+# Version: 2003-08-31 (v0.1)
+# License: GPL
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/blosxom
+
+# Autoblock
+#
+# Automatically formats story blocks into nice HTML.  Supports a
+# number of natural block-formatting modes, including paragraph,
+# quote, and code.  
+#
+# WARNING ******
+#
+# I use this plugin to format the articles on my own sites, but
+# it is still a work in progress!  Please report bugs and limitations
+# (and I will fix them promptly).
+#
+# Formats:
+# * Ignores most existing blocks
+# * Formats paragraphs separated with blank lines
+# * Formats code-blocks preceeded by a :: found on a blank line
+# * Formats block-quotes indented with spaces
+# * Other types will be added as I need them
+
+package autoblock;
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# Configuration Section
+
+# No configuration
+
+#
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+
+sub start {
+  1;
+}
+
+sub story {
+ my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+	$new_body = '';
+	$#blocks = 0;
+
+	# ensure body is properly \n wrapped
+	$$body_ref = "\n\n" . $$body_ref . "\n\n";
+
+	# grab blocks of text
+	@blocks = split(/\n\n/, $$body_ref);
+
+	# process blocks
+	foreach $block (@blocks) {
+
+		# TODO: add other block-types
+
+		$block =~ s/^\n//gs; # remove leading
+		next if $block =~ m/^$/; # skip empties
+
+		if ($block =~ /^(<li>|<p>|<ol>|<ul>|<h\d>|<blo|<pre)/m) {
+			# ignored blocks (only certain types of blocks are ignored)
+			$new_body .= "$block\n\n";
+        } elsif ($block =~ s/^:://) {
+           $new_body .= "<pre>$block</pre>\n\n"; 
+        } elsif ($block =~ /^\s+/m) {
+           $new_body .= "<blockquote>$block</blockquote>\n\n"; 
+		} else {
+			# default to paragraph
+			$new_body .= "<p>$block</p>\n\n";
+		}
+	}
+
+
+	$$body_ref = $new_body;
+
+
+ 1;
+}
+
+1;
+

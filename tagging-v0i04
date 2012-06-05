@@ -1,0 +1,555 @@
+# -*- perl -*-
+# Blosxom Plugin: tagging
+# Author(s): Axel Beckert <blosxom@deuxchevaux.org>, http://noone.org/blog
+# Version: 0.04
+# Licensing: GPL v2 or newer, http://www.gnu.org/licenses/gpl.txt
+# Tagging plugin web page: http://noone.org/blog?-tags=Tagging
+# Tagging plugin download: http://noone.org/blosxom/tagging
+# Blosxom web page: http://blosxom.ookee.com/
+
+### Documentation:
+#
+# This is a plugin for blosxom.
+#
+# Installation:
+#
+#  Just drop it into your blosxoms plugin directory and it should start
+#  working. If you want, change some of the configuration variables
+#  below.
+# 
+# What it does:
+#
+#  It allows you to tag Blosxom postings with keywords, filter
+#  postings based on that tags and show how often which tag was
+#  used. Should work together with Technorati Tags as described on
+#  http://www.technorati.com/help/tags.html although this feature is
+#  yet untested. (Feedback regarding this and other features is
+#  welcome!)
+#
+# Configuration:
+#
+#  The only configuration option which may be necessary to make the
+#  tag cloud work with very less stories or very less tags, is
+#  $min_tag_no. Set it to 1 and you see every tag you every tag you
+#  used in the cloud. Set it to higher values, if you have a lot of
+#  tags in use. YMMV.
+#
+#  The same counts for the related stories and
+#  $min_story_relations. By default, a story is seen as related if it
+#  shares at least two tags with the current story. Set it to 1, if
+#  you want to use it with not so many tags or stories.
+#
+# How to use it:
+#
+#  Add an additional line after the title, starting with "Tags:".
+#  Between this Tag line and the body text there should be a blank
+#  line. (This is in conformance with other Plugins, e.g. the one for
+#  meta tags, which work the same way.) After this keyword, the tags
+#  should be listed and separated by commata.
+#
+# Examples:
+#
+#  The follwing two examples have the same effect.
+#
+#  | Story Headline
+#  | Tags: X, Y, Z
+#  | Tags: A, B, C
+#  |
+#  | Story Body [...]
+#
+#  | Story Headline
+#  | Tags: A, X, B, Y, C, Z
+#  |
+#  | Story Body [...]
+#
+# Including the tags into templates:
+#
+#  Use $tagging::tag_list for the story tag list,
+#  $tagging::global_tag_list for a global tag list (also called tag
+#  cloud, e.g for head.html or foot.html), $tagging::current_filter
+#  for the currently used tagging filter (if any) and
+#  $tagging::related_tags for a list of tags related to the current
+#  filter.
+#
+# Filtering by tags:
+#
+#  If you want to filter by tags, append a CGI parameter named "-tags"
+#  with a comma-seperated list of tags to the URL of the blog. By
+#  default any post having at least one of the tags will be shown. If
+#  you set the CGI parameter "-conj" to "and", only posts with all of
+#  the tags will be shown.
+#
+#  Technorati don't seem to accept URLs with tag names in the query
+#  string as tagref URLs, so with the following Apache configuration,
+#  you can do technorati accepted tagref URLs:
+#
+#     RewriteEngine On
+#     RewriteRule ^/cgi-bin/blosxom.cgi/tags/(.*)$ /cgi-bin/blosxom.cgi?-tags=$1 [PT]
+#
+#  Then you can use the prefined blosxom_tags as base URL for tag links.
+#
+#  Another, less performant but simplier option is to install the
+#  plugin pathbasedtagging, available at
+#  http://noone.org/blosxom/pathbasedtagging
+#
+# Examples:
+#
+#  http://blog/cgi-bin/blosxom.cgi?-tags=X,Y,Z will show you all
+#  posts which have at least one of the tags X, Y _or_ Z.
+#
+#  http://blog/cgi-bin/blosxom.cgi?-tags=X,Y,Z&-conj=and will show
+#  you all posts which have _all_ of the tags X, Y _and_ Z.
+#
+# Known bugs and other ugly obstacles:
+#
+#  + Being not as performant as I would like it to be, especially when
+#    using -conj=and.
+#  + Related stories are not sorted by recentness when having same
+#    number of shared tags.
+#  + Tags must be written without HTML entities.
+#  + Technorati style tags currently don't work well in the tag cloud.
+#
+# Version History:
+#
+#  0.01:   Initial release, based on Rael Dornfest's meta plugin.
+#  0.01.1: Additional documentation, small compatibility fix for newer
+#          Perl versions
+#  0.02:   Showing how often a tag has been used (in 3 different ways)
+#  0.02.1: Fixed an XSS issue
+#  0.02.2: Fixed documentation (removed multcat left-overs) and simple
+#          Technorati Tag support, see http://www.technorati.com/help/tags.html
+#  0.03:   New feature: related stories based on the already given tags
+#          (Idea by Wim de Jonge)
+#  0.03.1: Bugfix release: Missing "/" and some minor issues
+#  0.04:   Tag blacklist for tag cloud (suggestion by Wim), boolean
+#          "and" conjunction for filtering with several tags, linked
+#          current filter, related tags, option to link to technorati
+#          tags instead of own tags, several bugfixes (Thanks to Wim
+#          and blathijs!), added a lot of documentation, renamed some
+#          config variables to have more consistent names
+#
+# TODO LIST:
+#
+#  + Generalise $base_url{wikipedia_XX}, maybe with tie.
+#  + Option to accept case insensitiv tags
+#  + Option to link all tags in lower case
+#
+
+package tagging;
+
+use File::Basename;
+use CGI;
+
+###
+### Config
+###
+
+# Where to link story tags (URLs defined below)
+my $link_tag = 'blosxom';
+
+# Where to link tags in the tag cloud (URLs defined below)
+my $link_cloud = 'blosxom';
+
+# Where to link related tags (URLs defined below)
+my $link_rtag = 'blosxom';
+
+my %base_url = (
+		blosxom => "$blosxom::url?-tags=",
+		blosxom_tags => "$blosxom::url/tags/",
+		technorati => "http://www.technorati.com/tags/",
+		flickr => "http://flickr.com/photos/tags/",
+		delicious => 'http://del.icio.us/tag/',
+		delicious_popular => 'http://del.icio.us/popular/',
+	        delirious => 'http://de.lirio.us/rubric/entries/tags/',
+		suprcilious => 'http://supr.c.ilio.us/tag/',
+		buzznet => 'http://www.buzznet.com/buzzwords/',
+		shadows => 'http://www.shadows.com/tags/',
+		wikipedia => "http://en.wikipedia.org/wiki/",
+		wikipedia_de => "http://de.wikipedia.org/wiki/",
+		wikipedia_fr => "http://fr.wikipedia.org/wiki/",
+		wikipedia_pl => "http://pl.wikipedia.org/wiki/",
+		wikipedia_ja => "http://ja.wikipedia.org/wiki/",
+		wikipedia_nl => "http://nl.wikipedia.org/wiki/",
+		wikipedia_it => "http://it.wikipedia.org/wiki/",
+		wikipedia_sv => "http://sv.wikipedia.org/wiki/",
+		wikipedia_pt => "http://pt.wikipedia.org/wiki/",
+		wikipedia_es => "http://es.wikipedia.org/wiki/",
+		wikipedia_da => "http://da.wikipedia.org/wiki/",
+		wikipedia_hu => "http://hu.wikipedia.org/wiki/",
+		wikipedia_no => "http://no.wikipedia.org/wiki/",
+		wikipedia_nn => "http://nn.wikipedia.org/wiki/",
+		wikipedia_lb => "http://lb.wikipedia.org/wiki/",
+		wikipedia_simple => "http://simple.wikipedia.org/wiki/",
+		);
+
+# Regular expressions
+
+my $tag_re = qr/Tags:\s*/i;
+my $split_re = qr/\s*,\s*/;
+
+# Texts for tags
+
+my $tag_prefix = 'Tagged as: ';
+my $tag_suffix = ''; #' &raquo; ';
+my $global_tag_prefix = '<p style="text-align: justify;">'; # '<p>Available tags: ';
+my $global_tag_suffix = '</p>';
+my $current_filter_prefix = '<p><em>Current filter:</em> &raquo;';
+my $current_filter_suffix = '&laquo; (Click tag to exclude it or click a conjunction to switch them.)</p>';
+
+# Displaying the tag cloud 
+
+my $min_tag_no = 2;
+my $show_tag_no = 0;
+my $show_tag_no_by_size = 1;
+my $show_tag_no_by_color = 1;
+my $max_size = 250;
+my $min_size = 75;
+
+my @tag_cloud_blacklist = ('Now Playing', 'Other Blogs', 'Screenshot');
+
+my $start_color = 'ff9900';
+my $end_color = '991100';
+#my $start_color = '0000ff';
+#my $end_color = 'ff0000';
+#my $start_color = 'ff9900';
+#my $end_color = '0000ff';
+
+# Texts for related stories
+
+my @related_stories_tag_blacklist = ('Now Playing', 'Other Blogs', 'Screenshot');
+
+my $min_story_relations = 2;
+my $max_related_stories = 5;
+my $show_shared_tags = 0;
+my $show_number_of_shared_tags = 1;
+
+my $related_stories_prefix = '<div class="blosxomstoryfoot" align="left"><h4 class="related_stories">Related stories</h4><ul class="related_stories">'."\n";
+my $related_stories_suffix = "\n</ul></div>\n";
+my $related_story_join     = "\n";
+my $related_story_prefix   = '<li class="related_stories">';
+my $related_story_suffix   = '</li>';
+my $related_story_class    = 'related_stories';
+
+my $shared_tags_text = 'shared tags';
+
+# Related Tags
+
+my $min_tag_relations = 2;
+my $max_related_tags = 5; # 0 to disable;
+my $show_tag_shares = 0;
+
+my @related_tags_tag_blacklist = ('Now Playing', 'Other Blogs', 'Screenshot');
+
+my $related_tags_prefix = '<p class="related_tags"><em>Related tags:</em> ';
+my $related_tags_suffix = "\n</p>\n";
+my $related_tag_join     = ", ";
+my $related_tag_class    = 'related_tags';
+
+###
+### Init (You can use these variables in templates prefixed with "$tagging::".)
+###
+
+$tag_list = '';
+$global_tag_list = '';
+$current_filter = '';
+$current_filter_short = '';
+$related_stories = '';
+$related_tags = '';
+
+%tags = ();
+%related_tags = ();
+
+sub start { 
+    1;
+}
+
+sub story {
+    my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    my %localtags = ();
+    my $body = '';
+    my $in_header = 1;
+
+    foreach (split /\n/, $$body_ref) {
+	if (/^\s*$/) {
+	    $in_header = 0;
+	    $body .= "$_\n";
+	    next;
+	}
+
+	if ($in_header && /^$tag_re(.+?)$/) {
+	    foreach my $tag (split($split_re, $1)) {
+		$localtags{$tag} = 1;
+	    }
+	    next;
+	}
+
+	$body .= "$_\n";
+    }
+    $$body_ref = $body;
+
+    $tag_list = '';
+    my %other_stories = ();
+    foreach my $tag (sort { lc($a) cmp lc($b) } keys %localtags) {
+	my $l_tag = &url_escape($tag);
+	$tag_list .= 
+	    qq! <a href="$base_url{$link_tag}$l_tag" rel="tag">$tag</a>,!;
+
+#	$tag_list .= qq! <a href="$base_url{blosxom}$tag&-technorati-hack=/$tag" rel="tag" title="Look for tag $tag in this blog"!.($invisible_plugin_tags ? qq! style="display:none;"! : '').qq!>$tag</a>! if $add_plugin_tags;
+
+        # Looking for similar stories
+	next if grep { $_ eq $tag } @related_stories_tag_blacklist;
+	foreach my $other (@{$tags{$tag}}) {
+	    next if $other eq "$blosxom::datadir$path/$filename.$blosxom::file_extension";
+	    if (exists $other_stories{$other}) {
+		push(@{$other_stories{$other}}, $tag);
+	    } else {
+		$other_stories{$other} = [$tag];
+	    }
+	}
+    }
+    $tag_list =~ s/,$//;
+    $tag_list = "$tag_prefix$tag_list $tag_suffix" if $tag_list;
+
+    $related_stories = '';
+    my $i = 0;
+    foreach my $other (sort { scalar @{$other_stories{$b}} <=> 
+			      scalar @{$other_stories{$a}} }
+		       keys %other_stories) {
+	last if scalar(@{$other_stories{$other}}) < $min_story_relations;
+	last if $i++ >= $max_related_stories;
+
+	$related_stories .= $related_story_join if $related_stories;
+
+	my $opath = $other;
+	$opath =~ s!\Q$blosxom::datadir\E!$blosxom::url!;
+	$opath =~ s!\Q$blosxom::file_extension\E$!$blosxom::default_flavour!;
+
+	my $title = $other;
+	$title =~ s!^.*/([^/]+)\.$blosxom::file_extension$!$1!;
+
+	my $shared_tags_list = join(', ', @{$other_stories{$other}});
+	my $shared_tags_number = scalar(@{$other_stories{$other}});
+
+	my $attr_title = "$shared_tags_number $shared_tags_text: $shared_tags_list";
+
+	$related_stories .= qq($related_story_prefix<a href="$opath" class="$related_story_class" title="$attr_title">$title</a>);
+
+	$related_stories .= ' (' 
+	    if $show_shared_tags || $show_number_of_shared_tags;
+	$related_stories .= "$shared_tags_number "
+	    if $show_number_of_shared_tags;
+	$related_stories .= $shared_tags_text
+	    if $show_shared_tags || $show_number_of_shared_tags;
+	$related_stories .= ": $shared_tags_list"
+	    if $show_shared_tags;
+	$related_stories .= ')'
+	    if $show_shared_tags || $show_number_of_shared_tags;
+
+	#use Data::Dumper;
+	#$related_stories .= qw|$other: |.Dumper($other_stories{$other});
+
+	$related_stories .= $related_story_suffix;
+    }
+    $related_stories = "$related_stories_prefix$related_stories$related_stories_suffix" if $related_stories;
+
+
+    return 1;
+}
+
+sub filter {
+    my ($pkg, $files_ref) = @_;
+    my $filter_tags = CGI::param('-tags');
+    my $filter_conj = CGI::param('-conj');
+    $filter_tags =~ s/</[/gs; # No XSS here
+    $filter_tags =~ s/>/]/gs; # No XSS here
+    my @filter_tags = split(/\s*,\s*/, $filter_tags);
+
+    foreach my $key (keys %$files_ref) {
+	next if -l $key;
+	open(FILE, $key) or do { warn "Can't open $key: $!"; next; };
+	my $tags_found = 0;
+	my $empty_line_found = 0;
+	while ($_ = <FILE>) {
+	    last if /^\s*$/;
+	    if (m!^$tag_re(.+?)$!) {
+		my @localtags = split($split_re, $1);
+		foreach my $tag (@localtags) {
+		    if (ref $tags{$tag}) {
+			push(@{$tags{$tag}}, $key);
+		    } else {
+			$tags{$tag} = [$key];
+		    }
+
+		    # Related tags
+		    next unless ($filter_tags and
+				 grep { $_ eq $tag } @filter_tags);
+
+		    foreach my $rtag (@localtags) {
+			next if ($rtag eq $tag);
+			
+			if ($related_tags{$rtag}) {
+			    $related_tags{$rtag}++;
+			} else {
+			    $related_tags{$rtag} = 1;
+			}
+		    }
+		}
+	    }
+	}
+    }
+
+    my $max = 1;
+    my $min = 0;
+    foreach my $tag (keys %tags) {
+	next if grep { $_ eq $tag } @tag_cloud_blacklist;
+
+	my $list = $tags{$tag};
+	my $no = scalar @$list;
+	next if $no < $min_tag_no;
+	$max = $no if $max < $no;
+	$min = $no if $min > $no || !$min;
+    }
+
+    my $diff = $max - $min;
+    my $conj = ($filter_conj eq 'and' ? '&-conj=and' : '');
+    my $l_filter_tags = &url_escape($filter_tags);
+
+    foreach my $tag (sort { lc($a) cmp lc($b) } keys %tags) {
+	next if grep { $_ eq $tag } @tag_cloud_blacklist;
+
+	(my $url_tag = $tag) =~ s/\&/\%26/g;
+	(my $html_tag = $tag) =~ s/\&/\&amp;/g;
+	my $tag_no = scalar @{$tags{$tag}};
+	next if $tag_no < $min_tag_no;
+	my $tag_no_display = $show_tag_no ? " ($tag_no)" : '';
+	my $title = $tag_no == 1 ? "1 posting tagged" : "$tag_no postings tagged";
+	my $tag_percent = $diff ? int($min_size+((($max_size-$min_size)/$diff)*($tag_no-$min+1))) : 100;
+	my $color = $diff ? &color_calc($tag_no, $min, $max) : '';
+	my $style = '';
+	$style .= qq!font-size: $tag_percent%;! if $show_tag_no_by_size && $diff;
+	$style .= qq!color: #$color;! if $show_tag_no_by_color && $diff;
+
+	my $l_tag = &url_escape($tag);
+	$global_tag_list .= 
+	    qq| <a href="$base_url{$link_cloud}|.
+            ((($link_cloud eq 'blosxom') and 
+              ($filter_tags !~ /(^|,)\Q$tag\E($|,)/) and
+              $filter_tags) ?
+             "$l_filter_tags," : '').
+            qq|$l_tag$conj" title="$title" style="$style">$tag</a>|.
+	    qq|$tag_no_display,\n|;
+    }
+
+    $global_tag_list =~ s/,$//;
+    $global_tag_list = "$global_tag_prefix$global_tag_list$global_tag_suffix" 
+	if $global_tag_list;
+
+    return 1 unless $filter_tags;
+
+    my @tags = split($split_re, $filter_tags);
+    my %localfiles = ();
+    foreach my $tag (@tags) {
+	my $files = $tags{$tag};
+	next unless ref $files;
+      FILES:
+	foreach my $file (@$files) {
+	    # If all tags should match
+	    if ($conj) {
+		foreach my $ctag (@tags) {
+		    if (!grep { $_ eq $file } @{$tags{$ctag}}) {
+			next FILES;
+		    }
+		}
+	    }
+		
+	    $localfiles{$file} = $files_ref->{$file};
+	}
+    }
+
+    %$files_ref = %localfiles;
+
+    $current_filter_short = join($conj ? ' + ' : ' | ',
+				 map { s/\&/\&amp;/g; $_; } 
+				 sort { lc($a) cmp lc($b) } 
+				 @tags);
+
+    $conj = ($conj ? 
+	     qq! <em><a href="$base_url{blosxom}$l_filter_tags">and</a></em> ! : 
+	     qq! <em><a href="$base_url{blosxom}$l_filter_tags&amp;-conj=and">or</a></em> !);
+    $current_filter = ($current_filter_prefix.
+		       join($conj,
+			    map {
+				my $tags = $filter_tags;
+				$tags =~ s/\Q$_,\E// || $tags =~ s/\Q,$_\E// || $tags =~ s/\Q$_\E//;
+
+				s/\&/\&amp;/g; 
+
+				my $l_tags = &url_escape($tags);
+				qq!<a href="$base_url{blosxom}$l_tags">$_</a>!;
+			    } 
+			    sort { lc($a) cmp lc($b) } 
+			    @tags).
+		       $current_filter_suffix);
+
+    # Related tags
+    if ($max_related_tags) {
+	$related_tags = '';
+	my $i = 1;
+	foreach my $rtag (sort { $related_tags{$b} <=> $related_tags{$a} or
+				 $a cmp $b } 
+			  keys %related_tags) {
+	    next if ((grep { $_ eq $rtag } @related_tags_tag_blacklist) or
+		     $related_tags{$rtag} < $min_tag_relations);
+	    my $l_rtag = &url_escape($rtag);
+	    my $rel_no = $show_tag_shares ? " ($related_tags{$rtag})" : '';
+	    $related_tags .= 
+		qq!<a href="$base_url{$link_rtag}$l_rtag" rel="tag" class="$related_tag_class" title="Coincided $related_tags{$rtag} times">$rtag</a>$rel_no$related_tag_join!;
+	    last if $i++ >= $max_related_tags;
+	    }
+	$related_tags =~ s/\Q$related_tag_join\E$//;
+
+	#use Data::Dumper;
+	$related_tags = 
+	    "$related_tags_prefix$related_tags$related_tags_suffix" 
+		if $related_tags;
+	#.'<pre>'.Dumper(\%related_tags).'</pre>';
+    }
+
+#    use Data::Dumper;
+#    $debug = Dumper $filter_tags, $files_ref, \@tags, \%localfiles, \%tags;
+
+    1;
+}
+
+sub color_calc {
+    my ($tag_no, $min, $max) = @_;
+    my $diff = $max - $min;
+
+    my $result = [];
+
+    foreach my $i (0..2) {
+	my $s = &get_dec($start_color, $i*2);
+	my $e = &get_dec($end_color, $i*2);
+	my $diff_se = abs($s-$e);
+
+	my $rogob = ($diff_se/$diff)*($tag_no-$min);
+	$rogob = int($s < $e ? $s + $rogob : $s - $rogob);
+	$result->[$i] = sprintf('%02x', $rogob);
+    }
+
+    #use Data::Dumper;
+    return join('', @$result);
+}
+
+sub get_dec {
+    my ($color, $offset) = @_;
+    return hex(substr($color, $offset, 2));
+}
+
+sub url_escape {
+    my $s = shift;
+    $s =~ s/[^0-9A-Za-z,.:]/sprintf('%%%02X', ord($&))/seg;
+    return $s;
+}
+
+1;

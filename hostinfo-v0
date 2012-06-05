@@ -1,0 +1,65 @@
+# Blosxom Plugin: hostinfo
+# Author: Bob Schumaker <cobblers@pobox.com>
+# Version: 0
+# http://www.cobblers.net/blog/
+# License: Public Domain
+
+package hostinfo;
+
+# --- Configurable variables -----
+
+$wwwdir = "/Library/WebServer/Documents";
+$email = 'cobblers-at-no-spam-pobox-com';
+
+# --------------------------------
+
+$hostname = "oops";			# Use $hostinfo::hostname
+
+# The subroutine that does replacement of the things we define here
+$do_replacement;
+
+sub start {
+  if($blosxom::url =~ /http.*:..([^\/]+)/) {
+    $hostname = $1;
+  }
+  $do_replacement = \&replacement;
+  1;
+}
+
+sub replacement {
+  my($url) = @_;
+  $url =~ s/%hostname%/$hostinfo::hostname/g;
+  $url =~ s/%wwwdir%/$hostinfo::wwwdir/g;
+  $url =~ s/%email%/$hostinfo::email/g;
+  return $url;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: hostinfo
+
+=head1 DESCRIPTION
+
+This plugin determines the name of the current host, based on the $blosxom::url
+variable, exported as $hostinfo::hostname.
+
+In addition, I use it to hang onto other variables that I would like to keep track of
+and set up $hostinfo::do_replacement to handle the translation.
+
+=head1 AUTHOR
+
+Bob Schumaker <cobblers@pobox.com> http://www.cobblers.net/blog
+
+
+=head1 LICENSE
+
+This source is submitted to the public domain.  Feel free to use and modify it.  
+If you like, a comment in your modified source attributing credit to myself for 
+my work would be appreciated.
+
+THIS SOFTWARE IS PROVIDED AS IS AND WITHOUT ANY WARRANTY OF ANY KIND.  USE AT 
+YOUR OWN RISK!

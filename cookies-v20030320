@@ -1,0 +1,221 @@
+# Blosxom Plugin: cookies
+# Author(s): Rael Dornfest <rael@oreilly.com> 
+# Version: 2003-03-20
+# Documentation: See the bottom of this file or type: perldoc cookies
+
+package cookies;
+
+# --- Configurable variables -----
+
+# What domain should I assign to cookies (e.g. .example.com, www.example.com)?
+# REQUIRED; if you don't fill in a domain, the plug-in won't work properly.
+$domain = '';
+
+# What path should I assign to cookies?
+$path = '/';
+
+# How soon should cookies expire?
+# (e.g. +1d is 1 day, +3m is 3 months, and +10y is 10 years from now)
+# Leave this blank and the cookie will expire when the browser is closed
+$expires = '+10y';
+
+# --------------------------------
+
+use CGI qw/:standard/;
+
+my %cookies = ();
+
+sub start {
+  foreach ( cookie() ) {
+    my %hash = cookie($_);
+    $cookies{$_} = \%hash;
+  }
+  1;
+}
+
+sub foot {
+  my @cookies = values %cookies;
+  $blosxom::header->{'-cookie'} = \@cookies;
+
+  1;
+}
+
+sub add {
+  foreach ( @_ ) {
+    my($name) = $_ =~ /^(.+?)=/;
+    $cookies{$name} = $_;
+  }
+  1;
+}
+
+sub remove {
+  foreach ( @_ ) {
+    delete $cookies{$_};
+  }
+  1;
+}
+
+sub clear {
+  foreach ( @_ ) {
+    $cookies{$_} = '';
+  }
+  1;
+}
+
+sub get {
+  my($name) = @_;
+  return $name ? $cookies{$name} : \%cookies;
+}
+
+sub list {
+  return keys %cookies;
+}
+
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: cookies
+
+=head1 SYNOPSIS
+
+Provides basic cookie functionality for use by any number of Blosxom plug-ins.
+
+=head1 INSTALLATION & CONFIGURATION
+
+Drop the cookies plug-in into your Blosxom plugins directory. 
+
+Be sure cookies is called last, giving all other plugins a chance to 
+add, remove, and clear cookies before the the cookies plug-in returns the
+header to the browser.  The easiest way to do this is to rename the plug-in
+9999cookies or the like, assuring that is sorted last, alphanumerically.
+
+Set a $domain for your cookies.  I recommend using any host in your domain, 
+e.g. .example.com, instead of just limiting to www, e.g. www.yourdomain.
+
+Assign a $path for your cookies.  This should be the base path of your weblog.
+Use / if your weblog lives at the root of your domain (e.g. http://www.example.com/) or /weblog, for example, if it lives at a /weblog subpath (e.g. http://www.example.com/weblog).
+
+Set a time-out period for cookies.  While there are various allowed forms 
+for this expires piece (see perldoc CGI.pm), I like using +n(d,m,y) for
+n days, months, or years from now.  For example: +1d is 1 day, 
++3m is 3 months, and +10y is 10 years from now.  The default is 10 years
+from now.
+
+=head1 USAGE
+
+As an end-user, once you have the cookies plug-in installed and configured, 
+you're done.
+
+=head1 DEVELOPMENT
+
+Plug-in developers may use the cookies module as a base for cookie-usage
+by your own Blosxom plug-in.  An example may be found in the writeback 
+plug-in's use of cookies to remember the name and url of a person leaving a 
+comment.
+
+All cookies are kept on a stack (in a %cookies hash, actually).  Incoming
+cookies sent by the browser are automagically added to the %cookies stack
+in the start() subroutine.
+
+You have the following methods at your disposal:
+
+=item * add($cookie1, $cookie2, ...) adds a cookie to the stack to be sent to the client browser.  Cookies should be well-formed; I suggest using the Perl CGI.pm module's cookie() subroutine to create each cookie.
+
+So that cookies can all be handled in the same manner by the cookies plug-in, 
+you must use a hash as your cookie value, even if you only have one value to
+set.
+
+usage:
+
+&cookies::add(
+  cookie(
+    -name=>'plugin cookie 1'
+    -value=>{ 'some key' => 'some value' }
+    -path=>$cookies::path,
+    -domain=>$cookies::domain
+  )
+  cookie(
+    -name=>'plugin cookie 2', 
+    -value=>{ 'first key' => 'first value', 'second key' => 'second value' }
+    -path=>$cookies::path,
+    -domain=>$cookies::domain
+  )
+);
+
+=item * remove('cookie name') removes a previously added cookie named 'cookie 
+name' from the stack.  Note, this does not unset the cookie in the client 
+browser.
+
+usage:
+
+&cookies::remove('plugin cookie 1');
+
+=item * clear('cookie name') sets a blank value for the 'cookie name' cookie,
+thereby clearing it in the client browser.
+
+usage:
+
+&cookies::clear('plugin cookie 2');
+
+=item * list() lists the names of all cookies on the stack.
+
+usage:
+
+my @cookie_names = &cookies::list();
+
+=item * get() gets a reference to a hash {cookie name => cookie value} of all 
+cookies on the stack.  get('cookie name') gets a hash reference for the 'cookie name' cookie.
+
+usage:
+
+my $cookies = &cookies::get();
+my @cookie_names = keys %$cookies;
+
+my $particular_cookie = &cookies::get('cookie name');
+my $values = values %$particular_cookie;
+
+=head1 VERSION
+
+2003-03-20
+
+=head1 AUTHOR
+
+Rael Dornfest  <rael@oreilly.com>, http://www.raelity.org/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Blosxom and this Blosxom Plug-in
+Copyright 2003, Rael Dornfest 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

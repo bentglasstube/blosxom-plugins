@@ -1,0 +1,103 @@
+# Blosxom Plugin: imagesizer
+# Author: Nelson Minar <nelson@monkey.org>
+#         Todd Larason http://molelog.molehill.org/blox/
+# Version: 20030224
+# http://www.nelson.monkey.org/~nelson/weblog/
+# License: Public Domain
+
+# Imagesizer is a Blosxom plugin that inserts width and height
+# tags into images you include in your Blosxom entries.
+# It requires the Perl module Image::Size, available from
+#   http://www.blackperl.com/Image::Size/
+#   (Or if you use Debian, apt-get install libimage-size-perl)
+
+# Installation:
+#   Modify the $rootURL and $docRoot variables below
+#   Drop imagesizer in your plugins directory
+
+# Known bugs:
+#   You may have to modify the imgSrcToFile function
+#   Does not gracefully handle more than one <img> tag in an entry
+#   Perl gives me a rash, so the code is ugly.
+
+package imagesizer;
+use Image::Size 'html_imgsize';
+
+# Root of URLs for your images
+$rootURL = '^/~nelson/';
+
+# Pathname those URLs map to
+$docRoot = '/home/nelson/html/';       
+
+
+# Sub to turn a URL into a filename. With the default config,
+# this maps URLs like /~nelson/img/foo.gif into filenames like
+# /home/nelson/html/img/foo.gif
+
+sub imgSrcToFile {
+    my ($src) = @_;
+    if ($src =~ s!$rootURL!$docRoot!) {
+        return $src;
+    }
+    return 0;
+}
+
+
+
+sub start {
+    1;
+}
+
+
+# Debug output holder - debug output is commented out at the bottom.
+$debug = '';
+
+# Modify the body of stories by including image width and height tags
+sub story {
+    my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    $body = $$body_ref;
+
+    $rebuilt = '';
+    # Find any <img> tag in the post body
+    while ($body =~ s/(.*?)(<img\s[^>]+>)//is) {
+       $rebuilt .= $1;
+       $tag = $2;
+       $debug .= "Tag: " . $tag . "\n";
+
+       # Skip image tags that already have height or width specified
+       if ($tag =~ m/(width|height)=/i) {
+	  $rebuilt .= $tag;
+	  next;
+       }
+
+       # Grab the source out of the image tag
+       $tag =~ m/<img.*?src="(.*?)".*?>/is;
+       $debug .= "Src: " . $1 . "\n";
+
+
+       # Ask Image::Size to give us width & height data
+       $filename = imgSrcToFile($1);
+       $debug .= "File: " . $filename . "\n";
+       if (-r $filename) {
+          $size = html_imgsize($filename);
+          $debug .= "Size: " . $size . "\n";
+       }
+       # return if !$size;
+
+       # And substitute it into the image
+       $tag =~ s/^<img/<img $size/is;
+       $rebuilt .= $tag;
+       $debug .= "<br>\n";
+    }
+    $$body_ref = "$rebuilt$body";;
+    1;
+}
+
+# Only needed for debug output
+sub end {
+    # print "<p>", $debug;
+    1;
+}
+
+1;
+

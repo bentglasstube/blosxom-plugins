@@ -1,0 +1,304 @@
+# Bloxsom Plugin: Karma
+# Author: Fletcher T. Penney < http://fletcher.freeshell.org/ >
+# Original Concept: Beau Lebens
+# Idea of using a form - Pasi Savolainen
+
+# Version: 0.6
+
+package karma;
+
+# --- Configurable variables ----
+
+# Where is the data kept?
+$datafile = "$blosxom::plugin_state_dir/karma.dat";
+
+# FYI, the data format is as follows
+# Visits Positives Negatives Interest_Index Karma_Index Controversy_Index /Path/To/Article
+# tabs are used as separators
+
+# List of ip addresses to ignore for visit counts.
+# Use '|' as a separator if you have more than one
+# ie. $ip_list = '192.168.1.1|192.168.1.2'
+
+$ip_list = '';
+
+# CGI variable names to use for specifying certain minimum scores
+$minkarma_var		= "minkarma";
+$mincontroversy_var	= "mincontroversy";
+$mininterest_var	= "mininterest";
+
+# For instance, by adding "?minkarma=5", stories with a karma of less than 5 would be filtered.
+# You can change the terminology above if you don't like the names.
+
+# -------------------------------
+
+use CGI;
+
+# Initialize variables
+$stats = "";		# This variable will contain the results
+$votelinks = "";	# This variable will contain the links to submit a vote
+
+my $vote = "";
+my $karmadata = "";
+my $do_increment = 0;
+my $matchfound = 0;
+my $visits = 0;
+my $pos = 0;
+my $neg = 0;
+my $visits = 0;
+my $interest_index = 0;
+my $karma_index = 0;
+my $controversy_index = 0;
+
+$minkarma = 0;
+$mincontroversy = 0;
+$mininterest = 0;
+
+$message = "";		# Use this to report messages to the visitor
+
+
+sub start {
+
+	$path_noflavour = $blosxom::path_info;
+	if ($path_noflavour !~ s/\.[^\.]*$//) {
+		$path_noflavour =~ s/\/$//;
+		$path_noflavour .= "\/index";
+		$path_noflavour =~ s/^([^\/])/$1/;
+	}
+	$path_noflavour =~ s/^\/*//;
+
+	$remoteIP = $ENV{'REMOTE_ADDR'};	# Get IP address for visitor
+	$ip_list = 'disable' if ($ip_list eq "");	# Prevent an empty match expression
+
+	# Check to see if we are viewing a single story.
+	# If so, we want to increment the visits, unless this is a vote submission
+	# This does create the problem of reading a story on a category page, and voting for it
+	# No visit will be recorded - still looking for a solution
+
+	if (($path_noflavour !~ /index$/) && ($path_noflavour !~ /\/$/)) {
+		$do_increment = 1 if ($remoteIP !~ /($ip_list)/);
+
+		# Check to see whether a vote has been set
+		if (CGI::param("setkarma")) {
+			$vote = CGI::param("setkarma");
+			# If this is a vote, we don't want to update visit count
+			# They have already read the article and been counted
+			$do_increment = 0;
+		}
+	}
+
+	# Now we want to read in the data file, and update if appropriate
+	if (($do_increment eq 1) || ($vote ne "")) {
+		# The file should be locked during this process in case of two simultaneous accesses
+		open (DATA, "<$datafile");
+		flock (DATA, 2);	# I think I am using this properly...
+		while ( $line = <DATA>) {
+			if ($line =~ /(\d+)\t(\d+)\t(\d+)\t[\.\d]+\t[\.\d]+\t[\.\d]+\t\/$path_noflavour$/) {
+				# This is the story currently being viewed, so read in info
+				$visits = $1 + $do_increment;
+				$pos = $2;
+				$neg = $3;
+				$pos ++ if ($vote =~ /^p/i);
+				$neg ++ if ($vote =~ /^n/i);
+				$total_votes = $pos + $neg;
+
+				# Try to correct for uncounted visits
+				$visits = $total_votes if ($total_votes > $visits);
+
+				$interest_index = ($pos + $neg)/$visits if ($visits ne 0);
+				$karma_index = $pos/($total_votes) if ( $total_votes ne 0);
+				$controversy_index = 2*$interest_index *(0.5 - abs($karma_index - 0.5));
+
+				$line = "$visits\t$pos\t$neg\t$interest_index\t$karma_index\t$controversy_index\t\/$path_noflavour\n";
+				$matchfound = 1;
+			}
+			$karmadata .= $line;
+		}
+
+		close (DATA);
+		open (DATA, ">$datafile");
+		flock (DATA, 2);	# Lock again, if it was unlocked
+		print DATA $karmadata;
+
+		# If no match was found for the story, create a new record
+		if ($matchfound eq 0) {
+			$visits = 1;
+			$pos = $neg = 0;
+			$pos ++ if ($vote =~ /^p/i);
+			$neg ++ if ($vote =~ /^n/i);
+			$total_votes = $pos + $neg;
+
+			$interest_index = ($pos + $neg)/$visits if ($visits ne 0);
+			$karma_index = $pos/($total_votes) if ( $total_votes ne 0);
+			$controversy_index = 2*$interest_index *(0.5 - abs($karma_index - 0.5));
+
+			$line = "$visits\t$pos\t$neg\t$interest_index\t$karma_index\t$controversy_index\t\/$path_noflavour\n";
+			print DATA "$line";
+			$karmadata .= "$line\n";
+		}
+		close (DATA);
+	} else {
+		# Read in the existing data only - we are not viewing a single story
+		open(DATA, "<$datafile");
+		while ( $line = <DATA>) {$karmadata.=$line;}
+		close (DATA);
+	}
+	flock(DATA, 8);		# Unlock file
+
+	# Here is where we can create list of top controversies, etc
+	# And we have info loaded for the sort routine if necessary
+	# Currently the karma plugin can filter for certain scores, but not sort
+
+	1;
+}
+
+
+sub filter {
+	my ($pkg, $files_ref) = @_;
+	my @files_list = keys %$files_ref;
+	my $dofilter = 0;
+	if (CGI::param($minkarma_var)) {
+		$minkarma = CGI::param($minkarma_var);
+		$dofilter = 1;
+	}
+
+	if (CGI::param($mincontroversy_var)) {
+		$mincontroversy = CGI::param($mincontroversy_var);
+		$dofilter = 1;
+	}
+
+	if (CGI::param($mininterest_var)) {
+		$mininterest = CGI::param($mininterest_var);
+		$dofilter = 1;
+	}
+
+
+	if ($dofilter eq 1) {
+	foreach $file (@files_list) {
+		$realfile = $file;
+		$file =~ s/^$blosxom::datadir//;
+		$file =~ s/\.$blosxom::file_extension//;
+		if ($karmadata =~ /(\d+)\t(\d+)\t(\d+)\t([\.\d]+)\t([\.\d]+)\t([\.\d]+)\t$file/) {
+			if ($minkarma && ($5 < $minkarma/10)) {
+				delete $files_ref->{$realfile};
+			}
+			if ($mincontroversy && ($6 < $mincontroversy/10)) {
+				delete $files_ref->{$realfile};
+			}
+			if ($mininterest && ($4 < $mininterest/10)) {
+				delete $files_ref->{$realfile};
+			}
+		} else {
+			delete $files_ref->{$realfile};
+		}
+	}
+	}
+	1;
+}
+
+sub story {
+	my $karma_index = 0;
+	my $interest_index = 0;
+	my $controversy_index = 0;
+	my $total_votes = 0;
+	$pos = $neg = $visits = 0;
+
+	my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+	if ($karmadata =~ /(\d+)\t(\d+)\t(\d+)\t([\.\d]+)\t([\.\d]+)\t([\.\d]+)\t$path\/$filename/) {
+		$visits = $1;
+		$pos = $2;
+		$neg = $3;
+		$total_votes = $pos + $neg;
+		$visits = $total_votes if ($total_votes > $visits);
+		$interest_index = $4;
+		$karma_index = $5;
+		$controversy_index = $6;
+
+		# Clean up the values for display - we'll want to use the originals (or at least 
+		# more decimal places for comparisons)
+		# All values are integers on scale from 1-10
+		$karma_index = int($karma_index * 10);
+		$controversy_index = int($controversy_index * 10);
+		$interest_index = int($interest_index * 10);
+	}
+
+
+	# Here you can define the HTML code that gets used to display your results
+	$stats = "Visits: $visits | Positives: $pos | Negatives: $neg<br>";
+	$stats.= "Karma: $karma_index | Interest: $interest_index | Controversy: $controversy_index";
+
+	# And this is the HTML code for the two vote submission links
+	#$votelinks = "<a href=\"$blosxom::url$path/$filename.$blosxom::flavour?setkarma=p\">I liked this article</a> | <a href=\"$blosxom::url$path/$filename.$blosxom::flavour?setkarma=n\">I didn't like it</a>.";
+	
+	$votelinks = qq!<form method="POST" action="$blosxom::url$path/$filename.html">
+	<div><input type="submit" name="setkarma" value="p">I liked this article |
+	<input type="submit" name="setkarma" value="n">I didn't like it
+	</div></form>!;
+		
+	1;
+}
+
+1;
+
+
+__END__
+
+
+=head1 NAME
+
+Blosxom Plug-in: karma
+
+=head1 DESCRIPTION
+
+Karma allows you to have your visitors score articles in a positive/negative fashion.  It then calculates various scores that you can use to incorporate a "Top 10 Articles" section, or something similar, into your website.
+
+To install:
+
+1) place the karma plugin in your plugins directory, with proper file permissions
+
+2) ensure the configuration variables are properly set:
+	$datafile should be left alone, unless you have customized where plugins store information
+
+	$ip_list should include the IP addresses of any visitors you do NOT wish to be counted in scoring.  For instance, you should probably include your own IP address to prevent falsely biasing the numbers as you read and reread your site looking for errors
+
+	The $minkarma_var, $mincontroversy_var, and $mininterest_var variables can be used to customize the url's used to filter articles.
+
+3) You can modify the HTML code snippets at the bottom of the story subroutine ($karma::stats and $karma::votelinks) to alter the display of the scores, and the vote submission links as you see fit.
+
+
+Once installed, modify your story.flavour files to include the $karma::stats and $karma::votelinks variables.
+
+Now, when you visit your site, you should see the scoring and links displayed with each story.  Each time you view a story individually, its visit count is advanced one.  Each time you click on the "I liked..." or "I didn't..." links, the positive and negative vote scores will be modified appropriately.
+
+These numbers are used to calculate several variables:
+
+	$karma_index - this is a rating from 0 to 10 of how positively the story was viewed
+
+	$interest_index - this is a rating from 0 to 10 of what proportion of people who viewed the story bothered to vote on it.  This will be artificially low, as many people might view the story as part of a category, and their visit will NOT be counted.  I am open to ideas as to how to more accurately handle this, keeping in mind that many stories that are displayed are not actually read (ie, older stories at the bottom of a blog...)
+
+	$controversy_index - this is a rating that I came up with just for fun.  It is a measure of how many people voted, and how divergent their opinions were.  For instance, as the interest_index goes up, the controversy_index goes up.  As the votes are more evenly split between positives and negatives, the controversy_index goes up.  A story with 100% positive (or negative) votes, will have a 0 controversy index (everyone is in agreement, therefore there is no controversy...)  It's not a very scientific number at all, but sort of fun nonetheless.
+
+4) You can add links to your site that will display the articles with the highest interest, karma, or controversy by using the $minkarma_var variables discussed in #3 above.
+
+For instance you could add a url in your header file like this:
+<a href="/weblog/index.html?minkarma=5">Show The Most-Liked Articles</a>
+
+This would allow the display of only those articles with a karma above 5.  In the future, I hope to add a sort routine that would sort stories by the various indices, but currently the stories are unsorted.
+
+=head1 NOTE
+
+This plugin filters out articles only.  It does not locate any articles on its own.
+
+Also, it uses the filter routine.  Therefore, it will interact with any other plugins that make use of the filtered articles list.  You may need to add numbers to the beginning of plugin names (ie, "55karma") to control the load order if you seem to be having unintended results.  For instance, karma will prevent some topics from being added by my "menu" plugin, unless it loads after menu.
+
+=head1 AUTHOR
+
+Fletcher T. Penney - http://fletcher.freeshell.org
+Concept by Beau Lebens
+
+=head1 LICENSE
+
+This source is submitted to the public domain.  Feel free to use and modify it.  If you like, a comment in your modified source attributing credit to myself and Beau Lebens would be appreciated.
+
+THIS SOFTWARE IS PROVIDED AS IS AND WITHOUT ANY WARRANTY OF ANY KIND.  USE AT YOUR OWN RISK!

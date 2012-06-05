@@ -1,0 +1,35 @@
+<!-- blosxom theme .tasks -->
+
+<!-- blosxom content_type text/html -->
+
+<!-- blosxom head -->
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-Strict.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+
+<head>
+<style>
+A { text-decoration: none; }
+.tasks_admin_submit { padding-top: 20px; }
+.tasks_admin_remove_checkbox { padding-right: 15px; text-align: right; }
+.tasks_admin_task_descr { padding-right: 15px; }
+.tasks_admin_response { color: #ff0000; font-size: 16pt; font-weight: bold; padding: 0px 0px 10px 0px; }
+</style>
+</head>
+
+<body>
+
+<h2>Tasks Administration: <a href="$blosxom::url">$blosxom::blog_title</a></h2>
+
+$tasks::admin
+
+</body>
+</html>
+
+<!-- blosxom date -->
+
+<!-- blosxom story -->
+
+<!-- blosxom foot -->
+

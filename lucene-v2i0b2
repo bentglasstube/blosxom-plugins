@@ -1,0 +1,148 @@
+# Blosxom Plugin: lucene
+# Author(s): Rael Dornfest <rael@oreilly.com> 
+#            and Sam Ruby <rubys@intertwingly.net>
+# Version: 2.0b2
+# Documentation: See the bottom of this file or type: perldoc lucene
+
+package lucene;
+
+# --- Configurable variables -----
+
+# Turn on the Lucene engine (set to 1 only once the other bits are in place)?
+my $lucene_on = 0;
+
+# Where's Java?
+my $JAVA_HOME = '/path/to/j2sdk1.3.1/';
+
+# Where's lucene?
+my $lucene = '/path/to/lib/java/*.jar';
+
+# What's my index?
+my $index = '/Library/WebServer/Data/lucene';
+
+# --------------------------------
+
+$search;
+
+use CGI qw/:standard/;
+use File::stat;
+use URI::Escape;
+use POSIX qw(strftime);
+use Env qw(@PATH @CLASSPATH);
+
+unshift @PATH, "$JAVA_HOME/bin";
+push @CLASSPATH, "$JAVA_HOME/lib/tools.jar";
+push @CLASSPATH, "$JAVA_HOME/jre/lib/rt.jar";
+push @CLASSPATH, "/any/other/appropriate/java/lib";
+push @CLASSPATH, glob($lucene);
+
+sub start {
+  $lucene_on or return 0;
+  $blosxom::static_or_dynamic eq 'dynamic' or return 0;
+  param('q') or return 0;
+  $search = "Search results for: " . param('q');
+  1;
+}
+
+sub entries {
+  return sub {
+    my(%files, %indexes);
+
+    my $query = uri_escape(param('q'));
+    $query =~ s/;//g;
+  
+    # Take a gander at what Lucene came up with based upon the search criteria
+    foreach (`$JAVA_HOME/bin/java -cp $ENV{CLASSPATH} LuceneSearch $index $query`) {
+      chomp;
+      s!\./!!;
+      $_ =~ /\.txt$/ and $files{"$blosxom::datadir/$_"} = stat("$blosxom::datadir/$_")->mtime;
+    }       
+  
+    return (\%files, \%indexes);
+  };
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: lucene
+
+=head1 SYNOPSIS
+
+Based upon: http://radio.weblogs.com/0101679/stories/2002/08/13/luceneSearchFromBlosxom.html
+
+Purpose: Lucene [http://jakarta.apache.org/lucene/] is a fabulous
+text search engine written in Java.  This plug-in hooks in the results
+of a Lucene search, displaying only the stories matching the search query
+(as specified by ?q=keywords).
+
+Populates $lucene::search with "Search results for: keywords" for use in
+flavour templates.
+
+Replaces the default $blosxom::entries subroutine.  You'd best put it before
+any other plug-ins that override the default $blosxom::entries subroutine.  
+When ?q=keywords turns on the lucene plug-in, it'll then be used instead of
+whatever other entries overrides you have down the chain.  
+
+E.g. My setup is as follows:
+
+01lucene
+
+02entries_index
+
+other
+
+plugins
+
+follow
+
+This plug-in could be used as a template for hooking into just about any
+files-based text search engine.
+
+=head1 VERSION
+
+2.0b1
+
+Version number coincides with the version of Blosxom with which the 
+current version was first bundled.
+
+=head1 AUTHOR
+
+Rael Dornfest  <rael@oreilly.com>, http://www.raelity.org/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Blosxom and this Blosxom Plug-in
+Copyright 2003, Rael Dornfest 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

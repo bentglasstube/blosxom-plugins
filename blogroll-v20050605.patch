@@ -1,0 +1,15 @@
+===========================
+--- blogroll       Mon Mar 24 15:05:56 2003
++++ blogroll    Sun Jun  5 13:14:18 2005
+@@ -148,8 +148,9 @@
+      # XML::Simple fast enough?  worth requiring more
+      # modules installed?
+      my $text = join '',<$fh>;
+-    while ($text =~ m!\s<outline (.*?)/>!msg) {
++    while ($text =~ m!\s<outline (.*?)>!msg) {
+         $_ = $1;
++        next unless m|/$|;
+         my ($htmlurl, $title, $xmlurl);
+         ($htmlurl) = m:html[uU]rl=" ( [^\"]+ ) ":x;
+         ($title  ) = m:title     =" ( [^\"]+ ) ":x;
+==========================

@@ -1,0 +1,96 @@
+# Bloxsom Plugin: wishlist
+# Author: Mike Fabio
+# Version: 0.2
+#
+
+package wishlist;
+
+# --- Configurable variables ----
+
+$wishlist_id = "";		# necessary.  see instructions below.
+
+
+$ass_id = "iamfaster-20";	# you may change this if you wish, but it is not necessary
+
+
+# -------------------------------
+
+
+use LWP::Simple;
+
+
+sub parse {
+
+	
+	$item = $xml;
+	$item =~ s/^.*?<Det/<Det/sig;
+	$item =~ s/\n//sig;				#remove newlines
+	$item =~ s/> *</></sig;				#remove whitespace between entries
+	$item =~ s/<Details.*?>//sig;			#remove details line
+	$item =~ s/<Cat.*?<\/Catalog>//sig;		#remove catalog line
+	$item =~ s/<Aut.*?<\/Authors>//sig;		#remove authors line
+	$item =~ s/<Artists>.*?<\/Artists>//sig;
+	$item =~ s/<Rel.*?<\/ReleaseDate>//sig;		#remove release date
+	$item =~ s/<Man.*?<\/Manufacturer>//sig;			#remove manufacturer
+	$item =~ s/<ImageUrlMedium>.*?<\/ImageUrlMedium>//sig;		#remove medium image
+	$item =~ s/<ImageUrlLarge>.*?<\/ImageUrlLarge>//sig;		#remove large image
+	$item =~ s/<Ava.*?<\/Availability>//sig;			#remove availability line
+	$item =~ s/<Lis.*?<\/ListPrice>//sig;				#remove list price
+	$item =~ s/<Our.*?<\/OurPrice>//sig;
+	$item =~ s/<Use.*?<\/UsedPrice>//sig;
+	$item =~ s/<\/Details>//sig;					#remove last details line
+	$item =~ s/ll><As/ll>split<As/sig;
+	
+	
+	@wishlist = split('split', $item);
+	
+	foreach(@wishlist){
+		/<Asin>(.*)<\/Asin><ProductName>(.*)<\/ProductName><ImageUrlSmall>(.*)<\/ImageUrlSmall>/;
+		$biglist .= "<a href=\"http:\/\/www.amazon.com\/exec\/obidos\/ASIN\/$1\/$ass_id?dev-t=D272CWTJEE9ZPF&ref=nosim\"><img src=\"$3\"><br>$2<\/a><br>" . "<script language=\"JavaScript\">function popUp(URL,NAME) {amznwin=window.open(URL,NAME,'location=yes,scrollbars=yes,status=yes,toolbar=yes,resizable=yes,width=380,height=450,screenX=10,screenY=10,top=10,left=10');amznwin.focus();}document.open();document.write(\"<a href=javascript:popUp('http://buybox.amazon.com/exec/obidos/redirect?tag=$ass_id&link_code=qcb&creative=23424&camp=2025&path=\/dt\/assoc\/tg\/aa\/xml\/assoc\/-\/$1\/$ass_id\/ref=ac_bb5_,_amazon')><img src=http:\/\/rcm-images.amazon.com\/images\/G\/01\/associates\/remote-buy-box\/buy5.gif border=0 alt='Buy from Amazon.com' ><\/a>\");document.close();<\/script>" . "<br><br>";
+		
+		}
+	$biglist = "<a href=\"http:\/\/www.amazon.com\/exec\/obidos\/registry\/$wishlist_id\">Wishlist<\/a><br><br>" . $biglist;
+}
+sub start {
+	$xml = get("http://xml.amazon.com/onca/xml3?t=$ass_id&dev-t=D272CWTJEE9ZPF&WishlistSearch=$wishlist_id&type=lite&f=xml");
+	parse();
+	
+	1;
+}
+
+sub story {
+	my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+	
+	
+	1;
+}
+
+
+print STDERR "$biglist";
+
+1;
+
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: wishlist
+
+=head1 DESCRIPTION
+
+Populates $wishlist::biglist in your flavour files with your amazon wishlist.
+
+To find your Amazon wishlist ID, run a search using your email address.  The url should look something like this: http://www.amazon.com/exec/obidos/registry/3DQ2H2LSWDLAS  that last part, the "3DQ2H2LSWDLAS" is your wishlist id.  there may be some other junk surrounding it, but that is the important part.
+
+This plugin currently only works with Amazon US.
+
+
+=head1 AUTHOR
+
+mike fabio
+iamfaster@mit.edu
+
+=head1 LICENSE
+
+This work is licensed under the Creative Commons Attribution-NonCommercial-ShareAlike License. To view a copy of this license, visit http://creativecommons.org/licenses/by-nc-sa/1.0/ or send a letter to Creative Commons, 559 Nathan Abbott Way, Stanford, California 94305, USA.

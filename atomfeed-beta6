@@ -1,0 +1,539 @@
+# Blosxom Plugin: atomfeed -*-cperl-*-
+# Author(s): Original plugin: Rael Dornfest <rael@oreilly.com>
+#            XML::Parser: Sam Ruby
+#            UTC and <modified> fixes for 0.3: Frank Hecker
+#            Enclosures support: Dave Slusher and Keith Irwin
+#            Upgrade to Atom 1.0 spec: Sam Pearson
+# Version: atomfeed-beta-6
+# Docs: Included below: type "perldoc atomfeed", or scroll down
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+# Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+package atomfeed;
+
+# ----- Mandatory configurable variables -----
+
+# For a basic atom feed, you only need set $default_author and $feed_yr.
+# If you do not, the plugin will exit quietly.
+# All other configuration is optional, and can be safely ignored.
+
+# Who would you like your feed to credit as the default author of each entry? 
+# Leave blank and the atomfeed plugin will attempt to use the whoami and
+# fauxami plugins
+$default_author = '';
+
+# What year was your weblog started?  This will be used 
+# to form part of your weblog's unique ID.
+$feed_yr = '';
+
+# ----- Optional configurable variables -----
+
+# What is the default author's URL?
+# Blank defaults to $blosxom::url
+$author_uri = '';
+
+# What is the default author's email address?
+# Leave blank to exclude.
+$author_email = '';
+
+# Copyright statement:
+# leave blank to exclude.
+$copyright = '';
+
+# What domain should Blosxom use in ID tags?
+# Leave blank if you don't understand or for Blosxom to use the domain in $url.
+$id_domain = '';
+
+# Feed url
+# Set the URL of the atom feed here.  Defaults to $blosxom::url/index.atom
+$feed_url = '';
+
+# Icon
+# Put the URL for a site icon here (for example, your site's favicon).  Leave blank to exclude.
+$icon_url = '';
+
+# Logo
+# Set to the URL for your site logo.  Leave blank to exclude.
+$logo_url = '';
+
+# What template placeholder in your flavour template should I replace with feed-level <updated>?
+# If you are using the built-in templates, leave this alone.
+my $template_placeholder = "{{{updated}}}";
+
+# Enclosures support
+# ------------------
+
+# You can add enclosures to your atom feed by linking to them in your post
+# and giving the anchor tag a rel attribute of "enclosure".
+
+# Set $use_full_enclosures to 1 if you wish to add length and content-type
+# to your enclosures.  This function relies upon your webserver having 
+# LWP modules installed.
+$use_full_enclosures = '0';
+
+# Name of a file to cache info about your enclosures:
+$DataFile = "$blosxom::plugin_state_dir/enclosures.dat";
+
+# Stylesheet support
+# ------------------
+
+# If you have a stylesheet to associate with your atom feed, place it's URL here.
+$css_url = "";
+
+# You can specify the type of stylesheet here:
+$css_type = "text/css";
+
+# ----- END OF CONFIGURABLE VARIABLES -----
+
+# --- Plug-in package variables -----
+
+$author = '';
+$T = 'T';
+$colon = ':';
+$zerozero = '00';
+
+# Sort out stylesheet:
+$css_url and $css_url = "\n<?xml-stylesheet href=\"$css_url\" type=\"$css_type\"?>";
+
+# Try to glean the domain from $url
+$id_domain or ($id_domain) = $blosxom::url =~ m#http://(?:www\.)?([^\/]+)#;
+
+# Feed url checking:
+$feed_url or $feed_url = "$blosxom::url/index.atom";
+
+$utc_date = '';
+
+$feed_utc_date = '';
+use vars qw/$feed_utc_date/;
+
+$category;
+
+$links;
+
+$summary;
+
+$copyright and $copyright = "<rights>$copyright</rights>";
+
+$author_uri or $author_uri = "$blosxom::url";
+$author_uri = "<uri>$author_uri</uri>";
+
+$author_email and $author_email = "\n      <email>$author_email</email>";
+$icon_url and $icon_url = "<icon>$icon_url</icon>";
+$logo_url and $logo_url = "<logo>$logo_url</logo>";
+
+# ----- plugin subroutines -----
+
+sub start {
+
+  # Check for our two mandatory variables:
+  unless ( $default_author and $feed_yr ) {
+    warn 'Blosxom plugin: atomfeed > Please set $default_author and $feed_yr.  Exiting.\n';
+    return 0;
+  }
+
+  # Check for the existence of already-loaded flavour templates or theme,
+  # loading templates if there's nothing:
+  # Note that it looks like this condition should *never* be met, so why
+  # did Rael put this code here?  Can't we just do _load_templates();
+
+  $blosxom::template{'atom'}{'head'} or _load_templates();
+
+  # changed to require from use to make plugin work for those
+  # without XML::Parser.  Consequence: entries will never be labelled
+  # type='xhtml', only 'text' or 'html'.  Thanks, S2!
+  eval { require XML::Parser; $parser = new XML::Parser; };
+
+  %escape = ('<'=>'&lt;', '>'=>'&gt;', '&'=>'&amp;', '"'=>'&quot;');
+  $escape_re  = join '|' => keys %escape;
+
+  # If required, initialise the enclosures data cache:
+  $use_full_enclosures and _load_cache();
+
+  1;
+}
+
+sub head {
+  # Check and prepare a <title> and <subtitle>:
+  ($blog_title_type, $blog_title) = _parse_markup($blosxom::blog_title);
+  ($blog_description_type, $blog_description) = _parse_markup($blosxom::blog_description);
+  1;
+}
+
+
+sub story {
+  my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+  use File::stat;
+
+  # set up <category>:
+  if ( $path ) {
+    $category = "<category term=\"$path\"/>";
+  }
+
+  # <published>: derive from %blosxom::files
+  my @published_utc = gmtime($blosxom::files{"$blosxom::datadir$path/$filename.$blosxom::file_extension"});
+  $published_utc_date = sprintf("%4d-%02d-%02dT%02d:%02d:00Z",
+				$published_utc[5]+1900,
+				$published_utc[4]+1,
+				$published_utc[3],
+				$published_utc[2],
+				$published_utc[1]);
+
+  # <updated>: derive by stat()ing the file for its mtime:
+  my @updated_utc = gmtime(stat("$blosxom::datadir$path/$filename.$blosxom::file_extension")->mtime);
+  $updated_utc_date = sprintf("%4d-%02d-%02dT%02d:%02d:00Z",
+			      $updated_utc[5]+1900,
+			      $updated_utc[4]+1,
+			      $updated_utc[3],
+			      $updated_utc[2],
+			      $updated_utc[1]);
+
+  # Date/time of most recently-modified story becomes date/time of the feed.
+  $feed_utc_date = $updated_utc_date if $updated_utc_date > $feed_utc_date;
+
+  # use %blosxom::files for the year component of feed-level <atom:id>
+  # in case the creation time is cached somewhere.
+  $utc_yr = $published_utc[5]+1900;
+
+  # Set authorship if available, falling back to $atomfeed::author
+  $author = $whoami::fullname || $fauxami::name || $default_author || '';
+
+  # Setup $summary.  Adapted from Rael's foreshortened plugin.
+  $summary = $$body_ref;
+  $summary =~ s/<.+?>//gs;
+  $summary =~ s/[\.\!\?].+$/.../s;
+  $summary =~ s/[\r\n]/ /g;
+  $summary = "<summary type=\"text\">$summary</summary>";
+
+  # take look through $$body_ref for any enclosures or via/related links:
+  my @anchors = ( $$body_ref =~ /(<a [^>]+>)/gis );
+  $links = "\n";
+  foreach my $anchor ( @anchors ) {
+    if ( $anchor =~ /rel\s*=\s*"?\s*(via|enclosure|related)"?/is ) {
+      my( $type, $href );
+      $type = $1;
+      if ( $anchor =~ /href\s*=\s*"([^"]+)"/is ) {
+	$href = $1;
+      }
+      elsif ( $anchor =~ /href\s*=\s*([^\s]+)/is ) {
+	$href = $1;
+      }
+      if ( $href ){
+	$href =~ s/\s//g;
+	if ( $use_full_enclosures && ( $type eq "enclosure" ) ) {
+	  my( $mime, $length );
+	  # Check for presence of enclosure in $info:
+	  unless ( $info->{$href} ) { _get_info($href); }
+	  if ( $info->{$href} ) {
+	    # Check again for data on enclosure in $info, just in case of problems getting it.
+	    $mime = $info->{$href}->{type};
+	    $length = $info->{$href}->{length};
+	    $links .= "    <link rel=\"$type\" href=\"$href\" type=\"$mime\" length=\"$length\"/>\n";
+	  }
+	  else {
+	    # Fall back on a basic link:
+	    $links .= "    <link rel=\"$type\" href=\"$href\"/>\n";
+	  }
+	}
+	else {
+	  # Basic link:
+	  $links .= "    <link rel=\"$type\" href=\"$href\"/>\n";
+	}
+      }
+    }
+  }
+
+  # Parse post title:
+  ($title_type, $title) = _parse_markup($$title_ref);
+
+  # Parse the post body:
+  ($body_type, $body) = _parse_markup($$body_ref);
+
+  1;
+}
+
+sub foot {
+    my($pkg, $currentdir, $foot_ref) = @_;
+    # Replace the placeholder with the feed-level <updated> element:
+    $feed_utc_date = "<updated>$feed_utc_date</updated>";
+    $blosxom::output =~ s/$template_placeholder/$feed_utc_date/m;
+    return 1;
+}
+
+# ----- private subroutines -----
+
+sub _parse_markup {
+
+  # Pass in some test to parse, and I'll return a type and the text suitably configured.
+  my $text = shift;
+  my $type;
+
+  # First, check to see if $text appears to contain markup.
+  # This regex should match any tag-like string: opening, closing or orphan tags.
+  if ( $text =~ m!</?[a-zA-Z0-9]+ ?/?>! ) {
+    # OK, looks like markup in there.
+    # Now, check to see if it looks well-formed:
+    if ( eval{$parser->parse("<div>$text</div>")}) {
+      # Yes?  XHTML it is, then.  I hope.
+      $type = 'xhtml';
+      $text = "<div xmlns=\"http://www.w3.org/1999/xhtml\">$text</div>";
+    }
+    else {
+      # No?  Good old tag soup.
+      $type = 'html';
+      $text =~ s/($escape_re)/$escape{$1}/g;
+    }
+  }
+  else {
+    # We'll assume it's plaintext then.
+    $type = 'text';
+  }
+
+  # Out go the results:
+  return $type, $text;
+
+}
+
+sub _load_cache {
+  # Loads the data stored in $DataFile:
+  $info = {};
+  #open data file
+  local *FH;
+  if( -e "$DataFile") {
+    open FH, "$DataFile" or return $info;
+  }
+  flock(FH, 2);
+  while (<FH>) {
+    chomp ($_);
+    my ($url, $size, $type) = split (/ /, $_);
+    $info->{$url}->{length} = $size;
+    $info->{$url}->{type} = $type;
+  }
+  close (FH);
+  return $info;
+}
+
+sub _save_cache {
+  # Saves enclosure data structure in $info out to $DataFile
+  local *FH;
+  open FH, ">$DataFile" or return 0;
+  flock(FH, 2);
+  foreach $url (keys (%{$info})) { 
+    print FH $url." ".$info->{$url}->{length} ." ". $info->{$url}->{type}."\n"; 
+  }
+  close FH;
+  return 1;
+}
+
+sub _get_info {
+  # Uses LWP to get content-type and content-length data
+  # for a given URL, adds this to the $info data structure
+  # and then calls _save_cache to preserve $info
+  return 0 unless eval "require LWP::UserAgent";
+  my $url = shift;
+  my $ua = LWP::UserAgent->new;
+  $ua->agent('BlosxomAtomFeed/0.5');
+  my $req = HTTP::Request->new(HEAD => "$url");
+  my $res = $ua->request($req);
+  my( $ct, $cl );
+  if ( $res->is_success ){
+    $ct = $res->header('content-type');
+    $cl = $res->header('content-length');
+    $info->{$url}->{type} = $ct;
+    $info->{$url}->{length} = $cl;
+    _save_cache();
+    return 1;
+  }
+  return 0;
+}
+
+sub _load_templates {
+  $blosxom::template{'atom'}{'content_type'} = 'application/atom+xml';
+
+  $blosxom::template{'atom'}{'date'} = "\n";
+
+  $blosxom::template{'atom'}{'head'} =<<'HEAD';
+<?xml version="1.0" encoding="utf-8"?>$atomfeed::css_url
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title type="$atomfeed::blog_title_type">$atomfeed::blog_title</title>
+  <subtitle type="$atomfeed::blog_description_type">$atomfeed::blog_description</subtitle>
+  <link rel="self" type="application/atom+xml" href="$atomfeed::feed_url"/>
+  <link rel="alternate" type="text/html" hreflang="$blosxom::blog_language" href="$blosxom::url" />
+  <id>tag$atomfeed::colon$atomfeed::id_domain,$atomfeed::feed_yr$atomfeed::colon/$blosxom::path_info</id>
+  <generator uri="http://www.blosxom.com/" version="$blosxom::version">Blosxom</generator>
+  $atomfeed::copyright
+  $atomfeed::icon_url
+  $atomfeed::logo_url
+  {{{updated}}}
+HEAD
+
+  $blosxom::template{'atom'}{'story'} =<<'STORY';
+  <entry>
+    <id>tag$atomfeed::colon$atomfeed::id_domain,$atomfeed::utc_yr$atomfeed::colon$path/$fn</id>
+    <link rel="alternate" type="text/html" href="$blosxom::url$blosxom::path/$blosxom::fn.$blosxom::default_flavour" />$atomfeed::links
+    <title type="$atomfeed::title_type">$atomfeed::title</title>
+    <published>$atomfeed::published_utc_date</published>
+    <updated>$atomfeed::updated_utc_date</updated>
+    $atomfeed::category
+    <author>
+      <name>$atomfeed::author</name>
+      $atomfeed::author_uri$atomfeed::author_email
+    </author>
+    <content type="$atomfeed::body_type" xml:base="$blosxom::url" xml:lang="$blosxom::blog_language">
+$atomfeed::body
+    </content>
+  </entry>
+
+STORY
+
+  $blosxom::template{'atom'}{'foot'} =<<'FOOT';
+</feed>
+FOOT
+
+  1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: atomfeed
+
+=head1 SYNOPSIS
+
+Provides an Atom 1.0 feed of your weblog.
+
+The plugin has all you need right on-board, including the appropriate flavour template components and a couple-three configuration directives.
+
+It supports the majorty of the Atom 1.0 spec exluding the <source> element, which seems intended for use in feeds that contain items aggregated from other feeds, and currently the <contributor> element, which could be included using the meta plugin.
+
+Point you browser/Atom feed reader at http://yoururl/index.atom.
+
+=head1 VERSION
+
+beta-6
+
+=head1 AUTHORS
+
+Rael Dornfest <rael@oreilly.com>, http://www.raelity.org/
+  - wrote the original plugin based on the 0.3 spec
+
+Sam Ruby <sam@intertwingly.net>, http://www.intertwingly.net/
+  - contributed the XML::Parser magic
+
+Frank Hecker <hecker@hecker.org>, http://www.hecker.org/
+  - contributed patches for Atom 0.3 compliance, UTC date/time fix
+
+Sam Pearson <sam@sgp.me.uk>, http://sgp.me.uk/
+  - Upgraded the plugin to handle Atom 1.0
+
+Additional code was incorporated in the Atom 1.0 revision from the enclosures plugin originally written by:
+
+Dave Slusher, http://www.evilgeniuschronicles.org/wordpress/ and Keith Irwin,  http://www.asyserver.com/~kirwin/.
+
+=head1 QUICKSTART INSTALLATION
+
+To get an Atom feed up and running in a jiffy, you need only set the following variables and drop the plugin into your plugins directory:
+
+B<$default_author> is where you specify who to credit as the default author of each entry.  This can be overidden with the value provided by the whoami or fauxami plugins.
+
+B<$feed_yr> is where you specify the year your site began.  This is important  as atomfeed needs to create a unique, unchanging ID for your weblog and it need this information to do so.
+
+Everything else is optional.
+
+=head1 FURTHER CONFIGURATION
+
+There are a lot of variables available in the plugin you can use to further customise your Atom feed.  These are all listed under B<VARIABLES>, below, with some notes as to their intended usage.  Some have defaults already specified, others will silently be excluded until you set them.
+
+Some elements of the feed - such as the <category> - are automatically generated: see B<OTHER ELEMENTS>, below, for more information.
+
+If you wish to include enclosures or other types of <link> element in your feed, see the section B<ENCLOSURES AND LINK ELEMENTS>, below.
+
+Although you can use this plugin without anything other than blosxom itself and a standard perl installation, it will perform better with some optional extras availabe.  See B<OTHER RECOMMENDATIONS> for more information.  This section also contains notes you will need to read if you intend to use this plugin alongside plugins that act on blosxom's variable interpolation, such as interpolate_fancy.
+
+=head1 VARIABLES
+
+B<$author_uri> This provides a URI for your default author.  If you leave this blank, it defaults to $blosxom::url.
+
+B<$author_email> Set this if you wish to include an email address for the author of each entry.  Leave it blank to exclude this element of the feed.
+
+B<$copyright> Set this variable to a statement of copyright for your site.  Leave blank to exclude.
+
+B<$id_domain> Atom associates unique ID tags with the feed itself and individual entries.  By default it'll attempt to glean your domain from the specified or calculated value of $blosxom::url.  But you can override this by setting $id_domain.
+
+B<$feed_url> Atom feeds contain pointers to themselves, so you can set this variable to the location of your atom feed.  If you leave in blank, it will use $blosxom::url/index.atom, which in most cases will be correct.
+
+B<$icon_url> Set this variable to the URL of an icon to associate with your site.  This should be a small image with a 1:1 aspect ratio - favicons are ideal.  Leave blank to exclude.
+
+B<$logo_url> Set this variable to the URL of a logo to associate with your site.  This can be larger than the icon, and should have an aspect ratio of 2:1.  Leave blank to exclude.
+
+B<$template_placeholder> Set this varibale to the string used in your head.atom flavour template to idetify where you would like the feed-level updated element to appear.  If you are using the built in templates, there is no need to change the default value.
+
+B<$use_full_enclosures> If you are including enclosures in your Atom feed, set this variable to 1 if you would like to include length and type attributes.  This requires that you have the LWP modules installed on your webserver to work.  See B<ENCLOSURES AND LINK ELEMENTS>, below, for more information.
+
+B<$DataFile> Set this variable to the name of a file where length and type data on your enclosures is stored.
+
+B<$css_url> Set this variable to the location of a stylesheet you would like to have applied to your Atom feed.  Leave blank to exclude altogether.
+
+B<$css_type> Set this variable to the correct MIME type for the stylesheet you are including in your feed.  Defaults to 'text/css'.
+
+=head1 OTHER ELEMENTS
+
+The plugin attempts to derive a <category> element based on the path of each post.  As a consequence, posts in the root area of the weblog will have no <category>.
+
+The plugin does provide a <summary> element, although this is not included in the default templates.  It is derived by stripping html from the entry and truncating it to the first sentence, similar to the foreshortened plugin.
+
+<published> is based on the timestamp for each entry contained with the %blosxom::files hash.  <updated> is based on a direct stat on each entry for its mtime.  All timestamps are in UTC.
+
+=head1 ENCLOSURES AND LINK ELEMENTS
+
+Atom provides an elegant method for expressing relationships between different resources using the rel attribute of its <link> element.  This includes the method Atom uses to support enclosures, used to deliver additional content - often audio or video data - to the receipient of the feed.
+
+To take advantage of this, the plugin supports rel attribute values of via, related and enclosure.  To have these included in your feed, simply link the the resource in the body of your weblog post and make sure that the link has an appropriate rel attribute of enclosure, via or related, depending upon the kind of relationship you are expressing.
+
+Ideally, enclosures should also contain information on their length (the size of the file) and MIME type.  The atomfeed plugin will try to determine this information if you set the B<$use_full_enclosures> variable to '1'.  To make sure this works correctly, you should link to the anclosure using an absolute URL rather than a relative one - "http://example.com/podcasts/july-05.mp3" instead of "/podcasts/july-05.mp3" - even if the enclosure is hosted under the same domain.
+
+If you are unsure as to whether your server has this module installed, you should be able to experiment by setting the variable anyway, as the plugin should continue to function even if it is not present.
+
+=head1 OTHER RECOMMENDATIONS
+
+This plugin will work at its best if your server has B<XML::Parser> and B<LWP> modules installed, although it will function adequately without them.
+
+In order for the <published> and <updated> timestamps to make sense, you should be running a plugin like entries_cache that retains the original timestamps of your entries and places them into the %blosxom::files hash.  If you are not, you should remove the <published> element from the story template.
+
+The atomfeed plugin assumes you're not running any fancy interpolation plugin (e.g. interpolate_fancy) which changes the way variables are specified in a template (e.g. <$foo /> rather than $foo).  If you are running interpolate_fancy or the like--I am--use the config plugin and a config.atom file in your blosxom $datadir consisting of:
+
+  $blosxom::plugins{"interpolate_fancy"} = 0;
+
+Where "interpolate_fancy" is the name of the interpolation plugin you're turning off _just for the atom feed_.
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing:
+http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs:
+http://www.raelity.org/apps/blosxom/plugin.shtml
+
+Notes on 1.0 beta versions:
+http://sgp.me.uk/sam/2005/07/20/atom-1-beta
+
+Atom 1.0 Specification:
+http://atompub.org/2005/07/11/draft-ietf-atompub-format-10.html
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list: http://www.yahoogroups.com/group/blosxom
+
+=head1 LICENSE
+
+Blosxom and this Blosxom Plug-in
+Copyright 2003, Rael Dornfest 
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

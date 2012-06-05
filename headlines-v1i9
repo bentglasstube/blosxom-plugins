@@ -1,0 +1,264 @@
+# Blosxom Plugin: headlines
+# Author(s): Eric Davis <edavis <at> foobargeek <dot> com>
+# Version: $Id: headlines,v 1.9 2004/02/27 21:29:46 edavis Exp $
+# Documentation: See the bottom of this file or type: perldoc headlines
+
+package headlines;
+
+# --- Configurable variables -----
+
+# show dates for headlines and specifiy how to indent headlines
+my $showDates = 1;
+my $indent    = qq{};
+#my $indent    = qq{nbsp;&nbsp;&nbsp;};
+
+# set this to the file name used as the headline cache
+my $cachefile = "$blosxom::plugin_state_dir/headlines.dat";
+
+# show long dates like "Jan 1, 2003"
+# the default is to show dates like 1/1/2003
+my $showLongDates = 0;
+
+# how to sort the headline list (only set one of these to 1)
+my $sortByDate              = 1;
+my $sortByDateReverse       = 0;
+my $sortByFilePathName      = 0;
+my $sortByTitleAlphabetical = 0;
+
+# number of headlines to present in the list (0 means show all)
+my $numHeadlinesToShow = 0;
+
+# --------------------------------
+
+use CGI qw/:standard/;
+
+$display; # $headlines::display
+
+my @monthabbr = qw{Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec};
+
+my $reindex = 0;
+my %blogs;
+
+sub start
+{
+    $reindex = 1 if (CGI::param('reindex'));
+    return 1;
+}
+
+sub filter
+{
+    my ($pkg, $files_ref) = @_;
+    my $count = 0;
+
+    # open the $cachefile for reading/writing(append) and create if doesn't exist
+    open(CACHE, "+>>$cachefile");
+
+    # if the file was just created then force a reindex
+    if ((stat($cachefile))[7] == 0)
+    {
+        $reindex = 1;
+    }
+
+    if ($reindex) # re-cache all the headlines
+    {
+	    foreach (keys %$files_ref)
+        {
+            # grab the headline for this blog entry
+            open(FILE, "<$_") or next;
+            $headline = <FILE>;
+            close(FILE);
+
+            # cache this blog headline
+            print(CACHE "$_=>$headline");
+            $blogs{$_}= $headline;
+        }
+    }
+    else
+    {
+        seek(CACHE, 0, 0); # seek to the beginning of the cache file
+
+        # grab all the cached headlines
+        while ($line = <CACHE>)
+        {
+            if ($line =~ /^(.*)=>(.*)$/)
+            {
+                $blogs{$1} = $2;
+            }
+        }
+    }
+
+    close(CACHE);
+
+    $display .= qq{<ul class="headlines">\n};
+
+    if ($sortByDate or $sortByDateReverse or $sortByFilePathName)
+    {
+        if ($sortByDate)
+        {
+            @fr = sort { $files_ref->{$b} <=> $files_ref->{$a} } keys %$files_ref;
+        }
+        elsif ($sortByDateReverse)
+        {
+            @fr = reverse sort { $files_ref->{$b} <=> $files_ref->{$a} } keys %$files_ref;
+        }
+        else # ($sortByFilePathName)
+        {
+            @fr = sort keys %$files_ref;
+        }
+
+        $lastMonth = 0;
+        $lastDay   = 0;
+        $lastYear  = 0;
+
+        foreach (@fr)
+        {
+            my $mtime = $files_ref->{$_};
+            my @date  = localtime($mtime);
+            my $month = $date[4] + 1;
+            my $day   = $date[3];
+            my $year  = $date[5] + 1900;
+
+            $tmp = $blogs{$_};
+
+            chomp($tmp);
+            $_ =~ s/$blosxom::datadir(.*)($blosxom::file_extension)$/$blosxom::url$1$blosxom::flavour/;
+
+            if (($sortByDate or $sortByDateReverse) and $showDates)
+            {
+                if (($month != $lastMonth) or ($day != $lastDay) or ($year != $lastYear))
+                {
+                    if ($showLongDates)
+                    {
+                        $display .= qq{<li class="headlines_date">@monthabbr[$month-1] $day, $year</li>\n};
+                    }
+                    else
+                    {
+                        $display .= qq{<li class="headlines_date">$month/$day/$year</li>\n};
+                    }
+
+                    $lastMonth = $month;
+                    $lastDay   = $day;
+                    $lastYear  = $year;
+                }
+
+                $display .= qq{<li class="headlines_item"><a href="$_">$indent$tmp</a></li>\n};
+            }
+            else
+            {
+                $display .= qq{<li class="headlines_item"><a href="$_">$tmp</a></li>\n};
+            }
+
+            last if (($numHeadlinesToShow != 0) and (++$count == $numHeadlinesToShow));
+        }
+    }
+
+    else # ($sortByTitleAlphabetical)
+    {
+        my %headline_hash;
+
+        foreach (keys %$files_ref)
+        {
+            $tmp = $blogs{$_};
+
+            chomp($tmp);
+            $_ =~ s/$blosxom::datadir(.*)($blosxom::file_extension)$/$blosxom::url$1$blosxom::flavour/;
+
+            $headline_hash{$tmp} = $_;
+        }
+
+        foreach (sort keys %headline_hash)
+        {
+            $display .= qq{<li class="headlines_item"><a href="$headline_hash{$_}">$_</a></li>\n};
+
+            last if (($numHeadlinesToShow != 0) and (++$count == $numHeadlinesToShow));
+        }
+    }
+
+    $display .= qq{</ul>\n};
+
+    return 1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: headlines
+
+=head1 DESCRIPTION
+
+This plug-in provides a B<$headlines::display> variable that contains a list of
+headlines for all the stories found by blosxom.  Each headline in the list is 
+a path based permalink to the story.  The headlines presented can be modified
+via the following configuration variables:
+
+B<$sortByDate>: set to 1 for headlines sorted by date (earliest to latest)
+
+B<$sortByDateReverse>: set to 1 for headlines sorted by date (latest to earliest)
+
+B<$sortByFilePathName>: set to 1 for headlines sorted by the stories path/file name
+
+B<$sortByTitleAlphabetical>: set to 1 for headlines sorted alphabetically
+
+B<$numHeadlinesToShow>: the number of headlines to show in the list (0 means all)
+
+B<$showDates>: show a date string before the headline (headlines occuring on the
+same day fall under the same date headline)
+
+B<$indent>: indent string inserted before a headline when B<$showDates> is on
+
+B<$showLongDates>: show Jan 1, 2003 instead of 1/1/2003
+
+Note that B<$sortByDate>, B<$sortByDateReverse>, B<$sortByFilePathName>, and
+B<$sortByTitleAlphabetical> are mutually exclusive so only set one of them.
+B<$showDates> only works when either B<$sortByDate> or B<$sortByDateReverse>
+is being used.  The following class identifiers are used for CSS control of the
+list:
+
+B<headlines>: the unordered list as a whole
+
+B<headlines_date>: a single headline date item in the unordered list
+
+B<headlines_item>: a single headline item in the unordered list
+
+Note that you will want to run this plugin very early (i.e. before any other
+plugins that might modify the entries list during the filter routine).  Rename
+this plugin to B<01headlines> or something similar based on your plugin runtime
+priority naming scheme.
+
+The cache file is automatically created if it doesn't exist and the CGI
+parameter setting B<?reindex=y> will force the cache file be re-generated.
+
+=head1 VERSION
+
+1.9    a cache file is now used which results in much faster generation
+       times since disk access is kept to a minimum
+
+=head1 VERSION HISTORY
+
+1.8    fixed bug in the $showLongDates format (month was off by 1)
+
+1.7    fixed to use configured blosxom file extension instead of .txt
+
+1.6    modified to produce complete URLs to the story entry
+
+1.4    added ability to show date headers for the listed headlines
+
+1.3    fixed problem with how the global variable was defined
+
+1.2    initial implementation
+
+=head1 AUTHORS
+
+Eric Davis <edavis <at> foobargeek <dot> com> http://www.foobargeek.com
+
+=head1 LICENSE
+
+This source is submitted to the public domain.  Feel free to use and modify it.
+If you like, a comment in your modified source attributing credit for my original
+work would be appreciated.
+
+THIS SOFTWARE IS PROVIDED AS IS AND WITHOUT ANY WARRANTY OF ANY KIND.  USE AT YOUR OWN RISK!
+

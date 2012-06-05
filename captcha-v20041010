@@ -1,0 +1,185 @@
+# Blosxom Plugin: captcha -*- CPerl -*-
+# Author(s): Bill Ward <bill@wards.net>
+# Version: 2004-10-10
+# Documentation: See the bottom of this file or type: perldoc captcha
+
+package captcha;
+
+# --- Configurable variables -----
+
+# Set to the number of characters to be included in the captcha image
+my $number_of_characters = 5;
+
+# Set to the directory where this plugin can store its data.  Must be
+# readable and writable by Web server.
+my $data_folder = "$blosxom::plugin_state_dir/captcha";
+
+# Set to the directory where this plugin can store captcha images.
+# Must be readable and writable by Web server.
+#my $output_folder = "/<file_path_to_webdocs>/images/captcha";
+
+# Set to the URL path needed to access images in $output_folder
+#my $output_path = "/images/captcha";
+
+# Error messages to be displayed in case captcha fails
+my %reasons =
+    ( "1"  => "Passed",
+      "0"  => "Code not checked (file error)",
+      "-1" => "Failed: code expired",
+      "-2" => "Failed: invalid code (not in database)",
+      "-3" => "Failed: invalid code (code does not match crypt)",
+    );
+
+# --------------------------------
+
+use Authen::Captcha;
+use CGI qw/:standard/;
+
+use vars qw/$captcha/;
+
+# Initialize the captcha object.
+sub start
+{
+    return 0 unless $data_folder && $output_folder && $output_path;
+
+    $captcha = Authen::Captcha->new
+        (
+         data_folder   => $data_folder,
+         output_folder => $output_folder,
+        );
+}
+
+# Generate the captcha image.  Call this using interpolate_fancy; see
+# POD docs below for details.
+sub get
+{
+    my($self, $attr, $content) = @_;
+
+    return "Captcha not configured"
+        unless $data_folder && $output_folder && $output_path;
+
+    mkdir $data_folder, 0755 or die "Error creating $data_folder: $!\n"
+        unless -d $data_folder;
+    mkdir $output_folder, 0755 or die "Error creating $output_folder: $!\n"
+        unless -d $output_folder;
+
+    # create a captcha. Image filename is "$md5sum.png"
+    my $md5sum = $captcha->generate_code($number_of_characters);
+
+    return "<input type=\"hidden\" name=\"captcha\" value=\"$md5sum\" />\n" .
+        "<img src=\"$output_path/$md5sum.png\" />";
+}
+
+# Check Captcha code for comments but not trackbacks
+sub validate_captcha
+{
+    my($md5sum, $code) = @_;
+    if ($blosxom::flavour ne $trackback_flavour)
+    {
+        my $results = $captcha::captcha->check_code($code,$md5sum);
+        die "captcha failed ($reasons{$results})\n"
+            unless $results == 1;
+    }
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: captcha
+
+=head1 SYNOPSIS
+
+Generates images using the Authen::Captcha Perl module (which in turn,
+uses the GD module to generate .png images).  The user can then be
+asked to type the characters shown in the image in order to have their
+post accepted.
+
+CAPTCHA is an acronym for "Completely Automated Public Turing test to
+Tell Computers and Humans Apart."
+
+Use of this plugin requires the interpolate_fancy plugin as well as
+changes to writeback or comments plugin to verify the CAPTCHA string.
+
+My "error" plugin is also recommended, as this plugin uses "die" to
+report errors.
+
+=head1 INSTALLATION AND CONFIGURATION
+
+Drop the captcha plug-in into your Blosxom plugins folder.
+
+Configure the $output_folder and $output_path variable to refer to the
+directory where Captcha images shall be created, and the URL path used
+to access them via the Web server, respectively.
+
+Optionally customize the error messages to suit your taste.
+
+Add the following code inside your writeback or comments plugin:
+
+    captcha::validate_captcha(param("captcha"), param("captcha_code"));
+
+Add the following to your comments form:
+
+    <tr><td valign=top>Captcha:</td>
+        <td>To prevent comment spam, please retype the characters in this
+        image:<br />
+        <@captcha.get output="yes" /><br />
+        Enter the text here:<br />
+        <input type=text name="captcha_code" />
+    </td></tr>
+
+=head1 VERSION
+
+2004-10-10
+
+=head1 AUTHOR
+
+William R. Ward  bill@wards.net, http://bill.wards.net/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+The Authen::Captcha module:
+
+The GD Perl module (needed by Authen::Captcha):
+http://stein.cshl.org/WWW/software/GD/
+
+The gd C library (needed by GD): http://www.boutell.com/gd/
+
+=head1 BUGS
+
+If the error plugin, or some other way of handling "die" messages, is
+not used then a failed captcha validation will produce "Internal Server Error" messages.
+
+Without the Authen::Captcha and GD modules, the plugin cannot work.
+The GD module further requires the gd C library.  If using an ISP or
+other hosting provider, contact them to have those modules installed.
+
+Address bug reports and comments to the author or to the Blosxom
+mailing list [http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+This Blosxom Plug-in is Copyright 2004, William R. Ward
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
+USA
+
+A copy can also be found at: http://www.gnu.org/copyleft/gpl.html

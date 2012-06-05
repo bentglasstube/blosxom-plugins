@@ -1,0 +1,29 @@
+# Blosxom Plugin: randomtext
+# Author(s): Nathan 
+# Version: 0.1
+# http://www.technitai.net
+
+package randomtext;
+
+# --- Configurable variables -----
+
+$textpath='/var/blosxom/plugins/quotes';
+
+# --------------------------------
+
+sub start
+{
+	 1; 
+}
+
+opendir(DIR, $textpath);
+@files = readdir(DIR);
+closedir(DIR);
+
+$count = @files;
+$die = 2 + int(rand($count - 2));
+$actualfile = $files[$die];
+open FILE, "$textpath/$actualfile";
+$text = join('', <FILE>);
+close FILE;
+return 1;

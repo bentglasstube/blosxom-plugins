@@ -1,0 +1,159 @@
+#!/usr/bin/perl -w
+
+# Blosxom Plugin: calendar
+# Author: Todd Larason (jtl@molehill.org)
+# Version: 0+1i
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/blosxom
+# Categories plugin Home/Docs/Licensing:
+#   http://molelog.molehill.org/blox/Computers/Internet/Web/Blosxom/Calendar/
+
+package calendar;
+
+# --- Configuration Variables ---
+# output format
+#   'table' -> simple table; simplest, suitable for most people
+my $output_format = 'table';
+
+#  names in your preferred language
+my @monthname = qw/January February March April May June July
+  August September October November December/;
+my @weekdayname = qw/Sun Mon Tue Wed Thu Fri Sat/;
+
+# --- End of Configuration Section ---
+
+use Time::Local;
+
+$calendar = '';
+my %days;
+
+sub report_month_start {
+    my ($year, $month, $monthname) = @_;
+    my $results = '';
+    local $_;
+    
+    if ($output_format eq 'table') {
+	$results = qq!<table class="calendar"><tr><th colspan="7" class="calendar_month_head">$monthname $year</th></tr>\n<tr>\n!;
+	$results .= qq!<th class="calendar_day_head">$_</th>\n!
+	  foreach (@weekdayname);
+	$results .= qq!</tr>\n!;
+    } else {
+	warn "Unsupported output_format: $output_format";
+    }
+    return $results;
+}
+sub report_week_start {
+    return qq!<tr>\n! if ($output_format eq 'table');
+    return qq!!;
+}
+
+sub report_day_noday {
+    return qq!<td class="calendar_day_noday">&nbsp;</td>\n!
+      if ($output_format eq 'table');
+    return qq!!;
+}
+
+sub report_day_link {
+    my ($year, $month, $day) = @_;
+    return qq!<td class="calendar_day_link"><a href="$blosxom::url/$year/$month/$day">$day</a></td>\n!
+      if ($output_format eq 'table');
+    return qq!!;
+}
+sub report_day_nolink {
+    my ($year, $month, $day) = @_;
+    return qq!<td class="calendar_day_nolink">$day</td>\n!
+      if ($output_format eq 'table');
+    return qq!!;
+}
+sub report_week_end {
+    return qq!</tr>\n! if ($output_format eq 'table');
+    return qq!!;
+}
+
+sub report_month_end {
+    return qq!</table>\n! if ($output_format eq 'table');
+    return qq!!;
+}
+
+sub days_in_month {
+    my ($year, $month) = @_;
+    my $days = (31,28,31,30,31,30,31,31,30,31,30,31)[$month-1];
+    if ($month == 2 &&
+	($year % 4 == 0 &&
+	 (($year % 100 != 0) ||
+	  ($year %400 == 0)))) {
+	$days++;
+    }
+    return $days;
+}
+
+sub build_calendar {
+    my $results;
+
+    my ($now, @now, $monthstart, @monthstart);
+    my ($year, $month, $day, $days, $wday);
+
+    $now   	= time;
+    @now   	= localtime($now);
+    $year  	= $now[5] + 1900;
+    $month 	= $now[4] + 1;
+    $days  	= days_in_month($year, $month);
+    # XXX this isn't quite right in the face of daylight savings time
+#   $monthstart = $now - ($now[3]-1)*86400;
+    $monthstart = timelocal(0,0,0,1,$month-1,$year-1900);
+    @monthstart = localtime($monthstart);
+
+    $results = report_month_start($year, $month, $monthname[$month-1]);
+
+    # First, skip over the first partial week (possibly empty)
+    # before the month started
+    for ($wday = 0; $wday < $monthstart[6]; $wday++) {
+	$results .= report_week_start() if ($wday == 0);
+	$results .= report_day_noday();
+    }
+
+    # now do the month itself
+    for ($day = 1; $day <= $days; $day++) {
+	$results .= report_week_start() if ($wday == 0);
+	if ($days{"$year/$month/$day"}) {
+	    $results .= report_day_link($year, $month, $day);
+	} else {
+	    $results .= report_day_nolink($year, $month, $day);
+	}
+	if (++$wday == 7) {
+	    $wday = 0;
+	    $results .= report_week_end();
+	}
+    }
+
+    # and finish up the last week, if any left
+    if ($wday) {
+	while (++$wday <= 7) {
+	    $results .= report_day_noday();
+	}
+	$results .= report_week_end();
+    }
+    $results .= report_month_end();
+
+    return $results;
+}
+
+sub start {
+    return 1;
+}
+
+sub filter {
+    my ($pkg, $files) = @_;
+    foreach (keys %{$files}) {
+	my @date = localtime($files->{$_});
+	my $mday  = $date[3];
+	my $month = $date[4] + 1;
+	my $year  = $date[5] + 1900;
+	$days{"$year"}++;
+	$days{"$year/$month"}++;
+	$days{"$year/$month/$mday"}++;
+    }
+
+    $calendar = build_calendar();
+}
+
+1;

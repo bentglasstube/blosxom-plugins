@@ -1,0 +1,287 @@
+# Blosxom Plugin: ufyu
+# Author(s): Kyo Nagashima <kyo@hail2u.net>, http://hail2u.net/
+# Version: 2005-10-15
+# Documentation: See the bottom of this file or type: perldoc ufyu
+
+package ufyu;
+
+use strict;
+
+# --- Configurable variables -----------
+
+# Do you want to work with meta plug-in?
+# set this value to:
+# 0:      convert every entry.
+# none-0: need to add 'meta-markup: ufyu'.
+my $with_meta = 1;
+
+# Do you want to output as XHTML?
+my $as_xhtml = 1;
+
+# Hash-style settings for anchor maker
+#
+# Example1:
+# [[a:example:http://example.com/]]
+# => <a href="http://example.com">example</a>
+#
+# Example2:
+# [[google:ナノなの:iPod Nano]]
+# => <a href="http://www.google.com/search?ie=UTF-8&lr=&q=iPod%20Nano">ナノなの</a>
+#
+# I don't have more word to explain, sorry.
+my $anchor_sets = {
+  a      => '%s',
+  google => 'http://www.google.com/search?ie=UTF-8&amp;lr=&amp;q=%es',
+  amazon => 'http://www.amazon.co.jp/exec/obidos/ASIN/%s/hail2unet-22/ref=nosim',
+  cpan   => 'http://search.cpan.org/search?module=%s',
+};
+
+# --- Plug-in package variables --------
+
+my $xhtml = $as_xhtml ? ' /' : '';
+
+# --------------------------------------
+
+use URI::Escape qw(uri_escape);
+
+sub start {
+  if ($with_meta) {
+    foreach my $plugin (@blosxom::plugins) {
+      return 1 if $plugin eq 'meta';
+    }
+
+    return 0;
+  }
+
+  return 1;
+}
+
+sub story {
+  my($pkg, $path, $fn, $story_ref, $title_ref, $body_ref) = @_;
+
+  if (defined($meta::markup) and ($meta::markup =~ /^\s*ufyu$/)) {
+    $$body_ref = &markup_blocklevel($$body_ref);
+  }
+
+  return 1;
+}
+
+sub markup_blocklevel {
+  my($text) = @_;
+
+  my($html, $verbatim, $flag, $nest);
+
+  for (split(/\n/, $text)) {
+    # blank line
+    if (/^$/) {
+      $html .= "$flag\n" if $flag;
+      $html .= "\n";
+      $flag = '';
+
+    # verbatim start
+    } elsif (/^<<<<$/) {
+      $verbatim = 1;
+
+    # verbatim end
+    } elsif (/^>>>>$/) {
+      $verbatim = 0;
+
+    # do verbatim
+    } elsif ($verbatim) {
+      $html .= "$_\n";
+
+    # repeat '-'  => hr
+    } elsif (/^\-+$/) {
+      $html .= "<hr$xhtml>\n";
+      $flag = '';
+
+    # start with '#' => comment
+    } elsif (/^\#\s*(.*)$/) {
+      $html .= "<!-- " . &markup_inline($1) . " -->\n";
+      $flag = '';
+
+    # start with '*', '**', '***' => h4, h5, h6
+    } elsif (/^(\*{1,3})\s*(.*)$/) {
+      my $level = length($1) + 3;
+      $html .= "<h$level>" . &markup_inline($2) . "</h$level>\n";
+      $flag = '';
+
+    # start with '>' => blockquote and p
+    } elsif (/^>\s*(.*)$/) {
+      $html .= "<blockquote>\n" if !$flag;
+      $html .= "<p>" . &markup_inline($1) . "</p>\n" if $1;
+      $flag = "</blockquote>";
+
+    # start with '    ' => pre and code
+    } elsif (/^[ ]{4}(.*)$/) {
+      $html .= "<pre><code>\n" if !$flag;
+      $html .= &markup_inline($1) . "\n";
+      $flag = "</code></pre>";
+
+    # start with ' ' => pre
+    } elsif (/^[ ](.*)$/) {
+      $html .= "<pre>\n" if !$flag;
+      $html .= &markup_inline($1) . "\n";
+      $flag = "</pre>";
+
+    # start with '-',  '--',  '---',  '-----' => ul
+    } elsif (/^(\-{1,4})\s*(.*)$/) {
+      $html .= "<ul>\n" if !$flag;
+
+      if (length($1) > $nest) {
+        $html =~ s!</li>$!\n<ul>!;
+      } elsif (length($1) == ($nest - 1)) {
+        $html .= "</ul>\n</li>\n";
+      } elsif (length($1) == ($nest - 2)) {
+        $html .= "</ul>\n</li>\n</ul>\n</li>\n";
+      } elsif (length($1) == ($nest - 3)) {
+        $html .= "</ul>\n</li>\n</ul>\n</li>\n</ul>\n</li>\n";
+      }
+
+      $nest = length($1);
+      $html .= "<li>" . &markup_inline($2) . "</li>\n";
+      $flag = "</ul>";
+
+    # start with '+', '++', '+++', '++++' => ol
+    } elsif (/^(\+{1,4})\s*(.*)$/) {
+      $html .= "<ol>\n" if !$flag;
+
+      if (length($1) > $nest) {
+        $html =~ s!</li>$!\n<ol>!;
+      } elsif (length($1) == ($nest - 1)) {
+        $html .= "</ol>\n</li>\n";
+      } elsif (length($1) == ($nest - 2)) {
+        $html .= "</ol>\n</li>\n</ol>\n</li>\n";
+      } elsif (length($1) == ($nest - 2)) {
+        $html .= "</ol>\n</li>\n</ol>\n</li>\n</ol>\n</li>\n";
+      }
+
+      $nest = length($1);
+      $html .= "<li>" . &markup_inline($2) . "</li>\n";
+      $flag = "</ol>";
+
+    # start with ':' and include '->' => dl and dt, dd
+    } elsif (/^:\s*(.*?)\s*->\s*(.*?)$/) {
+      $html .= "<dl>\n" if !$flag;
+      $html .= "<dt>" . &markup_inline($1) . "</dt>\n";
+      $html .= "<dd>" . &markup_inline($2) . "</dd>\n";
+      $flag = "</dl>";
+
+    # anything other => p
+    } else {
+      $html .= "<p>" . &markup_inline($_) . "</p>\n";
+      $flag = '';
+    }
+  }
+
+  $html .= "$flag\n" if $flag;
+
+  return $html;
+}
+
+sub markup_inline {
+  my($str) = @_;
+
+  $str =~ s!&amp;!&!g;
+  $str =~ s!&!&amp;!g;
+  $str =~ s!"!&quot;!g;
+  $str =~ s!<!&lt;!g;
+  $str =~ s!>!&gt;!g;
+  $str =~ s!&lt;br$xhtml?&gt;!<br$xhtml>\n!g;
+  $str =~ s!(em|strong|cite|dfn|code|samp|kbd|var|abbr|acronym|ins|del):(.*?);!<$1>$2</$1>!g;
+  $str =~ s!\[\[img:(.+?):(http:\/\/.*?\.(png|jpg|jpeg|gif))\]\]!<img src="$2" alt="$1"$xhtml>!g;
+  $str =~ s!\[\[(\w+?):(.+?):(.+?)\]\]!&anchor_maker($1, $2, $3)!eg;
+
+  return $str;
+}
+
+sub anchor_maker {
+  my($mode, $str, $var) = @_;
+
+  return "[[$mode\:$var]]" if !defined($anchor_sets->{$mode});
+  my $url = $anchor_sets->{$mode};
+  $url =~ s!\%s!$var!g;
+  $url =~ s!\%es!uri_escape($var)!eg;
+
+  return qq!<a href="$url">$str</a>!;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plugin: ufyu
+
+=head1 SYNOPSIS
+
+This plug-in provides a way to convert a plain text to partical HTML
+document with easy syntax.
+
+This plug-in is in beta stage, and the syntax will be changed in a
+future version.
+
+=head1 VERSION
+
+2005-09-19
+
+=head1 AUTHOR
+
+Kyo Nagashima E<lt>kyo@hail2u.netE<gt>, http://hail2u.net/
+
+=head1 INSTALLATION
+
+Drop ufyu into your plugins directory.
+
+=head1 SEE ALSO
+
+=over
+
+=item Blosxom Home/Docs/Licensing
+
+http://www.blosxom.com/
+
+=item Blosxom Plugin Docs
+
+http://www.blosxom.com/documentation/users/plugins.html
+
+=back
+
+=head1 BUGS
+
+Address bug reports and comments to:
+
+=over
+
+=item blosxom ML
+
+http://groups.yahoo.com/group/blosxom/
+
+=item all about blosxom ML
+
+http://www.freeml.com/info/blosxom@freeml.com
+
+=back
+
+=head1 LICENSE
+
+Copyright 2005, Kyo Nagashima <kyo@hail2u.net>, http://hail2u.net/
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

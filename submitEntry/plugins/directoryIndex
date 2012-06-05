@@ -1,0 +1,56 @@
+# Blosxom Plugin: directoryIndex
+# Author(s): Marc-Antoine Parent <maparent@acm.org>
+# Version: 0.1
+# Documentation: See the bottom of this file, or type perldoc submission
+
+package directoryIndex;
+
+# --- Configurable variables -----
+$optionPattern = '<option>$dir</option>
+';
+$relativeOptions = 1;
+# --------------------------------
+
+use File::Find;
+
+@directories = ();
+$options = "";
+sub start {
+		finddepth( \&dirOnly, $blosxom::datadir);
+		foreach $dir (sort(@directories)) {
+				$x = $optionPattern;
+				$x =~ s/\$dir\b/$dir/g;
+				$options .= $x;
+		}
+		1;
+}
+
+sub dirOnly {
+		if (-d $File::Find::name) {
+				$dir = $File::Find::name;
+				if ($relativeOptions) {
+						$dir =~ s/$blosxom::datadir\/?//;
+				}
+				push @directories, $dir;
+				1;
+		}
+		0;
+}
+1;
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: directoryIndex
+
+=head1 DESCRIPTION
+
+Lists all directories under $dataDir. The list is put in a variable @directories, and a variable $options will gather the directories in a string, whose form is controlled by $optionsPattern.
+
+=head1 VERSION
+
+0.1
+
+=head1 AUTHOR
+
+Marc-Antoine Parent <maparent@acm.org> http://maparent.homeip.net/blosxom/blosxom.cgi

@@ -1,0 +1,838 @@
+blox plugin Markup Guide
+
+----
+
+== Welcome ==
+
+{=
+To properly display this page, you must be using the *_blox* plugin_, version 0.99 or higher, with the configurable variables [=$markup_active] and [=$break_singles] set to [=1]. If all is set well, the next sentence will be split across two lines and will show some styling.
+This should be a separate line, and
+*these six words should be bold*.
+=}
+
+*_blox_* markup notation is mainly inspired by [Brian Ingerson's Kwiki module http://www.kwiki.org target="_blank"] (the "official" [blosxom wiki http://wiki.oreillynet.com/blosxom/ target="_blank"]). There is no grand philosophy behind the markup; it's simply meant to save you typing time while being easy to remember and not interfering with existing html tags.
+
+>>>>[Skip To Contents ##contents]
+
+=== _About the Markup_ ===
+
+Markup for most "inline" tags (styling, links, images) can begin before any word; markup that results in html "block" tags (heads, blockquotes, lists, rules), along with anchors and reference links, must begin at the start of a line. Any markup can be ignored ("escaped") by preceding with an exclamation mark ([=!]). The notation consists of:
+
+* *H1 - H6 heads:*<br>[=== head]<br>or<br>[==== head ===]
+* *Blockquotes:*<br>[={=blockquotes=}]
+* *Lists:*<br>[=* unordered<br>01: and<br>02) ordered<br>+++ nested<br>* lists]
+* *Rules:*<br>[=----] (codes as: [=&lt;hr&gt;])
+* *word styles:*<br>[=!*bold*] and [=!/italics/] and [=!_underline_] and [=![=code]]
+* *Images:* (path is from root; /width,height/ is optional)<br>[=![img !/images!/top.gif 22,13]] <-- [img /images/top.gif 22,13]; codes as:
+[=&lt;img src="!/images!/top.gif" width="22" height="13"&gt;]
+* *Absolute links:* (fully qualified URL)
+++ _raw_: [=![http://example.com]] <-- displays as: [http://example.com]
+++ _named_: [=![named link http://example.com]] <-- displays as: [named link http://example.com]
+* *Relative links:* (URL relative to web root)
+++ _raw_: [=![!/!/download.html]] <-- displays as: [//download.html]
+++ _named_: [=![Downloads !/!/download.html]] <-- displays as: [Downloads //download.html]
+* *Blog links:* (URL relative to $blosxom::url)
+++ _raw_: [=![:/dltext/blox.dl]] <-- displays as: [:/dltext/blox.dl]
+++ _named_: [=![blox dox :/dltext/blox.dl]] <-- displays as: [blox dox :/dltext/blox.dl]
+* *Same-page anchors and links:*<br>[=[#anchor]] <-- codes as: [=&lt;a name="anchor"&gt;&lt;/a&gt;]<br>[=![Go to Bold ##bold]] <-- displays as [Go to Bold ##bold]
+* *Image links* (substitute image markup for link "name")
+[=![![img !/images/link.gif]][= http://example.net]]  <-- displays as: [[img /images/link.gif] http://example.net class="pic"]
+* *Reference links:*<br>With a reference![1] in the story<br>[=![1 http://example.com]] <-- displays as ![1]: <a href="http://example.com">http://example.com</a>)
+* *Links and Images* can include attributes:
+[=![Example http://example.com target="_blank"]] <-- displays as [Example http://example.com target="_blank"]
+[=![Contents ##contents title="Table of Contents"]] <-- displays as [Contents ##contents title="Table of Contents"]
+[=![blog :/ class="yellow"]] <-- displays as [blog :/ class="yellow"]
+[=![img /images/top.gif alt="Top" title="Top"]] <-- displays as [img /images/top.gif alt="Top" title="Top"]
+
+[#contents]
+
+
+=== _About the Guide_ ===
+
+Each description begins with a definition of the markup, perhaps a note or two, and then samples and examples of successful and failed usage. Examples of '[=what to type]' are presented in comments as [=code]. (Excepting a couple of hand-coded tables and &lt;PRE&gt; blocks, this whole guide is produced by *_blox_* markup, making the entry file itself an excellent reference ;-)
+
+To view this page without any style sheet, [click here :/docs/tech/notes/blox_markup_new.demox]; to view the raw entry file, [click here //blosxom/docs/tech/notes/blox_markup_new.txt target="_blank"].
+
+<table border="0" cellspacing="0" cellpadding="0" width="100%"><tr><td bgcolor="#bbbbbb" class="oob">
+<table border="0" cellspacing="2" cellpadding="0" width="100%">
+<tr><th bgcolor="#bbbbbb" class="oob" colspan="4">CONTENTS</th></tr>
+<tr valign="top">
+<td bgcolor="#eeeeee" class="ooe">
+* *[Inline ##bold class="plain"]*
+01 [Bold ##bold]
+02 [Italic ##italic]
++++ [Bold-Italic ##bolditalic]
++++ [Italic-Bold ##italicbold]
+03 [Underline ##underline]
+04 [Code ##code]
+05 [Images ##image]
+ </td><td bgcolor="#eeeeee" class="ooe">
+* *[Links ##links class="plain"]*
+01 [Absolute links ##abslinks]
+02 [Relative links ##rellinks]
+03 [Blog links ##bloglinks]
+04 [Anchors ##anchors]
+05 [Anchor Links ##anchorlinks]
+06 [Image links ##imglinks]
+07 [Reference Links ##referencelinks]
+ </td><td bgcolor="#eeeeee" class="ooe">
+* *[Blocks ##paragraphs class="plain"]*
+01 [Paragraphs ##paragraphs]
+02 [Heads ##heads]
+03 [Blockquotes ##blockquotes]
+04 [Lists ##lists]
+05 [Rules ##rules]
+ </td><td bgcolor="#eeeeee" class="ooe">
+* *[More Info ##pre class="plain"]*
+++ [PRE blocks ##pre]
+++ [XHTML ##xhtml]
+++ [Undocumented ##undocumented]
+++ [Anomalies ##anomalies]
+++ [Can't do/To do ##cantdotodo]
+++ [Hints ##hints]
+ </td></tr>
+</table>
+</td></tr></table>
+
+[#bold]
+----
+= Inline =
+----
+
+== _Bold_ (&lt;b&gt; tag)
+
+Enclose single-line words with "[=*]". Escape by preceding with "[=!]".
+Type it like this: [=make !*bold* text]
+
+1 This is a *test* of bold. <-- one word...
+2 This is *a 6-word test of bold*. <-- ...or several: [=!*a 6-word test of bold*]
+3 This is a t*est of bo*ld. <-- fails; words not enclosed: [=a t*est of bo*ld]
+4 This is a* test of* bold. <-- fails; words not enclosed: [=a* test of* bold]
+5 "*bold within plain double quotes*" <-- [="!*bold within plain double quotes*"]
+
+*Escaping _bold_*
+This is a !*test* of UNbolding. <-- escaping; type it like this: [=!!*test*]
+
+>>>>[contents ##contents]
+[#italic]
+----
+
+== _Italic_ (&lt;i&gt; tag)
+
+Enclose single-line words with "[=/]". Escape by preceding with "[=!]".
+Type it like this: [=make !/italic/ text]
+
+1 This is a /test/ of italic.
+2 This /is a test of/ italic. <-- [=This !/is a test of/ italic.]
+3 This /is a test o/f italic. <-- fails; words not enclosed: [=/is a test o/f]
+4 '/Italic within single quotes/' <-- [='!/Italic within single quotes/']
+
+*Escaping _italic_*
+This is a !/test/ of UNitalicizing. <-- escaping; type it like this: [=!!/test/]
+
+>>>>[contents ##contents]
+[#bolditalic]
+----
+
+=== _Bold-Italic_ ...
+
+1 This is a */test/* of bold-italic. <-- [=!*!/test/*]
+2 */This is a test/* of bold-italic. <-- [=!*!/This is a test/*]
+3 *This /is a test/* of bold-italic. <-- [=!*This !/is a test/*]
+4 *This /is a test*/ of bold-italic. <-- this works: [=!*This !/is a test*/]
+5 *This /is a test* of/ bold-italic. <-- this works, too: [=!*This !/is a test* of/]
+6 Th*is i/s a test/* of bold-italic. <-- fails; words not enclosed: [=Th!*is i!/s a test/*]
+7 This i*/s a test/* of bold-italic. <-- fails _poorly_; words not enclosed: [=i!*!/s a test/*]
+
+*Escaping _bold-italic_*
+!*Ignore !/bold-italic*!/ <-- escaping; type it like this: [=!!*Ignore !!/bold-italic*!!/]
+(The final "!" is just to be safe against further "/" in the line ;-)
+
+>>>>[contents ##contents]
+[#italicbold]
+----
+
+=== ...and _Italic-Bold_
+
+1 This is a /*test*/ of italic-bold. <-- [=!/!*test*/]
+2 /*This is a test*/ of italic-bold. <-- [=!/!*This is a test*/]
+3 /This *is a test of*/ italic-bold. <-- [=!/This !*is a test of*/]
+4 /This *is a test of/* italic-bold. <-- this works: [=!/This !*is a test of/*]
+5 /This *is a test/ of* italic-bold. <-- this works, too: [=!/This !*is a test/ of*]
+6 Th/is i*s a test*/ of italic-bold. <-- fails; words not enclosed: [=Th!/is i!*s a test*/]
+7 This i/*s a test*/ of italic-bold. <-- fails _poorly_; words not enclosed: [=i!/!*s a test*/]
+
+*Escaping _italic-bold_*
+!/Ignore !*italic-bold/!* <-- escaping; type it like this: [=!!/Ignore !!*italic-bold/!!*]
+(The final "!" is just to be safe against further "*" in the line ;-)
+
+>>>>[contents ##contents]
+[#underline]
+----
+
+== _Underline_ (&lt;u&gt; tag)
+
+Enclose single-line words with "[=_]". Escape by preceding with "[=!]".
+Type it like this: [=make !_underlined_ text]
+
+1 This is _a test of_ underline. <-- [=!_a test of_]
+2 This is a test of _under_line. <-- fails; words not enclosed: [=!_under_line]
+3 This test _underlines an under_score word_.. <-- [=!_underlines an under_score word_]
+4 This is a *_bold /slant/ on underline_*. <-- [=!*!_bold !/slant/ on underline_*]
+
+*Escaping _underline_*
+This is a !_test_ of UN_under_lining. <-- escaping; type it like this: [=!!_test_]
+!*!/!_Ignore/ compound* styles_ <-- type it like this: [=!!*!!/!!_Ignore/ compound* styles_]
+
+>>>>[contents ##contents]
+[#code]
+----
+
+== _Code_ (&lt;code&gt; tag)
+
+Enclose any text with "[=![=]" and "[=]]"; multi-line works, so make sure you close it! Escape by preceding with "[=!]". (There's just about no way coding can fail, so be careful ;-)
+Type it like this: [=make ![=coded]][= text]
+
+1 This is a [=test of coding]. <-- [=![=test of coding]]
+2 [=This is a test of coding]. <-- [=![=This is a test of coding]]
+3 This is a te[=st of coding]. <-- a te[=![=st of coding]]
+4 Coding _contained by [=styled]_ text. <-- [=!_contained by ![=styled]][=_]
+5 Coding [=that contains _styled_] text. <-- [=![=that contains !_styled_]]
+6 [=This is a multi-line test of coding:<br>This is line 2...<br><br>This is line 4, the final line.] <-- it's not the final line of code until you close it!
+7 (This bit is really arcane; most users can ignore.)
+Because I want maximum compatibility with _*kwiki*_ markup, [=code] closes with an "ambiguous" character ([=]]) instead of something unique like [==]]. Because of that, trying to convey escaped code markup or escaped link markup within code markup can be tricky. You'll either have to "code twice," or use entities:
+[=![=![!![img /images/link.gif]]][=![= http://example.org]]] <-- "code," twice
+[=![=!![img /images/top.gif&amp;#93; ##top]] <-- entities: [=&amp;#91;] for "[" and [=&amp;#93;] for "]".
+8 The last [=]] in a series of [=]]s is used to close code:
+Typing [=![=[huh]]]]]] yields [=[huh]]]]], not <code>[huh]</code>]]]]
+
+*Escaping _code_*
+Th![=is is a t]est ![=of UNco]ding. <-- escaping; type it like this: Th[=!![=is is a t]]est [=!![=of UNco]]ding.
+
+>>>>[contents ##contents]
+[#image]
+----
+
+== _Images_ (&lt;img&gt; tag)
+
+Enclose single-line image information with "[=[]" and "[=]]". Escape by preceding with "[=!]". Image information format is: required [=relative URL], (space) optional width and height as [=w,h], (space) optional [=attribute text]. Type it like this: [=![img /images/top.gif]], which codes as:<pre>&lt;img src="/images/top.gif"&gt;</pre> 
+
+1 [=![img /images/top.gif 22,13]] [img /images/top.gif 22,13] <-- codes as:<pre>&lt;img src="/images/top.gif" width="22" height="13"&gt;</pre>
+2 [=![img /images/top.gif alt="Top"]] [img /images/top.gif alt="Top"] <-- codes as:<pre>&lt;img src="/images/top.gif" alt="Top"&gt;</pre>
+3 [=![img /images/top.gif 22,13 alt="Top" title="TOP"]] [img /images/top.gif 22,13 alt="Top" title="TOP"] <-- codes as:<pre>&lt;img src="/images/top.gif" width="22" height="13" alt="Top" title="TOP"&gt;</pre>
+4 The next line succeeds _poorly_, by treating the improper [=w,h] as attribute text
+[img /images/top.gif 44 , 26] <-- [=![img /images/top.gif 44 , 26]] codes as:<pre>&lt;img src="/images/top.gif" 44 , 26&gt;</pre>
+5 The next line fails; words not enclosed
+inter[img /images/top.gif]ruption
+
+*Escaping _images_*
+No picture ![img /images/top.gif] here. <-- escaping; type it like this: [=!![img /images/top.gif]]
+
+>>>>[contents ##contents]
+[#links]
+----
+= Links =
+----
+
+== _Links_ (&lt;a&gt; tag)
+
+Enclose single-line link information with [=[] and [=]]; link information format is: optional [=link name] (space), required [=URL], (space) optional [=attribute text]. Escape by preceding with "[=!]".
+Type it like this: [=![link name http://example.com title="test"]] 
+
+*_Names_* (link text) can be one or more words, and should not include "http:", "ftp:", "irc:", nor ":!/", nor "!/!/", nor "[" and "]". Image markup can be used in place of a name. Names are optional; with no name, the URL becomes the link text.
+
+*_URLs_* can be _absolute_, _relative-to-root_, or _relative-to-blog_. URLs are required.
+
+* _Absolute_ is a complete URL; must begin with "http://", "ftp://", or "irc://"
+[=![http://www.enilnomi.net/downloads/blox]]
+[http://www.enilnomi.net/downloads/blox]
+* _Relative-to-root_ is based from your web root; must begin with "[=!/!/]":
+[=![!/!/downloads/blox]]
+[//downloads/blox]
+* _Relative-to-blog_ is based from your Blosxom URL; must begin with "[=:/]":
+[=![:!/docs/tech/notes/blox_markup_new.demo]]
+[:/docs/tech/notes/blox_markup_new.demo]
+
+*_Attributes_* should be typed exactly as they would be in an html tag. Attributes are optional.
+[=![Open in New Window //about.html target="_blank"]] codes as:
+<pre>&lt;a href="/about.html" target="_blank"&gt;Open in New Window&lt;/a&gt;</pre> and displays as:
+[Open in New Window //about.html target="_blank"]
+
+*Escaping _links_*
+No link ![http://example.net] here. <-- escaping; type it like this: [=!![http://example.net]]
+
+>>>>[contents ##contents]
+[#abslinks]
+----
+
+== _Absolute Links_ (&lt;a&gt; tag)
+
+Absolute URLs must begin with either [=http://], [=ftp://], or [=irc://]. Names and attributes are optional; with no name, the URL becomes the link text. Escape by preceding with "[=!]".
+Type it like this: [=![http://example.com]] 
+
+1 Absolute "raw" (unnamed) link: [http://example.com]. <-- [=![http://example.com]]
+2 Absolute "named" link: [Example.com http://www.example.com]. <-- [=![Example.com http://www.example.com]]
+3 [ http://example.com]. <-- fails; space after ![: [=![ http://example.com]]
+4 Style /within/ a link [http://www.*example*.com]. <-- fails; cute, but goes nowhere: [=![http://www.!*example*.com]]
+5 Styled absolute links
+** Bold raw link *[http://www.example.com]*. <-- "!*" enclosing link markup: 
+[=!*![http://www.example.com]][=*]
+** Italic raw link /[http://www.example.com]/. <-- "!/" enclosing link markup: 
+[=!/![http://www.example.com]][=/]
+** Bold named link *[Click Here http://www.example.com]*. <-- "!*" enclosing link markup: 
+[=!*![Click Here http://www.example.com]][=!*]
+** Underlined named link [_Click Me_ http://www.example.com]. <-- "!_" enclosing link name:
+[=![!_Click Me_ http://www.example.com]]
+6 [http://example.com/a space/index.html] <-- succeeds _poorly_ when there's a space in URL; [=![http://example.com/a space/index.html]]
+
+>>>>[contents ##contents]
+[#rellinks]
+----
+
+== _Relative Links_ (&lt;a&gt; tag)
+
+Relative-to-web-root URLs must begin with [=!/!/]. Names and attributes are optional; with no name, the URL becomes the link text. Escape by preceding with "[=!]".
+Type it like this: [=![//about.html]] 
+
+1 Relative "raw" (unnamed) link: [//download.html]. <-- [=![//download.html]]
+2 Relative "named" link: [Downloads //download.html]. <-- [=![Downloads //download.html]]
+3 [ //about.html]. <-- fails; space after ![: [=![ //about.html]]
+4 Styled relative links
+** Bold relative raw link *[//download.html]*. <-- "!*" enclosing link markup: 
+[=!*![!//download.html]][=*]
+** Italic relative raw link /[//download.html]/. <-- "!/" enclosing link markup: 
+[=!/![!/!/download.html]][=/]
+** Bold relative named link *[Downloads //download.html]*. <-- "!*" enclosing link markup: 
+[=!*![Downloads //download.html]][=!*]
+** Underlined relative named link [_Linky_ //download.html]. <-- "!_" enclosing link name:
+[=![!_Linky_ //download.html]]
+5 [Bad [Name] //about.html] <-- fails with [] in name; [=![Bad ![Name]][= //about.html]]
+
+>>>>[contents ##contents]
+[#bloglinks]
+----
+
+== _Blog Links_ (&lt;a&gt; tag)
+
+Relative-to-blog-root URLs must begin with [=:/]. Names and attributes are optional; with no name, the URL becomes the link text. Escape by preceding with "[=!]".
+Type it like this: [=![:/]] 
+
+1 Blog "raw" (unnamed) link: [:/docs/tech/notes]. <-- [=![:/docs/tech/notes]]
+2 Blog "named" link: [My Blog :/]. <-- [=![My Blog :/]]
+3 [ :/nowhere]. <-- fails; space after ![: [=![ :/nowhere]]
+4 Styled blog links
+** Bold blog raw link *[:/index.html]*. <-- "!*" enclosing link markup: [=!*![:/index.html]][=*]
+** Italic blog raw link /[:/docs/plato]/. <-- "!/" enclosing link markup: [=!/![:!/docs/plato]][=/]
+** Bold blog named link *[Texas people :/docs/people/texas]*. <-- "!*" enclosing link markup: [=!*![Texas people :/docs/people/texas]][=!*]
+** Underlined blog named link [_blox_ :/dltext/blox.dl]. <-- "!_" enclosing link name:
+[=![!_blox_ :/dltext/blox.dl]]
+5 Named relative blog link with attributes: [*blox* guide :/dltext/blox.dl class="yellow" title="blox guide" target="_blank"] <-- type it like this: [=![!*blox* markup guide :!/dltext/blox.dl class="yellow" title="blox guide" target="_blank"]]
+6 [://docs/tech/notes] <-- succeeds with extra leading "!/"; [=![:!/!/docs/tech/notes]] (/this may change/ if it causes problems with other markup)
+
+>>>>[contents ##contents]
+[#anchors]
+----
+
+== _Anchors_ (&lt;a name="anchor"&gt;&lt;/a&gt;)
+
+Alone on a line, enclose one "[=#]" and a single-word anchor name with "[=[]" and "[=]]". Escape by preceding with "[=!]". Type it like this: [=![#anchor_name]], which codes as:<pre>&lt;a class="bloxanchor" name="anchor_name"&gt;&lt;/a&gt;</pre>
+(The [=bloxanchor] class is added to all anchors so that you can control appearance and behavior via CSS.)
+
+1 The next line does not set an anchor:
+[#not_an_anchor] <-- fails because anchor markup is not alone on a line
+2 The next line does not set an anchor; fails with more than one word:
+[#too many words]
+3 The next line does not set an anchor; only alphanumerics allowed:
+[#*no_styles_allowed*]
+
+*Escaping _anchors_*
+[=!![#escaped_anchor]] <-- preceed with [=!]
+
+>>>>[contents ##contents]
+[#anchorlinks]
+----
+
+== _Anchor Links_ (&lt;a href="#anchor"&gt;go to anchor&lt;/a&gt;)
+
+Enclose single-line link name, a space, two "[=#]", and a same-page anchor name with "[=[]" and "[=]]". Attributes are optional. Escape by preceding with "[=!]".
+Type it like this: [=![link text ##anchor_name]]
+
+1 Here's an anchor link: [Go to Anchors ##anchors] <-- [=![Go to Anchors ##anchors]]
+2 Styled anchor link: [Go to *Anchors* ##anchors] <-- [=![Go to !*Anchors* ##anchors]]
+3 Anchor link with attributes: [[Anchors] ##anchors title="Go to Anchors"] <-- [=![Anchors ##anchors title="Go to Anchors"]]
+
+*Escaping _anchor links_*
+[=!![No Link ##nowhere]] <-- preceed with [=!]
+
+>>>>[contents ##contents]
+[#imagelinks]
+----
+
+== _Image Links_
+
+In place of a link name, use image markup in absolute, relative, blog, and anchor links. Escape by preceding image only, or both link and image, with "[=!]".
+
+1 absolute link: [[img /images/link.gif] http://example.org class="pic"] <-- [=![![img !/images/link.gif]][= http://example.org]]
+2 relative link: [[img /images/link.gif] //about.html class="pic"] <-- [=![![img !/images/link.gif]][= !/!/about.html]]
+3 blog link: [[img /images/link.gif] :/index.html class="pic"] <-- [=![![img !/images/link.gif]][= :/index.html]]
+4 anchor link: [[img /images/top.gif] ##top class="pic"] <-- [=![![img !/images/top.gif]][= ##top]]
+
+*Escaping _image links_*
+* [![img /images/top.gif] ##top] <-- escaping only the image: 
+[=[!![img !/images/top.gif]][= ##top]]]
+* ![![img !/images/link.gif 40,15] http://example.com] <-- escaping both link and image:
+[=!![!![img !/images/link.gif 40,15]][= http://example.com]]]
+
+>>>>[contents ##contents]
+[#referencelinks]
+----
+
+== _Reference Links_
+
+Create a reference anywhere by enclosing one or more digits or a single letter with [=[] and [=]]. Then, alone on a line, enclose the same digit(s) or letter, a space, an absolute URL, and optionally a space and attribute text within "[=[]" and "[=]]". Attributes are optional. Escape by preceding with "[=!]".
+
+With a reference[=[1]] in the story,<br>
+type this: [=![1 http://example.org]] alone on a line<br>
+to produce a reference link.
+[1 http://example.org]
+ 
+1 Each reference ID can be linked a number of times[1]. For example, using [=![1 http://www.example.net]] below will produce another "1" reference link.
+[1 http://www.example.net]
+2 Protect named links (e.g. [=![24 http://example.tv)] by escaping references with the same "name" (e.g. "[=!]![24]"): [24 http://example.tv)]
+3 Attributes in a reference link[2]; using [=![2 http://example.org target="_blank"]] below will open the reference link in a new window.
+[2 http://example.org target="_blank"]
+4 Nothing _but_ "attributes"[B] are also O.K.! Type it like this: [=![B In other words, you can use reference link markup sans URL ;-)]]
+[B In other words, you can use reference link markup sans URL ;-)]
+
+*Escaping _reference links_*
+* Escape a reference: [=![1]] <-- type it like this: [=!![1]]
+* Escape a reference link: [=![1 http://example.com]] <-- type it like this: [=!![1 http://example.com]]
+
+>>>>[contents ##contents]
+[#paragraphs]
+----
+= Blocks =
+----
+
+== _Paragraphs &amp; linebreaks_
+
+Paragraphs in *_blox_* are not optional; the only way to turn them off is to not use the plugin. This section on paragraph "markup" describes how (easily) it interacts with the optional markup system.
+
+To recap *_blox_* paragraph formatting: Blocks of text separated by blank lines are wrapped in user-specified "paragraph" tags. If such a block begins or ends with an html tag (i.e. [=&lt;] or [=&gt;]), you must add a single space character before or after the tag to get *_blox_* to add its open or close block tag.
+
+This text:
+[=[blank line]][=
+A block of text.
+[blank line]]
+becomes:
+
+TEST:
+[=[blank line&#93;
+&#91;&#93;
+A block of text.
+[blank line]]
+becomes:
+
+<pre> 
+&lt;p&gt;
+A block of text.
+&lt;/p&gt;
+ </pre>
+
+But this:
+[=[blank line]][=
+&lt;b&gt;A bold&lt;/b&gt; beginning.
+[blank line]]
+only becomes:
+
+<pre>
+&lt;b&gt;A bold&lt;/b&gt; beginning.
+&lt;/p&gt;
+ </pre>
+
+To get the opening paragraph tag, add a space before the leading html tag:
+[=[blank line]][=
+&nbsp;&lt;b&gt;A bold&lt;/b&gt; beginning.
+[blank line]]
+for:
+
+<pre> 
+&lt;p&gt;
+&lt;b&gt;A bold&lt;/b&gt; beginning.
+&lt;/p&gt;
+ </pre>
+
+*_NOTE_* that you do not have to worry about adding leading and trailing spaces for html tags that *_blox_* produces from your markup; adding spaces is only for tags that /you/ put in your entry files.
+
+The paragraph model is extended to the optional markup that creates other html "blocks" (blockquotes, rules, heads, lists, etc.) &mdash; to have a block stand alone, surround it with blank lines; to contain a block, surround it with text.
+
+For instance, this markup:
+[=First line in paragraph
+!{= A blockquote =}
+Third line in paragraph.]
+yields this html:
+<pre>
+&lt;p&gt;
+First line in paragraph
+&lt;blockquote&gt;
+A blockquote
+&lt;/blockquote&gt;
+Third line in paragraph.
+&lt;/p&gt;
+</pre>
+
+While this:
+[=First line in paragraph<br> 
+!{= A blockquote =}<br> 
+First line in paragraph.]
+codes as this:
+<pre>
+&lt;p&gt;
+First line in paragraph
+&lt;/p&gt;
+
+&lt;blockquote&gt;
+A blockquote
+&lt;/blockquote&gt;
+
+&lt;p&gt;
+First line in paragraph.
+&lt;/p&gt;
+</pre>
+
+And this:
+[={= A blockquote =}
+First line in paragraph.]
+codes as:
+<pre>
+&lt;p&gt;
+&lt;blockquote&gt;
+A blockquote
+&lt;/blockquote&gt;
+First line in paragraph.
+&lt;/p&gt;
+</pre>
+
+>>>>[contents ##contents]
+[#heads]
+----
+
+== _Heads_  (&lt;h1..6&gt; tags) ==
+
+Alone on a line, put 1 to 6 "[==]", then a space, then head text. Optionally, put a space and matching number of "=" after head text. Escape by preceding with "[=!]". To make a head "stand alone" (not contained by a paragraph), surround it with blank lines.
+[=== Head Text ==] <-- type it like this, or 
+[=== Head Text] <-- type it like this
+ 
+1. _The next head is styled_; type it like this: [=== !/!_Styled H3_/]
+=== /_Styled H3_/
+ 
+2. _The next head includes_ equals signs; type it like this:
+(note the trailing space): "[====== == Equals Signs in Heads == ]" (no quotes)
+===== == Equals Signs in Heads == 
+ 
+3. _The next head fails_; there is no space between "=" and the head text
+==Not an H2
+
+4. _The next head fails_; too many spaces between "=" and the head text: "[=== &nbsp; &nbsp;Not an H2]"
+==    Not an H2
+
+5. _The next head fails_; "=" must be first character on line:
+This is == not an H2
+
+*_Escaping _heads_*
+!=== Ignore Markup <-- escaping; type it like this: [=!=== Ignore Markup]
+!==== Ignore Markup ==== <-- escaping; type it like this: [=!==== Ignore Markup ====]
+
+>>>>[contents ##contents]
+[#blockquotes]
+----
+
+== _Blockquotes_ (&lt;blockquote&gt; tag)
+
+Start a line with "[={=]" to open a blockquote; end a line with "[==}]" to close it. Blockquotes are multi-paragraph, so make sure you close them! All markup can be used inside a blockquote, except for another blockquote. Escape by preceding with "[=!]". If you need to use "=}" within a blockquote, escape it as [=!!=}]. To make a blockquote "stand alone" (not contained by a paragraph), surround it with blank lines.
+[={= Blockquote Text =}] <-- type it like this
+
+1. Here comes a blockquote; type it like this:
+[={= Hey! I'm a blockquote! =}]
+{= Hey! I'm a blockquote! =}
+
+2. The next line fails; [={=] must begin the line:
+This is {= not a blockquote. =}
+
+3. Here's a multi-paragraph blockquote; type it like this:
+[={=Here's the first paragraph. . .<br><br>Here's the second paragraph. . .=}]
+{= Here's the first paragraph of a two-paragraph blockquote, lovingly wrapped in paragraph tags by blox.
+
+Here's the second paragraph of a two-paragraph blockquote., lovingly wrapped in paragraph tags by blox. =}
+
+4. Empty blockquote are possible: ([={==}])
+{==}
+
+5. You can do anything inside a blockquote that you can do in a paragraph (except use a blockquote ;-)
+{= Here's a blockquote with
+a linebreak, and
+
+a separate paragraph, and
+
+*some* /styling/, and a [link ##blockquotes] or [two ##top], and 
+* list
+* items
+ and so on.... =}
+
+*Escaping _Blockquotes_*
+!{=Ignore blockquote=} <-- type it like this: [=!{=Ignore blockquote=}]
+
+>>>>[contents ##contents]
+[#lists]
+----
+
+== _Lists_ (&lt;ol&gt; and &lt;ul&gt; tags)
+
+A line starting with one or more "list marks" and a space, followed by text creates a list item; the number of list marks determines the nested level of the list. Consecutive list items are contained in the same list. List items can be mulit-line, provided no line starts with a space. Escape by preceding with "[=!]". To make a list "stand alone" (not contained by a paragraph), surround it with blank lines.
+* _List Marks_
+11 "[=*]", "[=+]", or "[=-]" establish unordered list items
+22 Digits ([=0..9]) establish ordered list items; digits can be followed by "[=:]", "[=)]", "[=>]", "[=+]", or "[=-]" (Note that a following "[=.]" is /not/ valid; so to easily avoid list markup, just start plain old text items with "[=1. ]", "[=2. ]", etc.)
+ Type it like this:[=
+!* list item 1
+!* list item 2] 
+
+1 The first mark in a list sets the type of list:<br>[=* ul item is first<br>0 ol item<br>0 ol item]
+** ul item is first
+01 ol item
+02 ol item
+2 List items can be multi-line, provided no line starts with a space. A [=&lt;br&gt;] tag is automatically added to multi-lines (regardless of the $break_singles setting); the tag automatically adjusts to the [=$use_xhtml_tags] setting.
+[=* Item 1 line 1
+item 1 line2
+!* Item 2]
+** Item 1 line 1
+Item 1 line 2
+** Item 2
+3 Lists can be nested:<br>[=!* Outer list 1<br>00 Inner list 1<br>00 Inner list 2<br>!*!*!* Inner inner list 1<br>!* Outer list 2]
+** Outer list 1
+001 Inner list 1
+002 Inner list 2
+**** Inner inner list 1
+** Outer list 2
+4 Fails because [=0] is not first character in line: <br>'[=&nbsp;&nbsp;0 Failed list]'<br><br>0 Failed list
+5 List items can be styled:<br>[=!* !*bold!* item <br>!* !/italics/ item<br>!* !_underlined_ item]
+** *bold* item 
+** /italics/ item
+** _underlined_ item
+6 The following list markup is valid:
+01 [=1 item 1]
+02) [=2) item 2]
+03: [=3: item 3]
+04> [=4> item 4]
++++ [=++ item 5]
+--- [=-- item 6]
+*--* [=!*-!* item 7]
+
+*Escaping _Lists_*
+UNlist items by preceeding with a [=!]:
+[=!!** Escaped inner item
+!!3 Escaped OL item]
+!** Escaped inner item
+!3 Escaped OL item
+
+>>>>[contents ##contents]
+[#rules]
+----
+
+== _Rules_ (&lt;hr&gt; tag)
+
+Alone on a line, put four "[=-]" and nothing else. Escape by preceding with "[=!]". To make a rule "stand alone" (not contained by a paragraph), surround it with blank lines.
+Type it like this:
+[=----]
+ 
+
+1. The next line fails due a leading space "[= ----]":
+ ----
+
+2. The next line fails due a trailing space "[=---- ]":
+---- 
+
+3. Rules can be contained in other blocks. This entry text:
+[=[blank line]][=
+First line...
+!----
+...Last line.
+[blank line]]
+
+produces this HTML:
+<PRE>
+&lt;P&gt;
+First line...
+&lt;HR&gt;
+...last line.
+&lt;/P&gt;
+</PRE>
+
+*Escaping _rules_*<br>The next line is an escape; type it like this: [=!!----]
+!----
+
+>>>>[contents ##contents]
+[#pre]
+----
+= More Info =
+----
+
+== _&lt;PRE&gt; blocks_
+
+*_blox_* doesn't do anything to text that's wrapped in [=&lt;PRE&gt;] tags...and that's exactly the point. Whatever you put in a [=&lt;PRE&gt;] block will be left completely as-is.
+
+This text:
+[=&lt;PRE&gt;
+!*No bold* inside a PRE
+
+![no links either http://www.exxample.com]][=
+&lt;/PRE&gt;]
+
+Becomes this HTML:
+<PRE>
+&lt;PRE&gt;
+*No bold* inside a PRE
+
+[no links either http://www.exxample.com]
+&lt;/PRE&gt;
+</PRE>
+
+>>>>[contents ##contents]
+[#xhtml]
+----
+
+== _XHTML 1.0 &amp; strict HTML 4.01_
+
+Set the [=$use_xhtml_tags] config var to [=1] for the following:
+* [=&lt;hr /&gt;] <--normally &lt;hr&gt
+* [=&lt;img src="images/top.gif" /&gt;] <--normally &lt;img src="images/top.gif"&gt
+* [=&lt;br /&gt;] <--normally &lt;br&gt
+
+*_blox_* markup conforms to "loose" HTML 4.01; specifically, list items are not normally closed, and anchors contain no text. Two config vars are available to increase conformance:
+* setting [=$close_list_items] to [=1] closes list items:
+[=&lt;li&gt;] list item text [=&lt;/li&gt;]
+* setting [=$anchor_text] to [=1] adds a non-breaking space as anchor text
+[=&lt;a class="bloxanchor" name="top"&gt;&amp;nbsp;&lt;/a&gt;]
+
+>>>>[contents ##contents]
+[#undocumented]
+----
+
+== Undocumented
+
+*_aligned DIVs_*
+I just threw these in for the right-aligned /contents/ links in this guide ;-) They could disappear at any moment. Use &lt;br&gt; tags for multi-line. [=>>>>![contents ##contents]] codes as: <pre>&lt;div align="right"&gt;&lt;a href="#contents"&gt;contents&lt;/a&gt;&lt;/div&gt;</pre>
+
+1. For a right-aligned single-line DIV, type this:
+[=>>>>!_Far Right text_]
+
+>>>>_Far Right text_
+
+2. For a center-aligned single-line DIV; type this:
+[=>><<!_Centered text_]
+
+>><<_Centered text_
+
+3. For a left-aligned single-line DIV; type this:
+[=<<<<!_Far Left text_]
+
+<<<<_Far Left text_
+
+*Escaping _aligned DIVs_*
+!>>>> &nbsp; &nbsp; <-- escaping; type it like this: [=!>>>>]
+ 
+*_&lt;big&gt; and &lt;small&gt;_*
+This markup seems really clunky; these will p'bly die of embarrassment. Use &lt;br&gt; tags for multi-line.
+
+1 One key +++makes you taller+++ <-- [=One key !+++makes you taller+++]
+2 And one key ---makes you small--- <-- [=And one key !---makes you small---]
+3 Preceding with "!" makes !+++nothing+++ at !---all--- <-- [=!!+++nothing+++ at !!---all---]
+
+
+
+>>>>[contents ##contents]
+[#anomalies]
+----
+
+== Not "Bugs" &mdash; /anomalies/ ;-)
+
+This markup always does what it should; it's just not very bright.
+* Path-like text may be mistaken for italic if it looks like one word:
+[=!/Library/WebServer/Documents/] <-- displays as: /Library/WebServer/Documents/
+or with italics following:
+[=!/Library/WebServer: where the !/action/ is] <-- displays as: /Library/WebServer: where the /action/ is
+_*The fix* is to escape such sequences_:
+[=!!/Library/WebServer/Documents/] <-- displays as: !/Library/WebServer/Documents/
+[=!!/Library/WebServer: where the !/action/ is] <-- displays as: !/Library/WebServer: where the /action/ is
+** This anomaly will not bother you in properly marked links.
+* As illustrated in [*Absolute Links #4* ##abslinks], there's nothing preventing you from styling inappropriate elements within an address, even though such links won't go anywhere.
+* Nothing stops you from putting blockquote markup within blockquote markup, even though it won't render worth a toot. Nested blockquotes must be hand-coded.
+* If you need to convey escaped code markup or escaped link markup within code markup (:: sigh :: ;-), pay attention to [*Code #7* ##code].
+* Multi-line blockquote markup can be used within list item markup; multi-paragraph blockquote markup cannot.
+
+*Of course,* if you do find a bug in this markup system, let me know by writing to the blosxom list, or by posting at [http://groups.yahoo.com/group/blosxom/messages/].
+
+>>>>[contents ##contents]
+[#cantdotodo]
+----
+
+== Can't do/To do...
+
+* There's no table markup; none is planned
+* There's no mailto: markup; none is planned
+* You can't use absolute URLs in image markup; no plans to change this
+* Nested blockquotes don't render properly; this will p'bly not change
+* Escaped relative link markup is not automatically protected against italics; this might change
+* You can only add attributes to links and images; no plans to change this
+* There is nothing similar to the "noblox" file for markup; this will p'bly change
+
+>>>>[contents ##contents]
+[#hints]
+----
+
+=== _Hints_ ===
+1) Wherever possible, the format model is visual. So if a head is immediately followed by a block of text, they will both be wrappped in a paragraph tag. To have the head "stand alone," separate it from other text with blank lines. Ditto for rules and blockquotes and lists.
+2) Don't forget the power of leading/trailing spaces...
+3) ...but don't obsess; you do not have to add any spaces to compensate for the effects of the markup.
+4) Italic markup is very aggressive. Link markup is protected against [=!/], but escaped links are not. To represent plain old paths, escaping the leading [=!/] (if any) is usually enough: [=!!/root/dir/file.txt]. When in doubt, escape everything ;-)
+5) "Attributes" include event handlers, so yeah -- you can do js rollovers.
+6) You can tell blox to disable markup in an entry file by adding the comment:
+[=&lt;!--nobloxmarkup--&gt;]
+to the story text, alone on a line.
+
+>>>>[contents ##contents]
+[#versions]
+----
+
+=== _Versions_ ===
+For some folks, markup is just plain overkill. For them, a re-mastered *_blox_* v0.98 is available [here //downloads/blox98 target="_blank"]. This new v0.98 contains all of the fixes of v0.99, but none of the markup. The new v0.98 is identified as: [=2004-10-30 (v0.98)]. All users should update to either v0.99 or the new v0.98r; v0.97 should be abandoned.
+
+Though I've tested *_blox_* v0.99 quite extensively, there's nothing like release to prompt a change ;-) While the markup stabilizes, v0.99 changes will be indicated by a letter; the initial release is [=v0.99e]. You can p'bly get *_blox_* in a couple of forms; see the [blox download page :/dltext/blox.dl target="_blank"].
+
+==== Version History: [blox_markup_guide.txt //downloads/blox_markup_guide.txt]
+[=2004-10-24 (v0.99e)]- release for blox 99
+[=2004-09-24 (v0.97d)]- 1st release for blox 97
+
+==== Version History: [blox //downloads/blox]
+[=2004-10-30 (v0.99e)]- blox with markup; based on 2004-09-24 (0.98-11e)
+[=2004-10-30 (v0.98r)]- blox with no markup; based on 2004-09-24 (0.98-11e)
+[=2004-09-24 (v0.98e)]- markup
+[=2004-09-22 (v0.97d)]- named character classes dropped for perl &lt;=5.006; 
+                      several settings are config'able; cleanup
+[=2004-08-24 (v0.97a)]- normal tagged links were being mangled; fixed
+[=2004-07-22 (v0.97) ]- cleanup; add un-ignore, linebreaking, styles, graceful 
+                      PREs; convert line-ends in noblox file
+[=2003-09-14 (v0.96) ]- better line-end conversion
+[=2003-09-09 (v0.95) ]- LOL! put Win line-end chars in correct order ;-)
+[=2003-08-31 (v0.94) ]- add Mac and Windows line-ending conversion
+[=2003-08-30 (v0.93) ]- wip
+[=2003-08-04 (v0.92) ]- add mechanisms to ignore specified entries
+[=2003-07-31 (v0.9 ) ]- half-fast workaround for &lt;PRE&gt; tags
+[=2003-07-20 (v0.8 ) ]- it's alive
+
+
+>>>>[contents ##contents]
+----
+
+=== Hope You Enjoy!
+
+ - S2

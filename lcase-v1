@@ -1,0 +1,13 @@
+# Blosxom Plugin: lcase
+# Author: Jonathan H Lundquist
+# Version: 1
+
+package lcase;
+use strict;
+
+sub start {
+   $blosxom::path_info = lc($blosxom::path_info);
+   1;
+}
+
+1;

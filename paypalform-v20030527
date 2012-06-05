@@ -1,0 +1,176 @@
+# Blosxom Plugin: paypalform
+# Author: Bob Schumaker <cobblers@pobox.com>
+# Version: 20030527
+# http://www.cobblers.net/blog/
+# License: Public Domain
+
+package paypalform;
+
+# --- Plug-in package variables -----
+
+# --- Output variables -----
+
+$form = "";
+
+# --- Configurable variables -----
+
+# Show the form everywhere?
+$showform = 0;
+
+# If we don't always show it, what turns it on?
+$paypalconfig = "config.paypal";
+
+# How much to ask for
+$paypalamount = 5;
+
+# Who gets the money?
+$paypalaccount = "cobblers\@pobox.com";
+
+# Which should we call this?
+$paypalitemname = "Donation";
+
+# Which donation is this?
+$paypalitemnumber = "0001";
+
+# --------------------------------
+
+sub start {
+  return 1;
+}
+
+sub head {
+  my($pkg, $path, $head_ref) = @_;
+  unless($showform) {
+    for (;;) {
+      do {
+        -r "$blosxom::datadir/$path/$paypalconfig" and require "$blosxom::datadir/$path/$paypalconfig" and last;
+      } while ($path =~ s/(\/*[^\/]*)$// and $1);
+      last;
+    }
+  }
+  if($showform) {
+    while (<DATA>) {
+	  last if /^(__END__)?$/;
+	  $form .= $_;
+    }
+    my $email = $paypalaccount;
+    my $len = length($email);
+    my $l = $len/4;
+    my $a = substr($email,0,$l);
+    $form =~ s/%a%/$a/g;
+    $email = substr($email,$l);
+    $a = substr($email,0,$l);
+    $form =~ s/%b%/$a/g;
+    $email = substr($email,$l);
+    $a = substr($email,0,$l);
+    $form =~ s/%c%/$a/g;
+    $email = substr($email,$l);
+    $form =~ s/%d%/$email/g;
+    $form =~ s/%amount%/$paypalamount/g;
+    $form =~ s/%itemname%/$paypalitemname/g;
+    $form =~ s/%itemnumber%/$paypalitemnumber/g;
+    my $url = "$blosxom::url/$path";
+    $form =~ s/%url%/$url/g;
+  }
+  1;
+}
+
+1;
+
+__DATA__
+<div align="middle" class="paypal">
+<form name="paypal" onsubmit="add_email(); submit();" action="https://www.paypal.com/cgi-bin/webscr" method="post">
+<p>
+<script language="JavaScript">
+<!--
+function add_email() {
+	var a = "%a%";
+	var b = "%b%";
+	var c = "%c%";
+	var d = "%d%";
+	emailString = a + b + c + d;
+	document.paypal.business.value = emailString;
+}
+//-->
+</script>
+<input type="hidden" name="cmd" value="_xclick">
+<input type="hidden" name="business" value="">
+<input type="hidden" name="item_name" value="%itemname%">
+<input type="hidden" name="item_number" value="%itemnumber%">
+<input type="hidden" name="no_shipping" value="1">
+<input type="hidden" name="no_note" value="1">
+<input type="hidden" name="currency_code" value="USD">
+<input type="hidden" name="return" value="%url%">
+<input type="hidden" name="cancel_return" value="%url%">
+<input type="hidden" name="cn" value="Comments">
+<input type="hidden" name="tax" value="0">
+<strong>Amount: </strong><input type="text" name="amount" value="$%amount%.00" size="6"><br>
+<input type="image" src="https://www.paypal.com/images/x-click-but04.gif" border="0" name="submit" alt="Make payments with PayPal - it's fast, free and secure!">
+</p>
+</form>
+</div>
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: paypalform
+
+=head1 SYNOPSIS
+
+Purpose: Populates $paypalform::form with the contents of a 'Donation' PayPal form. It
+only generates the form if you are in a part of the blog tree that contains a special file
+to turn it on (unless it is configured to always populate the form).
+
+Configurable variables:
+
+   $paypalform::showform: show the form everywhere in this blog
+   $paypalform::paypalconfig: the name of a config file to override the current settings
+   $paypalform::paypalamount: the size of the donation
+   $paypalform::paypalaccount: the name of the account that gets the money
+
+Your PayPal account name is split into pieces and reconstructed so that spiders can't pull
+your email address from your page directly. Feel free to leave the current value in place :-)
+
+=head1 VERSION
+
+20030527
+
+=head1 AUTHOR
+
+Bob Schumaker  <cobblers@pobox.com>, http://www.cobblers.net/blog
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Blosxom
+Copyright 2003, Rael Dornfest 
+This Blosxom Plug-in
+Copyright 2003, Bob Schumaker 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

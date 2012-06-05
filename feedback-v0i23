@@ -1,0 +1,1815 @@
+# Blosxom Plug-in: feedback
+# Author: Frank Hecker (http://www.hecker.org/)
+#
+# Version 0.23
+
+package feedback;
+
+use warnings;
+
+
+# --- Configurable variables ---
+
+# --- You *must* set the following variables properly for your blog ---
+
+# Where should I keep the feedback hierarchy?
+# (By default it goes in the Blosxom state directory. However you may
+# prefer it to go in the same directory as the Blosxom data directory.
+# If so, delete the following line and uncomment the line following it.)
+$fb_dir = "$blosxom::plugin_state_dir/feedback";
+# $fb_dir = "$blosxom::datadir/../feedback";
+
+
+# --- Set the following variables according to your preferences ---
+
+# Are comments and TrackBacks allowed? Set to zero to disable either or both.
+my $allow_comments = 1;
+my $allow_trackbacks = 1;
+
+# Don't allow comments/TrackBacks if story is older than this (in seconds).
+# (Set to zero to keep story open for comments/TrackBacks forever.)
+my $comment_period = 90 * 86400;        # 90 days
+my $trackback_period = 90 * 86400;      # 90 days
+
+# Do Akismet checking of comments and/or TrackBacks for spam.
+my $akismet_comments = 0;
+my $akismet_trackbacks = 0;
+
+# WordPress API key for use with Akismet.
+# (Register at <http://wordpress.com/> to get your own API key.)
+my $wordpress_api_key = '';
+
+# Do MT-blacklist checking of comments and/or TrackBacks for spam.
+# NOTE: The MT-Blacklist file is no longer maintained; we suggest using
+# Akismet instead.
+my $blacklist_comments = 0;
+my $blacklist_trackbacks = 0;
+
+# Where can I find the local copy of the MT-Blacklist file?
+my $blacklist_file = "$blosxom::plugin_state_dir/blacklist.txt";
+
+# Send an email message to notify the blog owner of new comments and/or
+# TrackBacks and (optionally) request approval of new comments/TrackBacks.
+my $notify_comments = 0;
+my $notify_trackbacks = 0;
+my $moderate_comments = 1;
+my $moderate_trackbacks = 1;
+
+# Email address and SMTP server used for notifications and moderation requests.
+my $address = 'jdoe@example.com';
+my $smtp_server = 'smtp.example.com';
+
+# Default values for fields not submitted with the comment or TrackBack ping.
+my $default_name = "Someone";
+my $default_blog_name = "An unnamed blog";
+my $default_title = "an article";
+
+# The formatting used for comments, i.e., how they are translated to (X)HTML.
+# Valid choices at present are 'none', 'plaintext' and 'markdown'.
+my $comment_format = 'plaintext';
+
+# Should we accept and display commenter's email addresses? (The default is
+# to support http/https URLs only; this may be the only option in future.)
+my $allow_mailto = 0;
+
+
+# --- You should not normally need to change the following variables ---
+
+# What flavour should I consider an incoming TrackBack ping?
+$trackback_flavour = "trackback";
+
+# What file extension should I use for saved comments and TrackBacks?
+my $fb_extension = "wb";
+
+# What fields are used in the comments form?
+my @comment_fields = qw! name url comment !;
+
+# What fields are used by TrackBacks?
+my @trackback_fields = qw! blog_name url title excerpt !;
+
+# Limit all fields to this length or less (just in case).
+my $max_param_length = 10000;
+
+
+# --- Variables for use in flavour templates (e.g., as $feedback::foo) ---
+
+# Comment and TrackBack fields, for use in the comment, preview, and
+# trackback templates.
+$name = '';
+$name_link = '';                        # Combines name and link for email/URL
+$date = '';
+$comment = '';
+$blog_name = '';
+$title = '';
+$title_link = '';                       # Combines title and link to article
+$excerpt = '';
+$url = '';                              # Also used in $name_link, $title_link
+
+# Field values for previewed comments, used in the commentform template.
+$name_preview = '';
+$comment_preview = '';
+$url_preview = '';
+
+# Message displayed in response to a comment submission (e.g., to display
+# an error message), for use in the story or foot templates. The response is
+# formatted for use in HTML/XHTML content.
+$comment_response = '';
+
+# XML message displayed in response to a TrackBack ping (e.g., to display
+# an error message or indicate success), per the TrackBack Technical
+# Specification <http://www.sixapart.com/pronet/docs/trackback_spec>.
+$trackback_response = '';
+
+# All comments and TrackBacks for a particular story, for use in the story
+# template for an individual story page. Also includes content from the
+# comments_head/comments_foot and trackbacks_head/trackbacks_foot templates.
+$comments = '';
+$trackbacks = '';
+
+# Counts of comments and TrackBacks for a story, for use in the story
+# template (e.g., for index and archive pages).
+$comments_count = 0;
+$trackbacks_count = 0;
+$count = 0;                             # total of both
+
+# Previewed comment for a particular story, for use in the story
+# template for an individual story page.
+$preview = '';
+
+# Default comment submission form, for use in the foot template (for an
+# individual story page). The plug-in sets this value to null if comments
+# are disabled or in cases where the page is not for an individual story
+# or the story is older than the allowed comment period.
+$commentform = '';
+
+# TrackBack discovery information, for use in the foot template (for
+# an individual story page). The code sets this value to null if TrackBacks
+# are disabled or in cases where the page is not for an individual story
+# or the story is older than the allowed TrackBack period.
+$trackbackinfo = '';
+
+
+# --- External modules required ---
+
+use CGI qw/:standard/;
+use FileHandle;
+use URI;
+use URI::Escape;
+
+
+# --- Global variables (used in interpolation) ---
+
+use vars qw! $fb_dir $trackback_flavour $name $name_link $date $comment
+    $blog_name $title $name_preview $comment_preview $url_preview
+    $comment_response $trackback_response $comments $trackbacks
+    $comments_count $trackbacks_count $count $preview $commentform
+    $trackbackinfo !;
+
+
+# --- Private static variables ---
+
+# Spam blacklist array.
+my @blacklist_entries = ();
+
+# File handle for use in reading/writing the feedback file, etc.
+my $fh = new FileHandle;
+
+# Path and filename for the main feedback file for a story, and item name
+# used in contructing filenames for files containing moderated items.
+my $fb_path = '';
+my $fb_fn = '';
+
+# Whether comments or TrackBacks are closed for a given story.
+my $closed_comments = 0;
+my $closed_trackbacks = 0;
+
+
+# --- Plug-in initialization ---
+
+# Strip potentially confounding final slash from feedback directory path.
+$fb_dir =~ s!/$!!;
+
+# Strip potentially confounding initial period from file extension.
+$fb_extension =~ s!^\.!!;
+
+# Initialize the default templates; use $blosxom::template so we can leverage
+# the Blosxom template subroutine (whether default or replaced by a plug-in).
+my %template = ();
+while (<DATA>) {
+    last if /^(__END__)?$/;
+    # TODO: Fix this to correctly handle empty flavours (i.e., no $txt).
+    my ($ct, $comp, $txt) = /^(\S+)\s(\S+)(?:\s(.*))?$/;
+#   my ($ct, $comp, $txt) = /^(\S+)\s(\S+)\s(.*)$/;
+    $txt = '' unless defined($txt);
+    $txt =~ s/\\n/\n/mg;
+    $blosxom::template{$ct}{$comp} = $txt;
+}
+
+# Moderation implies notification.
+$notify_comments = 1 if $moderate_comments;
+$notify_trackbacks = 1 if $moderate_trackbacks;
+
+
+# --- Plug-in subroutines ---
+
+# Create feedback directory if needed.
+sub start {
+    # The $fb_dir variable must be set to activate feedback.
+    unless ($fb_dir) {
+        warn "feedback: " .
+       	    "The \$fb_dir configurable variable is not set; "
+            . "please set it to enable comments or TrackBacks.\n";
+        return 0;
+    }
+
+    # The value of $fb_dir must be a writeable directory.
+    if (-e $fb_dir && !(-d $fb_dir && -w $fb_dir)) {
+        warn "feedback: The feedback directory '$fb_dir' "
+             . "must be a writeable directory; please rename or remove it "
+             . "and Blosxom will create it properly for you.\n";
+        return 0;
+    }
+
+    # The $fb_dir does not yet exist, so Blosxom will create it.
+    unless (-e $fb_dir)  {
+        return 0 unless (mk_feedback_dir($fb_dir));
+    }
+
+    return 1;
+}
+
+
+# Decide whether to close comments and TrackBacks for a story.
+sub date {
+    my ($pkg, $file, $date_ref, $mtime, $dw, $mo, $mo_num, $da, $ti, $yr) = @_;
+
+    # A positive value of $comment_period represents the time in seconds
+    # during which posting comments or TrackBacks is allowed after a
+    # story has been published. (Note that updating a story has the effect
+    # of reopening the feedback period.) A zero or negative value for
+    # $comment_period means that posting feedback is always allowed.
+
+    if ($comment_period <= 0) {
+	$closed_comments = 0;
+    } elsif ($allow_comments && (time - $mtime) > $comment_period) {
+	$closed_comments = 1;
+    } else {
+	$closed_comments = 0;
+    }
+
+    # $trackback_period works the same way as $comment_period.
+
+    if ($trackback_period <= 0) {
+	$closed_trackbacks = 0;
+    } elsif ($allow_trackbacks && (time - $mtime) > $trackback_period) {
+	$closed_trackbacks = 1;
+    } else {
+	$closed_trackbacks = 0;
+    }
+
+    return 1;
+}
+
+
+# Parse posted TrackBacks and comments and take action as appropriate.
+# Retrieve comments and TrackBacks and format according to the templates.
+# Display a comment form and/or TrackBack URL as appropriate.
+
+sub story {
+    my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    my $submission_type;
+    my $status_msg;
+    my $is_story_page;
+
+    # We have five possible tasks in this subroutine:
+    #
+    #   * handle submitted TrackBack pings or comments (or related requests)
+    #   * display previously-submitted TrackBacks or comments
+    #   * display a comment being previewed
+    #   * display a form for entering a comment (or editing a previewed one)
+    #   * display information about submitting TrackBacks
+    #
+    # Exactly what we do depends whether we are rendering dynamically or
+    # statically and on the type of request (GET, HEAD, or POST) (when
+    # dynamically rendering),  the Blosxom flavour, the parameters associated
+    # with the request, the age of the story, and the way the feedback
+    # plug-in itself is configured.
+
+    # Make $path empty if at top level, preceded by a single slash otherwise.
+    !defined($path) and $path = "";
+    $path =~ s!^/*!!; $path &&= "/$path";
+
+    # Set feedback path and filename for this story.
+    $fb_path = $path;
+    $fb_fn = $filename . '.' . $fb_extension;
+
+    # Determine whether this is an individual story page or not.
+    $is_story_page =
+	$blosxom::path_info =~ m!^(.*/)?(.+)\.(.+)$! ? 1 : 0;
+
+    # For dynamic rendering of an individual story page *only*, check to
+    # see if this is a feedback-related request, take action, and formulate
+    # a response.
+    #
+    # We have five possible cases: TrackBack ping, comment preview, comment
+    # post, moderator approval, and moderator rejection. These are
+    # distinguished based on the type of request (POST vs. GET/HEAD),
+    # the flavour (for TrackBack pings only), and the request parameters.
+
+    $submission_type = $comment_response = $trackback_response = '';
+    if ($blosxom::static_or_dynamic eq 'dynamic' && $is_story_page) {
+	($submission_type, $status_msg) = process_submission();
+	if ($submission_type eq 'trackback') {
+	    $trackback_response = format_tb_response($status_msg);
+	    return 1;                   # All done.
+	} elsif ($submission_type eq 'comment'
+		 || $submission_type eq 'preview'
+		 || $submission_type eq 'approve'
+		 || $submission_type eq 'reject') {
+	    $comment_response = format_cmt_response($status_msg);
+	}
+    }
+
+    # Display previously-submitted comments and TrackBacks for this story.
+    # For index and and archive pages we just display counts of the comments
+    # and TrackBacks.
+
+    $comments = $trackbacks = '';
+    $comments_count = $trackbacks_count = 0;
+    if ($is_story_page) {
+	($comments, $comments_count, $trackbacks, $trackbacks_count) =
+	    get_feedback($path);
+    } else {
+	($comments_count, $trackbacks_count) = count_feedback();
+    }
+    $count = $comments_count + $trackbacks_count;
+
+    # If we are previewing a comment then format the comment for display.
+    $preview = '';
+    if ($submission_type eq 'preview') {
+	$preview = get_preview($path);
+    }
+
+    # Display a form for comment submission, if we are on an individual
+    # story page and comments are (still) allowed. (If we are previewing
+    # a comment then the form will be pre-filled as appropriate.)
+
+    $commentform = '';
+    if ($is_story_page && $allow_comments) {
+	if ($closed_comments) {
+	    $commentform =
+		"<p class=\"commentform\">"
+		. "Comments are closed for this story.</p>";
+	} else {
+	    # Get the commentform template and interpolate variables in it.
+	    $commentform =
+		&$blosxom::template($path,'commentform',$blosxom::flavour)
+		|| &$blosxom::template($path,'commentform','general');
+	    $commentform = &$blosxom::interpolate($commentform);
+	}
+    }
+
+    # Display information on submitting TrackPack pings (including code for
+    # TrackBack autodiscovery), if we are on an individual story page and
+    # TrackBacks are (still) allowed.
+
+    $trackbackinfo = '';
+    if ($is_story_page && $allow_trackbacks) {
+	if ($closed_trackbacks) {
+	    $trackbackinfo =
+		"<p class=\"trackbackinfo\">"
+		. "Trackbacks are closed for this story.</p>";
+	} else {
+	    # Get the trackbackinfo template and interpolate variables in it.
+	    $trackbackinfo =
+		&$blosxom::template($path,'trackbackinfo',$blosxom::flavour)
+		|| &$blosxom::template($path,'trackbackinfo','general');
+	    $trackbackinfo = &$blosxom::interpolate($trackbackinfo);
+	}
+    }
+
+    # For interpolate_fancy to work properly when deciding whether to include
+    # certain content or not, the associated variables must be undefined if
+    # there is no actual content to be displayed.
+
+    $comment_response  =~ m!^\s*$! and $comment_response = undef;
+    $comments =~ m!^\s*$! and $comments = undef;
+    $trackbacks =~ m!^\s*$! and $trackbacks = undef;
+    $preview =~ m!^\s*$! and $preview = undef;
+    $commentform =~ m!^\s*$! and $commentform = undef;
+    $trackbackinfo =~ m!^\s*$! and $trackbackinfo = undef;
+
+    return 1;
+}
+
+
+# --- Helper subroutines ---
+
+# Process a submitted HTTP request and take whatever action is appropriate.
+# Returns the type of submission: 'trackback', 'comment', 'preview',
+# 'approve', 'reject', or null for a request not related to feedback.
+# Also sets $comment_response and $trackback_response;
+
+sub process_submission {
+    my $submission_type = '';
+    my $status_msg = '';
+
+    if (request_method() eq 'POST') {
+	# We have two possible cases: a TrackBack ping (identified by
+	# the flavour extension) or a submitted comment.
+
+	if ($blosxom::flavour eq $trackback_flavour) {
+	    $status_msg = handle_feedback('trackback');
+	    $submission_type = 'trackback';
+	} else {
+	    # Comment posts may or may not use a particular flavour
+	    # extension, so we check for the value of the 'plugin'
+	    # hidden field (from the comment form).
+
+	    my $plugin_param = sanitize_param(param('plugin'));
+	    if ($plugin_param eq 'writeback') {
+		# Comment previews are distinguished from comment posts
+		# by the value of the 'submit' parameter associated with
+		# the 'Post' and 'Preview' form buttons.
+
+		my $submit_param = sanitize_param(param('submit'));
+		$status_msg = '';
+		if ($submit_param eq 'Preview') {
+		    $status_msg = handle_feedback('preview');
+		    $submission_type = 'preview';
+		} elsif ($submit_param eq 'Post') {
+		    $status_msg = handle_feedback('comment');
+		    $submission_type = 'comment';
+		} else {
+		    $status_msg = "The submit parameter must have the value "
+			. "'Preview' or 'Post'";
+		}
+	    }
+	}
+    } elsif (request_method() eq 'GET' || request_method() eq 'HEAD') {
+	my $moderate_param = sanitize_param(param('moderate'));
+	my $feedback_param = sanitize_param(param('feedback'));
+
+	if ($moderate_param) {
+	    # We have two possible cases: moderator approval or rejection,
+	    # distinguished based on the value of the 'moderate' parameter.
+
+	    if (!$feedback_param) {
+		$status_msg =
+		    "You must provide a 'feedback' parameter and item.";
+	    } elsif ($moderate_param eq 'approve') {
+		$status_msg = approve_feedback($feedback_param);
+		$submission_type = 'approve';
+	    } elsif ($moderate_param eq 'reject') {
+		$status_msg = reject_feedback($feedback_param);
+		$submission_type = 'reject';
+	    } else {
+		$status_msg =
+		    "'moderate' parameter must "
+		    . "have the value 'approve' or 'reject'.";
+	    }
+	}
+    }
+
+    return $submission_type, $status_msg;
+}
+
+
+# Retrieve comments and TrackBacks for a story and format them according
+# to the appropriate templates for the story (based on the story's path).
+# For comments we use the comment template for each individual comment,
+# along with the optional comments_head and comments_foot templates (before
+# and after the comments proper). For TrackBacks we use the corresponding
+# trackback template for each TrackBack, together with the optional
+# trackbacks_head and trackbacks_foot templates.
+
+sub get_feedback {
+    my $path = shift;
+    my ($comments, $comments_count, $trackbacks, $trackbacks_count);
+
+    $comments = $trackbacks = '';
+    $comments_count = $trackbacks_count = 0;
+
+    # Retrieve the templates for individual comments and TrackBacks.
+    my $comment_template =
+	&$blosxom::template($path, 'comment', $blosxom::flavour)
+	|| &$blosxom::template($path, 'comment', 'general');
+
+    my $trackback_template =
+	&$blosxom::template($path, 'trackback', $blosxom::flavour)
+	|| &$blosxom::template($path, 'trackback', 'general');
+
+    # Open the feedback file (if it exists) and read any comments or
+    # TrackBacks. Note that we can distinguish comments from TrackBacks
+    # because comments have a 'comment' field and TrackBacks don't.
+
+    my %param = ();
+    if ($fh->open("$fb_dir$fb_path/$fb_fn")) {
+	foreach my $line (<$fh>) {
+	    $line =~ /^(.+?): (.*)$/ and $param{$1} = $2;
+	    if ( $line =~ /^-----$/ ) {
+		if ($param{'comment'}) {
+		    $comment = format_comment($param{'comment'});
+		    $date = format_date($param{'date'});
+		    ($name, $name_link) =
+			format_name($param{'name'}, $param{'url'});
+
+		    my $cmt = $comment_template;
+                    $cmt = &$blosxom::interpolate($cmt);
+
+		    $comments .= $cmt;
+		    $comments_count++;
+		} else {
+
+		    $blog_name = format_blog_name($param{'blog_name'});
+		    $excerpt = format_excerpt($param{'excerpt'});
+		    $date = format_date($param{'date'});
+		    ($title, $title_link) =
+                        format_title($param{'title'}, $param{'url'});
+
+		    my $trackback = $trackback_template;
+                    $trackback = &$blosxom::interpolate($trackback);
+
+		    $trackbacks .= $trackback;
+		    $trackbacks_count++;
+		}
+	        %param = ();
+	    }
+	}
+    }
+
+    return ($comments, $comments_count, $trackbacks, $trackbacks_count);
+}
+
+
+# Retrieve comments and TrackBacks for a story and (just) count them.
+
+sub count_feedback {
+    my $comments_count = 0;
+    my $trackbacks_count = 0;
+
+    # Open the feedback file (if it exists) and count any comments or
+    # TrackBacks. Note that we can distinguish comments from TrackBacks
+    # because comments have a 'comment' field and TrackBacks don't.
+
+    my %param = ();
+    if ($fh->open("$fb_dir$fb_path/$fb_fn")) {
+	foreach my $line (<$fh>) {
+	    $line =~ /^(.+?): (.*)$/ and $param{$1} = $2;
+	    if ( $line =~ /^-----$/ ) {
+		if ($param{'comment'}) {
+		    $comments_count++;
+		} else {
+		    $trackbacks_count++;
+		}
+	        %param = ();
+	    }
+	}
+    }
+
+    return ($comments_count, $trackbacks_count);
+}
+
+
+# Format a previewed comment according to the appropriate preview template
+# for the story (based on the story's path).
+
+sub get_preview {
+    my $path = shift;
+    my $preview = '';
+
+    # Retrieve the comment template (also used for previewed comments).
+    my $comment_template =
+	&$blosxom::template($path, 'comment', $blosxom::flavour)
+	|| &$blosxom::template($path, 'comment', 'general');
+
+    # Format the previewed comment using the submitted values.
+    $comment = format_comment($comment_preview);
+    $date = format_date($date_preview);
+    ($name, $name_link) =
+	format_name($name_preview, $url_preview);
+
+    $preview = &$blosxom::interpolate($comment_template);
+
+    return $preview;
+}
+
+
+# Create top-level directory to hold feedback files, and make it writeable.
+sub mk_feedback_dir {
+    my $mkdir_r = mkdir("$fb_dir", 0755);
+    warn $mkdir_r
+        ? "feedback: $fb_dir created.\n"
+        : "feedback: Could not create $fb_dir.\n";
+    $mkdir_r or return 0;
+
+    my $chmod_r = chmod 0755, $fb_dir;
+    warn $chmod_r
+        ? "feedback: $fb_dir set to 0755 permissions.\n"
+        : "feedback: Could not set permissions on $fb_dir.\n";
+    $chmod_r or return 0;
+
+    warn "feedback: feedback is enabled!\n";
+    return 1;
+}
+
+
+# Create subdirectories of feedback directory as necessary.
+sub mk_feedback_subdir {
+    my $dir = shift;
+    my $p = '';
+
+    return 1 if !defined($dir) or $dir eq '';
+
+    foreach (('', split /\//, $dir)) {
+        $p .= "/$_";
+        $p =~ s!^/!!;
+        return 0
+	    unless (-d "$fb_dir/$p" or mkdir "$fb_dir/$p", 0755);
+    }
+
+    return 1;
+}
+
+
+# Process a submitted comment or TrackBack.
+sub handle_feedback {
+    my $feedback_type = shift;
+    my $status_msg = '';
+    my $is_comment;
+    my $is_preview;
+    my $fb_item;
+
+    # Set up to handle either a comment, preview, or TrackBack as requested.
+    if ($feedback_type eq 'comment') {
+	$is_comment = 1;
+	$is_preview = 0;
+    } elsif ($feedback_type eq 'preview') {
+	$is_comment = 1;
+	$is_preview = 1;
+    } else {
+	$is_comment = 0;
+	$is_preview = 0;
+    }
+
+    my $allow = $is_comment ? $allow_comments : $allow_trackbacks;
+    my $closed = $is_comment ? $closed_comments : $closed_trackbacks;
+    my $period = $is_comment ? $comment_period : $trackback_period;
+    my $akismet = $is_comment ? $akismet_comments : $akismet_trackbacks;
+    my $blacklist = $is_comment ? $blacklist_comments : $blacklist_trackbacks;
+    my $notify = $is_comment ? $notify_comments : $notify_trackbacks;
+    my $moderate = $is_comment ? $moderate_comments : $moderate_trackbacks;
+    my @fields = $is_comment ? @comment_fields : @trackback_fields;
+
+    # Reject request if feedback is not (still) allowed.
+    unless ($allow && !$closed) {
+	if ($closed) {
+	    $status_msg =
+		"This story is older than " . ($period/86400) . " days. "
+		. ($is_comment ? "Comments" : "TrackBacks")
+		. " have now been closed.";
+	} else {
+	    $status_msg =
+		($is_comment ? "Comments" : "TrackBacks")
+		. " are not enabled for this site.";
+	}
+	return $status_msg;
+    }
+
+    # Filter out the "good" fields from the CGI parameters.
+    my %params = copy_params(\@fields);
+
+    # Comments must have (at least) a comment parameter, and TrackBacks a URL.
+    if ($is_comment) {
+	unless ($params{'comment'}) {
+	    $status_msg =
+		"You didn't enter anything in the comment field.";
+	    return $status_msg;
+	}
+    } elsif (!$params{'url'}) {
+	$status_msg = "No URL specified for the TrackBack";
+	return 0;
+    }
+
+    # Check feedback to see if it's spam.
+    if (is_spam(\%params, $is_comment, $akismet, $blacklist)) {
+	# If we are previewing a comment then we allow the poster a
+	# chance to revise the comment; otherwise we just reject it.
+
+	if ($is_preview) {
+	    $status_msg =
+		"Your comment appears to be spam and will be rejected "
+		. "unless it is revised. ";
+	} else {
+	    $status_msg =
+		"Your feedback was rejected because it appears to be spam; "
+		. "please contact the site administrator if you believe that "
+		. "your feedback was rejected in error.";
+	    return $status_msg;
+	}
+    }
+
+    # If we are previewing a comment then just save the fields for later
+    # use in the previewed comment and (as prefilled values) in the comment
+    # form. Otherwise attempt to save the new feedback information, either
+    # into the permanent feedback file for this story (if no moderation) or
+    # into a temporary file (for later moderation).
+
+    if ($is_preview) {
+        $status_msg .= save_preview(\%params);
+    } else {
+	($fb_item, $status_msg) = save_feedback(\%params, $moderate);
+	return $status_msg unless $fb_item;
+
+	# Send a moderation message or notify blog owner of the new feedback.
+	if ($moderate || $notify) {
+	    send_notification(\%params, $moderate, $fb_item);
+	}
+    }
+
+    return $status_msg;
+}
+
+
+# Make a "safe" copy of the CGI parameters based on the expected
+# field names associated with either a comment or TrackBack.
+sub copy_params {
+    my $fields_ref = shift;
+    my %params;
+
+    foreach my $key (@$fields_ref) {
+        my $value = substr(param($key), 0, $max_param_length) || "";
+
+	# Eliminate leading and trailing whitespace, use carriage returns
+	# as line delimiters, and collapse multiple blank lines into one.
+
+	$value =~ s/^\s+//;
+	$value =~ s/\s+$//;
+	$value =~ s/\r?\n\r?/\r/mg;
+	$value =~ s/\r\r\r*/\r\r/mg;
+
+        $params{$key} = $value;
+    }
+
+    return %params;
+}
+
+
+# Send notification or moderation email to blog owner.
+sub send_notification {
+    my ($params_ref, $moderate, $fb_item) = @_;
+
+    unless ($address && $smtp_server) {
+	warn "feedback: No address or SMTP server for notifications\n";
+	return 0;
+    }
+
+    my $message = "New feedback for your post \"$blosxom::title\" ("
+	. $blosxom::path_info . "):\n\n";
+
+    if ($$params_ref{'comment'}) {
+	$message .= "Name     : " . $$params_ref{'name'} . "\n";
+	$message .= "Email/URL: " . $$params_ref{'url'} . "\n";
+	$message .= "Comment  :\n";
+	my $comment = $$params_ref{'comment'};
+	$comment =~ s!\r!\n!g;
+	$message .= $comment . "\n";
+    } else {
+	$message .= "Blog name: " . $$params_ref{'blog_name'} . "\n";
+	$message .= "Article  : " . $$params_ref{'title'} . "\n";
+	$message .= "URL      : " . $$params_ref{'url'} . "\n";
+	$message .= "Excerpt  :\n";
+	my $excerpt = $$params_ref{'excerpt'};
+	$excerpt =~ s!\r!\n!g;
+	$message .= $excerpt . "\n";
+    }
+
+    if ($moderate) {
+	# For TrackBacks use the default flavour for the approve/reject URI.
+	my $moderate_flavour = $blosxom::flavour;
+	$moderate_flavour eq $trackback_flavour
+	    and $moderate_flavour = $blosxom::default_flavour;
+
+	$message .= "\n\nTo approve this feedback, please click on the URL\n"
+	    . "$blosxom::url$blosxom::path/$blosxom::fn.$moderate_flavour"
+	    . "?moderate=approve;feedback=" . uri_escape($fb_item) . "\n";
+
+	$message .= "\nTo reject this feedback, please click on the URL\n"
+	    . "$blosxom::url$blosxom::path/$blosxom::fn.$moderate_flavour"
+	    . "?moderate=reject;feedback=" . uri_escape($fb_item) . "\n";
+    }
+
+    # Load Net::SMTP module only now that it's needed.
+    require Net::SMTP; Net::SMTP->import;
+
+    my $smtp = Net::SMTP->new($smtp_server);
+    $smtp->mail($address);
+    $smtp->to($address);
+    $smtp->data();
+    $smtp->datasend("To: $address\n");
+    $smtp->datasend("From: $address\n");
+    $smtp->datasend("Subject: [$blosxom::blog_title] Feedback: "
+		    . "\"$blosxom::title\"\n");
+    $smtp->datasend("\n\n");
+    $smtp->datasend($message);
+    $smtp->dataend();
+    $smtp->quit;
+
+    return 1;
+}
+
+
+# Format the date used in comments and TrackBacks. If the argument is a
+# number then it is considered to be a date/time in seconds since the
+# (Perl) epoch; otherwise we assume that the date is already formatted.
+# (This may allow the feedback plug-in to use legacy writeback files.)
+
+sub format_date {
+    my $date_value = shift;
+
+    if ($date_value =~ m!^\d+$!) {
+	my ($sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst) =
+	    localtime($date_value);
+	$year += 1900;
+
+	# Modify the following to match your preference.
+	return sprintf("%4d-%02d-%02d %02d:%02d",
+		       $year, $mon+1, $mday, $hour, $min);
+    } else {
+	return $date_value;
+    }
+}
+
+
+# Format the name used in comments.
+sub format_name {
+    my ($name, $url) = @_;
+
+    # If the user didn't supply a name, try to use something sensible.
+    unless ($name) {
+	if ($url =~ m/^mailto:/) {
+	    $name = substr($url, 7);
+	} else {
+	    $name = $default_name;
+	}
+    }
+
+    # Link to a URL if one was provided.
+    my $name_link =
+	$url ? "<a href=\"$url\" rel=\"nofollow\">$name</a>" : $name ;
+
+    return $name, $name_link;
+}
+
+
+# Format the comment response message.
+sub format_cmt_response {
+    my $response = shift;
+
+    # Clean up the response.
+    $response =~ s/^\s+//;
+    $response =~ s/\s+$//;
+
+    # Convert the response into a special type of paragraph.
+    # NOTE: A value 'OK' for $response indicates a successful comment.
+    if ($response eq 'OK') {
+	$response = '<p class="comment-response">Thanks for the comment!</p>';
+    } else {
+	$response = '<p class="comment-response">' . $response . '</p>';
+    }
+
+    return $response;
+}
+
+
+# Format the TrackBack response message.
+sub format_tb_response {
+    my $response = shift;
+
+    # Clean up the response.
+    $response =~ s/^\s+//;
+    $response =~ s/\s+$//;
+
+    # Convert the response into an XML message per the TrackBack Technical
+    # Specification <http://www.sixapart.com/pronet/docs/trackback_spec>.
+    # NOTE: A value 'OK' for $response indicates a successful TrackBack;
+    # note that this value is *not* used as part of the TrackBack response.
+
+    if ($response eq 'OK') {
+	$response = "<?xml version=\"1.0\" encoding=\"iso-8859-1\"?>"
+	    . "<response><error>0</error></response>";
+    } else {
+	$response = "<?xml version=\"1.0\" encoding=\"iso-8859-1\"?>"
+	    . "<response><error>1</error>"
+	    . "<message>$response</message></response>";
+    }
+
+    return $response;
+}
+
+
+# Format the comment itself.
+sub format_comment {
+    my $comment = shift;
+
+    # TODO: Support other comment formats such as Textile.
+
+    if ($comment_format eq 'none') {
+	# A no-op, assumes formatting will be added in the template.
+    } elsif ($comment_format eq 'plaintext') {
+	# Simply convert the comment into a series of paragraphs.
+	$comment = '<p>' . $comment . '</p>';
+	$comment =~ s!\r\r!</p><p>!mg;
+    } elsif ($comment_format eq 'markdown'
+	     && $blosxom::plugins{'Markdown'} > 0) {
+	$comment = &Markdown::Markdown($comment);
+    }
+
+    return $comment;
+}
+
+
+# Format the blog name used in TrackBacks.
+sub format_blog_name {
+    my $blog_name = shift;
+
+    $blog_name or $blog_name = $default_blog_name;
+
+    return $blog_name;
+}
+
+
+# Format the title used in TrackBacks.
+sub format_title {
+    my ($title, $url) = @_;
+    my $title_link;
+
+    # Link to article, quoting the title if one was supplied.
+    if ($title) {
+	$title_link = "\"<a href=\"$url\" rel=\"nofollow\">$title</a>\"";
+    } else {
+	$title = $default_title;
+	$title_link = "<a href=\"$url\" rel=\"nofollow\">$title</a>";
+    }
+
+    return $title, $title_link;
+}
+
+
+# Format the TrackBack excerpt.
+sub format_excerpt {
+    my $excerpt = shift;
+
+    # TODO: Truncate excerpts at some reasonable length.
+
+    # Simply convert the excerpt into a series of paragraphs.
+    if ($excerpt) {
+	$excerpt = '<p>' . $excerpt . '</p>';
+	$excerpt =~ s!\r\r!</p><p>!mg;
+    }
+
+    return $excerpt;
+}
+
+
+# Read in the MT-Blacklist file.
+sub read_blacklist {
+
+    # No need to do anything if we've already read in the blacklist file.
+    return 1 if @blacklist_entries;
+
+    # Try to find the blacklist file and open it.
+    open BLACKLIST, "$blacklist_file"
+	or die "Can't read '$blacklist_file', $!\n";
+
+    my @lines = grep {! /^\s*\#/ } <BLACKLIST>;
+    close BLACKLIST;
+    die "No blacklists?\n" unless @lines;
+
+    foreach my $line (@lines) {
+	$line =~ s/^\s*//;
+	$line =~ s/\s*[^\\]\#.*//;
+	next unless $line;
+	push @blacklist_entries, $line;
+    }
+    die "No entries in blacklist file?\n" unless @blacklist_entries;
+
+    return 1;
+}
+
+
+# Do spam tests on comment or TrackBack; returns 1 if spam, 0 if OK.
+sub is_spam {
+    my ($params_ref, $is_comment, $akismet, $blacklist) = @_;
+
+    # Perform a series of spam tests. If any show positive then reject.
+
+    # Does the host part of the URL reference an IP address?
+    return 1 if uses_ipaddr($$params_ref{'url'});
+
+    # Does the comment or TrackBack match against the Akismet service?
+    return 1 if $akismet && matches_akismet($params_ref, $is_comment);
+
+    # Does the comment or TrackBack match against the MT-Blacklist file
+    # (deprecated)?
+    return 1
+	if $blacklist && matches_blacklist((join "\n", values %$params_ref));
+
+    # TODO: Add other useful spam checks.
+
+    # Got by all the tests, so assume it's not spam.
+    return 0;
+}
+
+
+# Check host part of URL to see if it is an IP address.
+sub uses_ipaddr {
+    my $uri = shift;
+
+    return 0 unless $uri;
+
+    # Construct URI object.
+    my $u = URI->new($uri);
+
+    # Return if this not actually a URI (i.e., it's an email address).
+    return 0 unless defined($u->scheme);
+
+    # Check for an IPv4 or IPv6 address on http/https URLs.
+    if ($u->scheme eq 'http' || $u->scheme eq 'https') {
+        if ($u->authority =~ m!^\[?\d!) {
+	    return 1;
+	}
+    }
+
+    return 0;
+}
+
+
+# Check comment or TrackBack against the Akismet online service.
+sub matches_akismet {
+    my ($params_ref, $is_comment) = @_;
+
+    # Load Net:Akismet module only now that it's needed.
+    require Net::Akismet; Net::Akismet->import;
+
+    # Attempt to connect to the Askimet service.
+    my $akismet = Net::Akismet->new(KEY => $wordpress_api_key,
+				    URL => $blosxom::url);
+    unless ($akismet) {
+	warn "feedback: Akismet key verification failed\n";
+	return 0;
+    }
+
+    # Set up fields to be verified. Note that we do not use the REFERRER,
+    # PERMALINK, or COMMENT_AUTHOR_EMAIL fields supported by Akismet.
+
+    my %fields = (USER_IP => $ENV{'REMOTE_ADDR'});
+    if ($is_comment) {
+	$fields{COMMENT_TYPE} = 'comment';
+	$fields{COMMENT_CONTENT} = $$params_ref{'comment'};
+	$fields{COMMENT_AUTHOR} = $$params_ref{'name'};
+	$fields{COMMENT_AUTHOR_URL} = $$params_ref{'url'};
+    } else {
+	$fields{COMMENT_TYPE} = 'trackback';
+	$fields{COMMENT_CONTENT} =
+	    $$params_ref{'title'} . "\n" . $$params_ref{'excerpt'};
+	$fields{COMMENT_AUTHOR} = $$params_ref{'blog_name'};
+	$fields{COMMENT_AUTHOR_URL} = $$params_ref{'url'};
+    }
+
+    # Is it spam?
+    return 1 if $akismet->check(%fields) eq 'true';
+
+    # Apparently not.
+    return 0;
+}
+
+
+# Check comment or TrackBack against the MT-Blacklist file (deprecated).
+sub matches_blacklist {
+    my $params_string = shift;
+
+    # Read in the blacklist file.
+    read_blacklist();
+
+    # Check each blacklist entry against the comment or TrackBack.
+    foreach my $spam (@blacklist_entries) {
+	chomp($spam);
+	return 1 if $params_string =~ /$spam/;
+    }
+
+    return 0;
+}
+
+
+# Save comment or TrackBack to disk. If moderating, returns the (randomly-
+# generated) id of the item saved for later approval or rejection (plus
+# a status message). If not moderating returns the name of the feedback
+# file in which the item was saved instead of the id. Returns null on errors.
+
+sub save_feedback {
+    my ($params_ref, $moderate) = @_;
+    my $fb_item = '';
+    my $feedback_fn = '';
+    my $status_msg = '';
+
+    # Clear values used to prefill commentform.
+    $name_preview = $url_preview = $comment_preview = '';
+
+    # Create a new directory if needed to contain the feedback file.
+    unless (mk_feedback_subdir($fb_path)) {
+	$status_msg = 'Could not save comment or TrackBack.';
+	return '', $status_msg;
+    }
+
+    # Save into the main feedback file or a temporary file, depending on
+    # whether feedback is being moderated or not.
+    if ($moderate) {
+	$fb_item = rand_alphanum(8);
+	$feedback_fn = $fb_item . '-' . $fb_fn;
+    } else {
+	$feedback_fn = $fb_fn;
+    }
+
+    # Attempt to open the file and append to it.
+    unless ($fh->open(">> $fb_dir$fb_path/$feedback_fn")) {
+        warn "couldn't >> $fb_dir$fb_path/$feedback_fn\n";
+	$status_msg = 'Could not save comment or TrackBack.';
+	return '', $status_msg;
+    }
+
+    # Write each parameter out as a line in the file.
+    foreach my $key (sort keys %$params_ref) {
+	my $value = $$params_ref{$key};
+
+	# Eliminate leading and trailing whitespace, use carriage returns
+	# as line delimiters, and collapse multiple blank lines into one.
+
+	$value =~ s/^\s+//;
+	$value =~ s/\s+$//;
+	$value =~ s/\r?\n\r?/\r/mg;
+	$value =~ s/\r\r\r*/\r\r/mg;
+
+	# Ensure URL and other fields are sanitized.
+	if ($key eq 'url') {
+	    $value = sanitize_uri($value);
+	} else {
+	    $value = escapeHTML($value);
+	}
+
+	print $fh "$key: $value\n";
+    }
+
+    # Save the date/time (in seconds) and IP address as well.
+    print $fh "date: " . time() ."\n";
+    print $fh "ip: " . $ENV{'REMOTE_ADDR'} . "\n";
+
+    # End the entry and close the file.
+    print $fh "-----\n";
+    $fh->close();
+
+    # Set responses to indicate success.
+    if ($moderate) {
+	$status_msg =
+	    "Your feedback has been submitted for a moderator's approval; "
+	    . "it may take 24 hours or more to appear on the site.";
+	return $fb_item, $status_msg;
+    } else {
+	$status_msg = 'OK';
+	return $feedback_fn, $status_msg;
+    }
+}
+
+
+# Generate random alphanumeric string of the specified length.
+sub rand_alphanum {
+    my $size = shift;
+    return '' if $size <= 0;
+
+    my @alphanumeric = ('a'..'z', 'A'..'Z', 0..9);
+    return join '', map $alphanumeric[rand @alphanumeric], 0..$size;
+}
+
+
+# Save previewed comment for later viewing (on the same page).
+# Sets $status_msg with an appropriate message.
+sub save_preview {
+    my $params_ref = shift;
+    my $status_msg;
+
+    # Save each parameter for later use in the preview template.
+    foreach my $key (sort keys %$params_ref) {
+	my $value = $$params_ref{$key};
+
+	# Eliminate leading and trailing whitespace, use carriage returns
+	# as line delimiters, and collapse multiple blank lines into one.
+
+	$value =~ s/^\s+//;
+	$value =~ s/\s+$//;
+	$value =~ s/\r?\n\r?/\r/mg;
+	$value =~ s/\r\r\r*/\r\r/mg;
+
+	# Ensure URL and other fields are sanitized.
+	if ($key eq 'url') {
+	    $value = sanitize_uri($value);
+	} else {
+	    $value = escapeHTML($value);
+	}
+
+	if ($key eq 'name') {
+	    $name_preview = $value;
+	} elsif ($key eq 'url') {
+	    $url_preview = $value;
+	} elsif ($key eq 'comment') {
+	    $comment_preview = $value;
+	}
+    }
+
+    # Save the date/time (in seconds) as well.
+    $date_preview = time();
+
+    # Set response to indicate success.
+    $status_msg .=
+	"Please review your previewed comment below and submit it when "
+	. "you are ready.";
+
+    return $status_msg;
+}
+
+
+# Approve a moderated comment or TrackBack (add it to feedback file).
+sub approve_feedback {
+    my $item = shift;
+    my $item_fn;
+    my $status_msg = '';
+
+    # Construct filename containing item to be approved, checking the
+    # item name against the proper format from save_feedback().
+    if ($item =~ m!^[a-zA-Z0-9]{8}!) {
+	$item_fn = $item . "-" . $fb_fn;
+    } else {
+	$status_msg =
+	    "The item name to be approved was not in the proper format.";
+	return $status_msg;
+    }
+
+    # Read lines from file containing the approved comment or TrackBack.
+    unless ($fh->open("$fb_dir$fb_path/$item_fn")) {
+        warn "feedback: couldn't < $fb_dir$fb_path/$item_fn\n";
+        $status_msg =
+	    "There was a problem approving the comment or TrackBack.";
+	return $status_msg;
+    }
+
+    my @new_feedback = ();
+    while (<$fh>) {
+	push @new_feedback, $_;
+    }
+    $fh->close();
+
+    # Attempt to open the story's feedback file and append to it.
+    # TODO: Try to make this more resistant to race conditions.
+
+    unless ($fh->open(">> $fb_dir$fb_path/$fb_fn")) {
+        warn "couldn't >> $fb_dir$fb_path/$fb_fn\n";
+        $status_msg =
+	    "There was a problem approving the comment or TrackBack.";
+	return $status_msg;
+    }
+
+    foreach my $line (@new_feedback) {
+	print $fh $line;
+    }
+
+    # Close the feedback file, delete the file with the approved item.
+    $fh->close();
+    chdir("$fb_dir$fb_path")
+	or warn "feedback: Couldn't cd to $fb_dir$fb_path\n";
+    unlink($item_fn)
+	or warn "feedback: Couldn't delete $item_fn\n";
+
+    # Set response to indicate successful approval.
+    $status_msg = "Feedback '$item' approved by moderator. ";
+
+    return $status_msg;
+}
+
+
+# Reject a moderated comment or TrackBack (delete the temporary file).
+sub reject_feedback {
+    my $item = shift;
+    my $item_fn;
+    my $status_msg;
+
+    # Construct filename containing item to be rejected, checking the
+    # item name against the proper format from save_feedback().
+    if ($item =~ m!^[a-zA-Z0-9]{8}!) {
+	$item_fn = $item . "-" . $fb_fn;
+    } else {
+	$status_msg =
+	    "The item name to be rejected was not in the proper format.";
+	return $status_msg;
+    }
+
+    # TODO: Optionally report comment or TrackBack to Akismet as spam.
+
+    # Delete the file with the rejected item.
+    chdir("$fb_dir$fb_path")
+	or warn "feedback: Couldn't cd to '$fb_dir$fb_path'\n";
+    unlink($item_fn)
+	or warn "feedback: Couldn't delete '$item_fn'\n";
+
+    # Set response to indicate successful rejection.
+    $status_msg = "Feedback '$item' rejected by moderator.";
+
+    return $status_msg;
+}
+
+
+# Sanitize a query parameter to remove unexpected characters.
+sub sanitize_param
+{
+    my $param = shift || '';
+
+    # Allow only alphanumeric, underscore, dash, and period.
+    $param and $param =~ s/[^-.\w]/_/go;
+
+    return $param;
+}
+
+
+# Sanitize a URI.
+sub sanitize_uri {
+    my $uri = shift;
+
+    # Construct URI object.
+    my $u = URI->new($uri);
+
+    # If it's not a URI then assume it's an email address.
+    $u->scheme('mailto') unless defined($u->scheme);
+
+    # We check email addresses (if allowed) separately from web addresses.
+    if ($allow_mailto && $u->scheme eq 'mailto') {
+	# Make sure this is a valid RFC 822 address.
+	if (valid($u->opaque)) {
+	    $uri = $u->canonical;
+	} else {
+	    $status_msg = "You submitted an invalid email address. ";
+	    $uri = '';
+	}
+    } elsif ($u->scheme eq 'http' || $u->scheme eq 'https') {
+	if ($u->authority =~ m!^.*@!) {
+	    $status_msg =
+		"Userids and passwords are not permitted in the URL field. ";
+	    $uri = '';
+	} elsif ($u->authority =~ m!^\d! || $u->authority =~ m!^\[\d!) {
+	    $status_msg =
+		"IP addresses are not permitted in the URL field. ";
+	    $uri = '';
+	} else {
+	    $uri = $u->canonical;
+	}
+    } else {
+	$status_msg =
+	    "You specified an invalid scheme in the URL field; ";
+	if ($allow_mailto) {
+	    $status_msg .=
+		"the only allowed schemes are 'http', 'https', and 'mailto'. ";
+	} else {
+	    $status_msg .=
+		"the only allowed schemes are 'http' and 'https'. ";
+	}
+	$uri = '';
+    }
+
+    return $uri;
+}
+
+# The following is taken from the Mail::RFC822::Address module, for
+# sites that don't have that module loaded.
+my $rfc822re;
+
+# Preloaded methods go here.
+my $lwsp = "(?:(?:\\r\\n)?[ \\t])";
+
+sub make_rfc822re {
+#   Basic lexical tokens are specials, domain_literal, quoted_string, atom, and
+#   comment.  We must allow for lwsp (or comments) after each of these.
+#   This regexp will only work on addresses which have had comments stripped
+#   and replaced with lwsp.
+
+    my $specials = '()<>@,;:\\\\".\\[\\]';
+    my $controls = '\\000-\\031';
+
+    my $dtext = "[^\\[\\]\\r\\\\]";
+    my $domain_literal = "\\[(?:$dtext|\\\\.)*\\]$lwsp*";
+
+    my $quoted_string = "\"(?:[^\\\"\\r\\\\]|\\\\.|$lwsp)*\"$lwsp*";
+
+#   Use zero-width assertion to spot the limit of an atom.  A simple
+#   $lwsp* causes the regexp engine to hang occasionally.
+    my $atom = "[^$specials $controls]+(?:$lwsp+|\\Z|(?=[\\[\"$specials]))";
+    my $word = "(?:$atom|$quoted_string)";
+    my $localpart = "$word(?:\\.$lwsp*$word)*";
+
+    my $sub_domain = "(?:$atom|$domain_literal)";
+    my $domain = "$sub_domain(?:\\.$lwsp*$sub_domain)*";
+
+    my $addr_spec = "$localpart\@$lwsp*$domain";
+
+    my $phrase = "$word*";
+    my $route = "(?:\@$domain(?:,\@$lwsp*$domain)*:$lwsp*)";
+    my $route_addr = "\\<$lwsp*$route?$addr_spec\\>$lwsp*";
+    my $mailbox = "(?:$addr_spec|$phrase$route_addr)";
+
+    my $group = "$phrase:$lwsp*(?:$mailbox(?:,\\s*$mailbox)*)?;\\s*";
+    my $address = "(?:$mailbox|$group)";
+
+    return "$lwsp*$address";
+}
+
+sub strip_comments {
+    my $s = shift;
+#   Recursively remove comments, and replace with a single space.  The simpler
+#   regexps in the Email Addressing FAQ are imperfect - they will miss escaped
+#   chars in atoms, for example.
+
+    while ($s =~ s/^((?:[^"\\]|\\.)*
+                    (?:"(?:[^"\\]|\\.)*"(?:[^"\\]|\\.)*)*)
+                    \((?:[^()\\]|\\.)*\)/$1 /osx) {}
+    return $s;
+}
+
+#   valid: returns true if the parameter is an RFC822 valid address
+#
+sub valid ($) {
+    my $s = strip_comments(shift);
+
+    if (!$rfc822re) {
+        $rfc822re = make_rfc822re();
+    }
+
+    return $s =~ m/^$rfc822re$/so;
+}
+
+
+1;
+
+
+# Default feedback templates.
+__DATA__
+html comment \n<div class="comment"><p>$feedback::name_link wrote at $feedback::date:</p>\n<blockquote>$feedback::comment</blockquote></div>
+html trackback \n<div class="trackback"><p>$feedback::blog_name mentioned this post in $feedback::title_link<?$feedback::excerpt eq="">.</p></?><?$feedback::excerpt ne="">:</p>\n<blockquote>$feedback::excerpt</blockquote></?></div>
+html commentform \n<form method="POST" action="$blosxom::url$blosxom::path/$blosxom::fn.$blosxom::flavour">\n<table><tr><td>Name:</td><td><input name="name" size="35" value="$feedback::name_preview"></td></tr>\n<tr><td>URL (optional):</td><td><input name="url" size="35" value="$feedback::url_preview"></td></tr>\n<tr><td>Comments:</td><td><textarea name="comment" rows="5" cols="60">$feedback::comment_preview</textarea></td></tr>\n<tr><td><input type="hidden" name="plugin" value="writeback"><input type="submit" name="submit" value="Preview"></td><td><input type="submit" name="submit" value="Post"></td></tr>\n</table></form>
+html trackbackinfo <p>URL for TrackBack pings: <code>$blosxom::url$blosxom::path/$blosxom::fn.$feedback::trackback_flavour</code></p>\n<!--\n<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:trackback="http://madskills.com/public/xml/rss/module/trackback/">\n<rdf:Description rdf:about="$blosxom::url$blosxom::path/$blosxom::fn.$blosxom::flavour" dc:identifier="$blosxom::url$blosxom::path/$blosxom::fn.$blosxom::flavour" dc:title="$blosxom::title" trackback:ping="$blosxom::url$blosxom::path/$blosxom::fn.$feedback::trackback_flavour" />\n</rdf:RDF>\n-->
+general comment \n<div class="comment"><p>$feedback::name_link wrote at $feedback::date:</p>\n<blockquote>$feedback::comment</blockquote></div>
+general trackback \n<div class="trackback"><p>$feedback::blog_name mentioned this post in $feedback::title_link<?$feedback::excerpt eq="">.</p></?><?$feedback::excerpt ne="">:</p>\n<blockquote>$feedback::excerpt</blockquote></?></div>
+general commentform \n<form method="POST" action="$blosxom::url$blosxom::path/$blosxom::fn.$blosxom::flavour">\n<table><tr><td>Name:</td><td><input name="name" size="35" value="$feedback::name_preview"></td></tr>\n<tr><td>URL (optional):</td><td><input name="url" size="35" value="$feedback::url_preview"></td></tr>\n<tr><td>Comments:</td><td><textarea name="comment" rows="5" cols="60">$feedback::comment_preview</textarea></td></tr>\n<tr><td><input type="hidden" name="plugin" value="writeback"><input type="submit" name="submit" value="Preview"></td><td><input type="submit" name="submit" value="Post"></td></tr>\n</table></form>
+general trackbackinfo <p>URL for TrackBack pings: <code>$blosxom::url$blosxom::path/$blosxom::fn.$feedback::trackback_flavour</code></p>\n<!--\n<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:trackback="http://madskills.com/public/xml/rss/module/trackback/">\n<rdf:Description rdf:about="$blosxom::url$blosxom::path/$blosxom::fn.$blosxom::flavour" dc:identifier="$blosxom::url$blosxom::path/$blosxom::fn.$blosxom::flavour" dc:title="$blosxom::title" trackback:ping="$blosxom::url$blosxom::path/$blosxom::fn.$feedback::trackback_flavour" />\n</rdf:RDF>\n-->
+trackback content_type application/xml
+trackback head
+trackback story $feedback::trackback_response
+trackback date
+trackback foot
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: feedback
+
+=head1 SYNOPSIS
+
+Provides comments and TrackBacks
+(C<http://www.movabletype.org/trackback/>); also supports comment and
+TrackBack moderation and spam filtering using Akismet and/or
+MT-Blacklist (deprecated). Inspired by the original writeback plug-in
+and the various enhanced versions of it.
+
+Comments and TrackBack pings for a particular story are kept in
+C<$fb_dir/$path/$filename.wb>.
+
+=head1 QUICK START
+
+Drop this feedback plug-in file into your plug-ins directory (whatever
+you set as C<$plugin_dir> in C<blosxom.cgi>), and modify the file to
+set the configurable variable C<$fb_dir>. You must also modify the
+variable C<$wordpress_api_key> if you are using the Akismet spam
+blacklist service, the variable C<$blacklist_file> if you are using
+the MT-Blacklist file (deprecated), and the variables C<$address> and
+C<$smtp_server> if you want feedback notification or moderation. (See
+below for more information on these optional features.)
+
+Note that by default all comments and TrackBacks are allowed, with no
+spam checking, moderation, or notification.
+
+Modify your story template (e.g., C<story.html> in your Blosxom data
+directory) to include the variables C<$feedback::comments> and
+C<$feedback::trackbacks> at the points where you'd like comments and
+trackbacks to be inserted.
+
+Modify your story template or foot template (e.g., C<foot.html> in
+your Blosxom data directory) to include the variables
+C<$feedback::comment_response>, C<$feedback::preview>,
+C<$feedback::commentform> and C<$feedback::trackbackinfo> at the
+points where you'd like to insert the response to a submitted comment,
+the previewed comment (if any), the comment submission form and the
+TrackBack information (including TrackBack auto-discovery code).
+
+=head1 CONFIGURATION
+
+By default C<$fb_dir> is set to put the feedback directory and its
+contents in the plug-in state directory. (For example, if
+C<$plugin_state_dir> is C</foo/blosxom/state> then the feedback
+directory C<$fb_dir> is set to C</foo/blosxom/state/feedback>.)
+However a better approach may be to keep the feedback directory at the
+same level as C<$datadir>. (For example, if C<$datadir> is
+C</foo/blosxom/data> then use C</foo/blosxom/feedback> for the
+feedback directory.)  This helps ensure that you don't accidentally
+delete previously-submitted comments and TrackBacks (e.g., if you
+clean out the plug-in state directory).
+
+Once C<$fb_dir> is set, the next time you visit your site the feedback
+plug-in will perform some checks, creating the directory C<$fb_dir>
+and setting appropriate permissions on the directory if it doesn't
+already exist.  (Check your web server error log for details of what's
+happening behind the scenes.)
+
+Set the variables C<$allow_comments> and C<$allow_trackbacks> to
+enable or disable comments and/or TrackBacks; by default the plug-in
+allows both comments and TrackBacks to be submitted. The variables
+C<$comment_period> and C<$trackback_period> specify the amount of time
+after a story is published (or updated) during which comments or
+TrackBacks may be submitted (90 days by default); set these variables
+to zero to allow submission of feedback at any time after publication.
+
+Set the variables C<$akismet_comments> and C<$akismet_trackbacks> to
+enable or disable checking of comments and/or TrackBacks against the
+Akismet spam blacklist service (C<http://www.akismet.com>). If Akismet
+checking is enabled then you must also set C<$wordpress_api_key> to
+your personal WordPress API key, which is required to connect to the
+Akismet service. (You can obtain a WordPress API key by registering
+for a free blog at C<http://www.wordpress.com>; as a side effect of
+registering you will get an API key that you can then use on any of
+your blogs, whether they're hosted at wordpress.com or not.)
+
+Set the variables C<$blacklist_comments> and C<$blacklist_trackbacks>
+to enable or disable checking of comments and/or TrackBacks against
+the MT-Blacklist file. If blacklist checking is enabled then you must
+also set C<$blacklist_file> to a valid value. (Note that in the past
+you could get a copy of the MT-Blacklist file from
+C<http://www.jayallen.org/comment_spam/blacklist.txt>; however that
+URL is no longer active and no one is currently maintaining the
+MT-Blacklist file. We are therefore deprecating use of the
+MT-Blacklist file, except for people who already have a copy of the
+file and are currently using it; we suggest using Akismet instead.)
+
+Set the variables C<$notify_comments> and C<$notify_trackbacks> to
+enable or disable sending an email message to you each time a new
+comment and/or TrackBack is submitted. If notification is enabled then
+you must set C<$address> and C<$smtp_server> to valid values.
+Typically you would set C<$address> to your own email address (e.g.,
+'jdoe@example.com') and C<$smtp_server> to the fully-qualified domain
+name of the SMTP server you normally use to send outbound mail from
+your email account (e.g., 'smtp.example.com').
+
+Set the variables C<$moderate_comments> and C<$moderate_trackbacks> to
+enable or disable moderation of comments and/or TrackBacks; moderation
+is done by sending you an email message with the submitted comment or
+TrackBack and links on which you can click to approve or reject the
+comment or TrackBack. If moderation is enabled then you must set
+C<$address> and C<$smtp_server> to valid values; see the discussion of
+notification above for more information.
+
+=head1 FLAVOUR TEMPLATE VARIABLES
+
+Unlike Rael Dornfest's original writeback plug-in, this plug-in does
+not require or assume that you will be using a special Blosxom flavour
+(e.g., the 'writeback' flavour) in order to display comments with
+stories. Instead you can display comments and/or TrackBacks with any
+flavour whatsoever (except the 'trackback' flavour, which is reserved
+for use with TrackBack pings). Also unlike the original writeback
+plug-in, this plug-in separates display of comments from display of
+TrackBacks and allows them to be formatted in different ways.
+
+Insert the variables C<$feedback::comments> and/or
+C<$feedback::trackbacks> into the story template for the flavour or
+flavours for which you wish comments and/or TrackBacks to be displayed
+(e.g., C<story.html>). Note that the plug-in will automatically set
+these variables to undefined values unless the page being displayed is
+for an individual story.
+
+Insert the variables C<$feedback::comments_count> and/or
+C<$feedback::trackbacks_count> into the story templates where you wish
+to display a count of the comments and/or TrackBacks for a particular
+story. Note that these variables are available on all pages, including
+index and archive pages. As an alternative you can use the variable
+C<$feedback::count> to display the combined total number of comments
+and TrackBacks (analogous to the variable C<$writeback::count> in the
+original writeback plug-in).
+
+Insert the variables C<$feedback::commentform> and
+C<$feedback::trackbackinfo> into your story or foot template for the
+flavour or flavours for which you want to enable submission of
+comments and/or TrackBacks (e.g., C<foot.html>);
+C<$feedback::commentform> is an HTML form for comment submission,
+while C<$feedback::trackbackinfo> displays the URL for TrackBack pings
+and also includes RDF code to support auto-discovery of the TrackBack
+ping URL. Note that the plug-in sets C<$feedback::commentform> and
+C<$feedback::trackbackinfo> to be undefined unless the page being
+displayed is for an individual story.
+
+The plug-in also sets C<$feedback::commentform> and/or
+C<$feedback::trackbackinfo> to be undefined if comments and/or
+TrackBacks have been disabled globally (i.e., using C<$allow_comments>
+or C<$allow_trackbacks>). However if comments or TrackBacks are closed
+because the story is older than the time set using C<$comment_period>
+or C<$trackback_period> then the plug-in sets C<$feedback::commentform>
+or C<$feedback::trackbackinfo> to display an appropriate message.
+
+Insert the variable C<$feedback::comment_response> into your story or
+foot template to display a message indicating the results of
+submitting or moderating a comment. Note that
+C<$feedback::comment_response> has an undefined value unless the
+displayed page is in response to a POST request containing a comment
+submission (i.e., using the 'Post' or 'Preview' buttons) or a GET
+request containing a moderator approval or rejection.
+
+Insert the variable C<$feedback::preview> into your story or foot
+template at the point at which you'd like a previewed comment to be
+displayed. Note that C<$feedback::preview> will be undefined except on
+an individual story page displayed in response to a comment submission
+using the 'Preview' button.
+
+=head1 COMMENT AND TRACKBACK TEMPLATES
+
+This plug-in uses a number of flavour templates to format comments and
+TrackBacks; the plug-in contains a full set of default templates for
+use with the 'html' flavour, as well as a full set of 'general'
+templates used as a default for other flavours. You can also supply
+your own comment and TrackBack templates in the same way that you can
+define other Blosxom templates, by putting appropriately-named
+template files into the Blosxom data directory (or one or more of its
+subdirectories, if you want different templates for different
+categories).
+
+The templates used for displaying comments and TrackBacks are
+analogous to the story template used for displaying stories; the
+templates are used for each and every comment or TrackBack displayed
+on a page:
+
+=over
+
+=item
+
+comment template (e.g., C<comment.html>). This template contains the
+content to be displayed for each comment (analogous to the writeback
+template used in the original writeback plug-in). Within this template
+you can use the variables C<$feedback::name> (name of the comment
+submitter), C<$feedback::url> (URL containing the comment submitter's
+email address or web site), C<$feedback::date> (date/time the comment
+was submitted), and C<$feedback::comment> (the comment itself). You
+can also use the variable C<$feedback::name_link>, which combines
+C<feedback::name> and C<$feedback::url> to create an (X)HTML link if
+the commenter supplied a URL, and otherwise is the same as
+C<$feedback::name>. Note that this template is also used for previewed
+comments.
+
+=item
+
+trackback template (e.g., C<trackback.html>). This template contains
+the content to be displayed for each TrackBack (analogous to the
+writeback template used in the original writeback plug-in). Within
+this template you can use the variables C<$feedback::blog_name> (name
+of the blog submitting the TrackBack), C<$feedback::title> (title of
+the blog post making the TrackBack), C<$feedback::url> (URL for the
+blog post making the TrackBack), C<$feedback::date> (date/time the
+TrackBack was submitted), and C<$feedback::excerpt> (an excerpt from
+the blog post making the TrackBack). You can also use the variable
+C<$feedback::title_link>, which combines C<$feedback::title> and
+C<$feedback::url> and is analogous to C<$feedback::name_link>.
+
+=back
+
+The feedback plug-in also uses the following templates:
+
+=over
+
+=item
+
+commentform template (e.g., C<commentform.html>). This template
+provides a form for submitting a comment. The default template
+contains a form containing fields for the submitter's name, email
+address or URL, and the comment itself; submitting the form initiates
+a POST request to the same URL (and Blosxom flavour) used in
+displaying the page on which the form appears. If you define your own
+commentform template note that the plug-in requires the presence of a
+'plugin' hidden form variable with the value set to 'writeback'; this
+tells the plug-in that it should handle the incoming data from the POST
+request rather than leaving it for another plug-in. Also note that in
+order to support both comment posting and previewing the form has two
+buttons, both with name 'submit' and with values 'Post' and 'Preview'
+respectively; if you change these names and values then you must
+change the plug-in's code.
+
+=item
+
+trackbackinfo template (e.g., C<trackbackinfo.html>). This template
+provides information for how to go about submitting a TrackBack. The
+default template provides both a displayed reference to the TrackBack
+ping URL and non-displayed RDF code by which other systems can
+auto-discover the TrackBack ping URL.
+
+=back
+
+=head1 SECURITY
+
+This plug-in has at least the following security-related issues, which
+we attempt to address as described:
+
+=over
+
+=item
+
+The plug-in handles POST and GET requests with included parameters of
+potentially arbitrary length. To help minimize the possibility of
+problems (e.g., buffer overruns) the plug-in truncates all parameters
+to a maximum length (currently 10,000 bytes).
+
+=item
+
+People can submit arbitrary content as part of a submitted comment or
+TrackBack ping, with that content then being displayed as part of the
+page viewed by other users. To help minimize the possibility of
+attacks involving injection of arbitrary page content, the plug-in
+"sanitizes" any submitted HTML/XHTML content by converting the '<'
+character and other problematic characters (including '>' and the
+double quote character) to the corresponding HTML/XHTML character
+entities. The plug-in also sanitizes submitted URLs by URL-encoding
+characters that are not permitted in a URL.
+
+=item
+
+When using moderation, comments or TrackBacks are approved (or
+rejected) by invoking a GET (or HEAD) request using the URL of the
+story to which the comment or TrackBack applies, with the URL having
+some additional parameters to signal whether the comment should be
+approved or rejected. Since the feedback plug-in does not track (much
+less validate) the source of the moderation request, in theory
+spammers could approve their own comments or TrackBacks simply by
+following up their feedback submission with a GET request of the
+proper form. To minimize the possibility of this happening we generate
+a random eight-character alphanumeric key for each submitted comment
+or TrackBack, and require that that key be supplied in the approval or
+rejection request. This provides reasonable protection assuming that a
+spammer is not intercepting and reading your personal email (since the
+key is included in the moderation email message).
+
+=back
+
+=head1 VERSION
+
+0.23
+
+=head1 AUTHOR
+
+This plug-in was created by Frank Hecker, hecker@hecker.org; it was
+based on and inspired by the original writeback plug-in by Rael
+Dornfest together with modifications made by Fletcher T. Penney, Doug
+Alcorn, Kevin Scaldeferri, and others.
+
+=head1 SEE ALSO
+
+More on the feedback plug-in: http://www.hecker.org/blosxom/feedback
+
+Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+Blosxom Plug-in Docs: http://www.blosxom.com/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+The feedback plug-in
+Copyright 2003-2006 Frank Hecker, Rael Dornfest, Fletcher T. Penney,
+                    Doug Alcorn, Kevin Scaldeferri, and others
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

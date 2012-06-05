@@ -1,0 +1,12 @@
+<table width=100%><tr>
+<td class="story-title">
+  $comments::title<br />
+  <a href="$comments::url"
+     class="story-title">$comments::name$comments::blog_name</a>
+                         wrote on $comments::time</td>
+</tr><tr>
+<td>
+$comments::comment
+<br />
+<a href="$comments::base_url?parent=$comments::parent&title=$comments::title">Reply</a>
+</td></tr></table>

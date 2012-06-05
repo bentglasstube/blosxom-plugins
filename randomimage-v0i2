@@ -1,0 +1,31 @@
+# Blosxom Plugin: randomimage
+  # Author(s): Scott Mellgren   # Version: 0.2
+  # Paths and images from Gallery (PHP) for use in blosxom.
+  package randomimage;
+  
+  $basepath = "http://www.[yourdomain].com";
+  
+  sub start {
+    1;
+  }
+  # Let's pull a random thumb image from the data file.
+  $/ = "\n";
+  open FILE, $blosxom::plugin_state_dir.'/'."images.txt" or die $!;
+  @file = ;
+  $random = rand(@file);
+  $thumb = $file[$random];
+  chomp $thumb;
+  
+  $image = $thumb;
+  # $thumb now = 'albums/path/image.thumb.jpg'
+  # turn $thumb into $image = 'gallery/path/image' link to enlarged image page
+  $image =~ s/\.thumb\.jpg$//;
+  $image =~ s/albums/gallery/;
+  
+  # turn $image into $album = 'gallery/path' link to image's album
+  $album = $image;
+  $album =~ s/\/\w*$//;
+  1;
+  __END__
+  
+  Documentation is Pending!!

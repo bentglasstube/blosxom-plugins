@@ -1,0 +1,306 @@
+# Blosxom Plugin: crumz
+# Author: Stu MacKenzie <http://groups.yahoo.com/group/blosxom/messages>
+# Based on "breadcrumbs" plugin by: Rael Dornfest
+# Version: v0.86  2004-08-04
+# License: MIT/Public Domain
+# blox home: http://www.enilnomi.net/download.html
+# Documentation: See the bottom of this file or type: perldoc readme
+
+package crumz;
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+#
+#  Configuration Section
+#
+# # # # # # # # # # # # # # # # #
+#
+#  What divider between path items in the link trail?
+#   ex: crumz_$divider = ' > '   (default)
+  $crumz_divider = ' > ' unless defined $crumz_divider;
+#
+#  Should the trail start with a link back to the blog?
+#   Specify link text for a "home" link back to $blosxom::url, 
+#   or leave blank to exclude a home link  (normal)
+#   ex: $home = 'home' 
+  $home = '' unless defined $home;
+#
+#  Show entry file name in the link trail?
+#   0 = no; 1 = yes  (normal is 0)
+#   ex: $show_filename = 0 
+  $show_filename = 0 unless defined $show_filename;
+#
+#  Should the last item (usually file name) be linked?
+#   0 = no; 1 = yes  (normal is 1)
+#   ex: $link_last_item = 1 
+  $link_last_item = 1 unless defined $link_last_item;
+#
+#  Trim the START of the link trail --
+#  How many items should be trimmed from the START of each link trail?
+#   (excluding home link, if any)
+#   Enter 0 to trim no leading items  (normal is 0)
+#     e.g.: when $trim_start = 1:
+#            '/base/dir1/dir2/dir3' becomes  '/dir1/dir2/dir3'
+#            '/base/dir1/dir2'      becomes  '/dir1/dir2' 
+#   ex: $trim_start = 0 
+  $trim_start = 0 unless defined $trim_start;
+#
+#  Trim the END of the link trail --
+#  After how many leading items should the END of each link trail be trimmed?
+#   Or, put another way, how many leading items should REMAIN in each crum?
+#   (excluding home link and trailing file name, if any)
+#   Enter 0 to trim no trailing items  (normal is 0)
+#     e.g.: when $show_filename = 0 and $trim_after = 2:
+#            '/dir1/dir2/dir3' becomes  '/dir1/dir2'
+#            '/dir1/dir2'      becomes  '/dir1/dir2' 
+#            '/dir1'           becomes  '/dir1'
+#     when $show_filename = 1 and $trim_after = 2:
+#            '/dir1/dir2/dir3/filename' becomes  '/dir1/dir2/filename'
+#            '/dir1/dir2/filename'      becomes  '/dir1/dir2/filename' 
+#            '/dir1/filename'           becomes  '/dir1/filename'
+#   ex: $trim_after = 0 
+  $trim_after = 0 unless defined $trim_after;
+#
+#  Trim all but the LAST directory --
+#   (This will set $trim_start and $trim_after to 0)
+#     e.g.: when $last_dir_only = 1:
+#            '/dir1/dir2/dir3' becomes  '/dir3'
+#            '/dir1/dir2'      becomes  '/dir2' 
+#   0 = no; 1 = yes  (normal is 0)
+#   ex: $last_dir_only = 0 
+  $last_dir_only = 0 unless defined $last_dir_only;
+#
+# = = = = = = = = = = = = = = = =
+#  Flavours in link trails --
+#  What flavours should be called in link trail urls? 
+#   leave blank to use Blosxom's default flavour  (normal)
+#   ex: my $home_flavor = 'html' 
+#
+#   flavour for the home link (if any):
+  $home_flavor = '' unless defined $home_flavor;
+#
+#  flavour for directory links:
+  $dir_flavor = '' unless defined $dir_flavor;
+#
+#  flavour for the entry (filename) link (if any):
+  $entry_flavor = '' unless defined $entry_flavor;
+#
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+# call $crumz::crumz in your story template
+$crumz;
+
+sub start {
+  1;
+}
+
+sub offset_limit {                              # return safe offset for splice()
+  @_[1]>@_[0] ? return @_[0] : return @_[1];
+}
+
+sub story {
+  my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+  $path or return 0;                                   # no path, no crumbs, no point
+
+  $last_dir_only and (($trim_start,$trim_after) = 0);  # compile safely
+
+
+  $last_dir_only and ($path =~ s/^.*(\/[^\/]*)$/$1/);  # trim all but last item
+
+  $show_filename and $path .= "/$filename";            # append filename as called
+
+  $path =~ s/^\/*//;                                   # trim any leading /
+
+  $home_flavor or $home_flavor=$blosxom::flavour;      # get flavours
+  $dir_flavor or $dir_flavor=$blosxom::flavour;
+  $entry_flavor or $entry_flavor=$blosxom::flavour;
+
+  $crumz_divider !~ m/^\s*$/ or $crumz_divider=" > ";  # get a divider
+
+  my $last_item;                                       # get last item
+  $show_filename 
+    ? ($last_item = ".$entry_flavor") 
+    : ($last_item = "/index.$dir_flavor");
+
+  my(@p, $p);
+  foreach ( split /\//, $path ) {               # build an array of items from $path,
+    $p .= "/$_";                                # linking (or not) per setting
+    $link_last_item 
+    ? $p ne "/$path" 
+      ? push @p, qq{<a href="$blosxom::url$p/index.$dir_flavor">$_</a>} 
+      : push @p, qq{<a href="$blosxom::url$p$last_item">$_</a>} 
+    : push @p, 
+      $p ne "/$path"
+      ? qq{<a href="$blosxom::url$p/index.$dir_flavor">$_</a>}
+      : qq{$_};
+  }
+                                                # trim leading items
+  ($trim_start>0) and @p = splice(@p,offset_limit(scalar(@p),abs($trim_start)));
+
+                                                # trim trailing items
+  ($show_filename) ? ($len = -1) : ($len = scalar(@p) - $offset);
+  ($trim_after>0) and splice(@p,offset_limit(scalar(@p),abs($trim_after)),$len);
+
+  $crumz = join $crumz_divider, @p;             # build a string with dividers
+
+                                                # prepend home link as called
+  $home and $crumz =~ s/^/<a href="$blosxom::url\/index.$home_flavor">$home<\/a>$crumz_divider/;
+
+  $crumz =~s/$crumz_divider$//;                 # remove trailing divider (if any)
+  $crumz eq "" and $crumz = '&nbsp;';           # protect divs/styles; don't return empty
+
+  return 1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: crumz
+
+=head1 SYNOPSIS
+
+Generates a trail of links along the current story's path in $crumz::crumz
+
+ex: a/b/c becomes 
+<a href="/a">a</a> :: <a href="/a/b">b</a> :: <a href="/a/b/c">c</a>
+
+User-specified link trail item divider
+
+Flavours can be specified for (optional) home link, directory links, 
+and (optional) entry file link
+
+Items can be trimmed from start and/or end of link trail
+
+
+=head1 INSTALLATION AND CONFIGURATION
+
+Drop crumz into your plugins folder and configure as below
+
+=OVER
+
+=ITEM Optionally begin each trail with a link back to the blog "home."  
+$home becomes the link text; leave it blank to turn off the link. 
+This link is hardcoded to "$blosxom::url/index.$home_flavor"
+(see below for $home_flavor setting)
+
+=ITEM Optionally display entry file name by setting $show_filename to 1
+
+=ITEM Optionally link last item in the trail by setting $link_last_item 
+to 1; setting to 0 displays the last item as plain text
+
+=ITEM Optionally trim leading elements from the trail (excluding Home link, 
+if any) with an integer greater than 0 in $trim_start
+
+That is, with $trim_start set to 1:
+  /container/dir1/dir2   becomes   /dir1/dir2
+  /dir1/dir2/dir3        becomes   /dir2/dir3
+
+=ITEM Optionally trim trailing elements (excluding file name, if any) 
+with an integer greater than 0 in $trim_after. NOTE: the number 
+specified in $trim_after is *not* the number of trailling items 
+to trim; rather, it is the number of leading items that will remain. 
+Trailing file name (if any) is not affected by this setting
+
+That is, with $trim_after set to 2:
+  /dir1/dir2/dir3/dir4   becomes   /dir1/dir2
+  /dir1/dir2/dir3        becomes   /dir1/dir2
+  /dir1/dir2             becomes   /dir1/dir2
+with $trim_after set to 1:
+  /dir1/dir2/dir3/dir4   becomes   /dir1
+  /dir1/dir2/dir3        becomes   /dir1
+  /dir1/dir2             becomes   /dir1
+with $trim_after set to 3:
+  /dir1/dir2/dir3/dir4/file   becomes   /dir1/dir2/dir3/file
+  /dir1/dir2/dir3/file        becomes   /dir1/dir2/dir3/file
+  /dir1/dir2/file             becomes   /dir1/dir2/file
+Setting too high a trim value is safe
+
+=ITEM Optionally display *only* the last directory item by setting 
+$last_dir_only to 1. NOTE: this setting will disable (i.e. set 
+to 0) the $trim_start and $trim_after settings; the $show_filename 
+and $home settings will be untouched
+
+=ITEM Optionally set flavour for the home, directory, and file links; 
+leave empty to use the current Blosxom flavour. $home_flavor 
+sets flavour for the home link (if any); $dir_flavor sets flavour 
+for link(s) to directories (i.e. folders); $entry_flavor sets 
+flavour for the filename link (if any)
+
+=BACK
+
+
+=head1 USAGE
+
+The crumz plugin provides full paths in link trails, available to 
+each entry. Link trails can be trimmed from either end, and links 
+at the beginning, middle, and end of the trail can have their own 
+flavours. File names can be included or not; the last item in the 
+trail can be linked or not. Each trail can be preceded by a link 
+to the entire blog ("home", "index") or not. items can be trimmed 
+from the start and/or end of link trails, or not. Link trails can 
+be limited to only the last directory and/or filename, or not. All 
+settings are available to the config plugin. Using config files, 
+flavour templates, and crumz settings in concert, you can tailor 
+your breadcrumbs all across your blog.
+
+Here's an example of using crumz --
+When users first "normally" open the blog (by using, say, the 
+url www.example.com/cgi-bin/blosxom.cgi), they are presented with 
+a page of 20 stories in the default flavour, via Blosxom settings. 
+The default flavor's story template calls $crumz::crumz to give 
+each entry a link trail composed of a link to an index page ($home) 
+using an "index" flavour ($home_flavor); directory links using a 
+"slice" flavor ($dir_flavor); entry links ($show_filename = 1); 
+and an entry flavor ($entry_flavor) of "story" via crumz settings. 
+An outer, containing folder holding all categories is trimmed 
+from all link trails by setting $trim_start to 1. $link_last_item 
+is set to 1, making all the bits in link trails clickable.
+
+Clicking a trail's home link opens an index of the blog, provided 
+by the "index" flavour templates and a config.index file atop the 
+datadir:  a listing of up to 999 stories, showing only date, title, 
+and link trail. The config.index file also sets $index_flavor to '' 
+(empty; current blosxom flavour) and $home to 'blog' to allow users to easily return to a 
+default main blog page.
+
+Clicking a directory link on the index page opens the category 
+using the "slice" flavour, which conveys information specific to 
+browsing categories. Clicking an entry link on the index page 
+opens the entry with the "story" flavour, conveying information 
+specific to reading indivdual entries. A "config.story" file atop 
+datadir sets $link_last_item to false (0), which displays the 
+current entry's filename as plain text.
+
+
+=head1 VERSION
+
+2004-08-04 (v0.86) - more trimming, more flavours
+2003-09-09 (v0.85) - it's alive
+2003-09-05 (v0.8)  - wip
+
+
+=head1 LICENSE
+
+this Blosxom Plug-in
+Copyright 2004, Stu MacKenzie
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

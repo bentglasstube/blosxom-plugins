@@ -1,0 +1,108 @@
+# Blosxom Plugin: exclude
+# Author(s): Breyten Ernsting
+# Version: 0+3i
+# Blosxom Home/Docs/Licensing: http://www.bje.nu/index.cgi/tech/web/cms/blosxom/plugins/exclude/
+
+package exclude;
+
+# --- Configurable variables -----
+
+$ign_file = 'exclude';
+
+# --------------------------------
+
+sub start {
+  $ign_fp = ($blosxom::path_info) ? "$blosxom::datadir/$blosxom::path_info" : "$blosxom::datadir";
+  $ign_ext = (-e "$ign_fp/${ign_file}.${blosxom::flavour}") ? ".${blosxom::flavour}" : "";
+  $ign_fn = "$ign_fp/$ign_file$ign_ext";
+  @excludes = ();
+  open(EXCLUDE, "< $ign_fn") or 1;
+  while (<EXCLUDE>) {
+    chomp;
+    push(@excludes, "$ign_fp/$_") if $_;
+  }
+  close(EXCLUDE);
+  1;
+}
+
+sub filter {
+  my ($pkg, $files_ref) = @_;
+  my @files_list = keys %$files_ref;
+
+  foreach $exclude (@excludes) {
+    foreach $ign_cf (@files_list) {
+      $ign_cf !~ m/^$exclude/ or delete $files_ref->{$ign_cf};
+    }
+  }
+
+  1;
+}
+
+1;
+
+__DATA__
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: exclude
+
+=head1 SYNOPSIS
+
+Purpose: ignores files and directories in entries.
+This file does not make any new variables available for use in 
+template files.
+
+=head1 VERSION
+
+0+1i
+
+1st test release
+
+=head1 AUTHOR
+
+Breyten J. Ernsting <bje@dds.nl>
+http://www.bje.nu/
+
+=head1 BUGS
+
+Probably ;)
+
+=head1 CONFIGURATION
+
+C<$ign_file> name to use for exclude files. Defaults to
+C<.exclude>.
+
+=head1 EXAMPLE
+
+Your C<.exclude> should look like this:
+
+apps/
+life/about.txt
+
+One entry per line. You should be able to use regexes.
+
+=head1 LICENSE
+
+this Blosxom Plug-in
+Copyright 2003, Breyten Ernsting
+
+(This license is the same as Blosxom's)
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

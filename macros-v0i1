@@ -1,0 +1,650 @@
+# Blosxom Plugin: macros                                           -*- perl -*-
+# Author: Todd Larason (jtl@molehill.org)
+# Version: 0+1i
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/blosxom
+# Calendar plugin Home/Docs/Licensing:
+#   http://molelog.molehill.org/blox/Computers/Internet/Web/Blosxom/Macros/
+# Modelled on Brad Choate's MT-Macros, but no code in common
+package macros;	# -*- perl -*-
+
+# --- Configuration Variables ---
+$macrodir = "$blosxom::plugin_state_dir/.macros"
+    unless defined $macrodir;
+
+$use_caching = 1;
+$debug_level = 1;
+# -------------------------------------------------------------------
+# types:
+#   string				implemented
+#   pattern				implemented
+#   tag (string or pattern)		implemented
+#   ctag (string or pattern)		implemented
+
+# attributes:
+#   name                                implemented, auto defaults
+#   once                                implemented
+#   recurse
+#   no_html                             implemented, default
+#                                       for string and pattern, inhtml => 1 to
+#                                       reverse; can't reverse for tag
+#   no_case
+#   * defaults for attribs		implemented
+#   * body				implemented
+
+# in replacement:
+#   pattern: ${1}-${9} matched () text, $<1>-$<9> escaped matched text
+#   tag: as in pattern + ${name} tag attribute, $<name> escaped attribute
+#   ctag: as in tag + ${body}
+
+use bytes;
+use File::stat;
+
+# XXX cache macro definitions?
+my @macros = ();
+my $cache;
+my $package    = "macros";
+my $cachefile  = "$blosxom::plugin_state_dir/.$package.cache";
+my $save_cache = 0;
+
+sub debug {
+    my ($level, @msg) = @_;
+
+    if ($debug_level >= $level) {
+	print STDERR "$package debug $level: @msg\n";
+    }
+    1;
+}
+
+sub url_escape {
+    local ($_) = @_;
+
+    s/([^a-zA-Z0-9])/sprintf("%%%02x",ord($1))/eg;
+    s/%20/+/g;
+    return $_;
+}
+
+sub define_macro {
+    my ($arg) = @_;
+    my $macro = {};
+
+    if ($arg->{type} eq "string") {
+	$macro->{type} 	   = 'pattern';
+	$macro->{pattern}  = qr{\Q$arg->{string}\E};
+	$macro->{body} 	   = $arg->{body};
+	$macro->{inhtml}   = $arg->{inhtml} if $arg->{inhtml};
+	$macro->{once}     = $arg->{once}   if $arg->{once};
+	$macro->{name}     = $arg->{name} || "string_$arg->{string}";
+    } elsif ($arg->{type} eq "pattern") {
+	$macro->{type} 	   = 'pattern';
+	$macro->{pattern}  = qr{$arg->{pattern}};
+	$macro->{body} 	   = $arg->{body};
+	$macro->{inhtml}   = $arg->{inhtml} if $arg->{inhtml};
+	$macro->{once}     = $arg->{once}   if $arg->{once};
+	$macro->{name}     = $arg->{name} || "pattern_$arg->{pattern}";
+    } elsif ($arg->{type} eq "tag") {
+	$macro->{type}      = 'tag';
+	$macro->{container} = 0;
+	$macro->{pattern}   = qr{$arg->{name}};
+	$macro->{body}      = $arg->{body};
+	$macro->{defaults}  = {%{$arg->{defaults}}};
+	$macro->{once}      = $arg->{once}   if $arg->{once};
+	$macro->{name}      = "tag_$arg->{name}";
+    } elsif ($arg->{type} eq "ctag") {
+	$macro->{type}      = 'tag';
+	$macro->{container} = 1;
+	$macro->{pattern}   = qr{$arg->{name}};
+	$macro->{body}      = $arg->{body};
+	$macro->{defaults}  = {%{$arg->{defaults}}};
+	$macro->{once}      = $arg->{once}   if $arg->{once};
+	$macro->{name}      = "tag_$arg->{name}";
+    }
+
+    push @macros, $macro;
+    return 1;
+}
+
+sub replace_pattern {
+    my ($macro, $ctx) = @_;
+
+    my $replacement = $macro->{body};
+    $replacement =~ s{
+	(?: \$ { ([\w]+) } |
+	    \$ < ([\w]+) > |
+	   (\$    [\w:]+) 
+	 )
+	}{defined($1) ? $ctx->{$1} : 
+	      defined($2) ? url_escape($ctx->{$2}) : 
+	      eval "$3||''"}xge;
+
+    return $replacement;
+}
+
+sub apply_pattern_macro {
+    my ($state, $macro, $text) = @_;
+    $text =~ 
+	s{($macro->{pattern})}
+        {$macro->{once} && $state->{used}{$macro->{name}} ? $1 :
+	 (++$state->{used}{$macro->{name}}
+	  and replace_pattern($macro, {
+	      1 => $2, 2 => $3, 3 => $4,
+	      4 => $5, 5 => $6, 6 => $7,
+	      7 => $8, 8 => $7
+	      }))
+	  }egms;
+    return $text;
+}
+
+sub apply_tag_macro {
+    my ($state, $macro, $entity, $attributes, $body) = @_;
+    my $ctx;
+
+    $ctx->{body} = $body;
+    $entity =~ $macro->{pattern};
+    @{$ctx}{qw/1 2 3 4 5 6 7 8 9/} = ($1, $2, $3, $4, $5, $6, $7, $8, $9);
+    while ($attributes =~ m{ (\w+)         # $1 = tag
+			     =
+			     (?:
+			      " ([^\"]+) " # $2 = quoted value
+			      |
+			        ([^\s]+)   # $3 = unquoted value
+			     )
+			 }gx) {
+	$ctx->{$1} = ($+);
+    }
+    foreach (keys %{$macro->{defaults}}) {
+	next if defined($ctx->{$_});
+	if ($macro->{defaults}{$_} =~ m:\$(\w+):) {
+	    $ctx->{$_} = $ctx->{$1};
+	} else {
+	    $ctx->{$_} = $macro->{defaults}{$_};
+	}
+    }
+
+    my $text = $macro->{body};
+    $text =~ s{
+	       (?: \$ { ([\w]+) } |
+  		   \$ < ([\w]+) > |
+	          (\$    [\w:]+) 
+		)
+	       }{defined($1) ? $ctx->{$1} : 
+		     defined($2) ? url_escape($ctx->{$2}) : 
+		     eval "$3||''"}xge;
+    return $text;
+}
+
+sub apply_macro {
+    my ($state, $macro, $text) = @_;
+
+    if ($macro->{type} eq 'pattern') {
+	if ($macro->{inhtml}) {
+	    $text = apply_pattern_macro($state, $macro, $text);
+	} else {
+	    my @tokens = split /(<[^>]+>)/, $text;
+	    $text = '';
+	    foreach (@tokens) {
+		if (!m/^</) {
+		    $_ = apply_pattern_macro($state, $macro, $_);
+		}
+		$text .= $_;
+	    }
+	}
+    } elsif ($macro->{type} eq 'tag') {
+	my @tokens = split /(<[^>]+>)/, $text;
+	$text = '';
+	while (defined($_ = shift @tokens)) {
+	    if (!($macro->{once} && $state->{used}{$macro->{name}})
+		&& (m/<($macro->{pattern})([\s>].*)/)) {
+		my $tag = $_;
+		my $entity = $1;
+		my $attributes = $+;
+		chop $attributes;
+		if ($macro->{container}) {
+		    my $body;
+		    while (defined($_ = shift @tokens)) {
+			last if (m:</$entity\s*>:);
+			$body .= $_;
+		    }
+		    $_ = apply_tag_macro($state, $macro, $entity, $attributes, $body);
+		} else {
+		    $_ = apply_tag_macro($state, $macro, $entity, $attributes);
+		}
+		$state->{used}{$macro->{name}}++;
+	    }
+	    $text .= $_;
+	}
+    } else {
+	debug(0, "ACK: unknown macro type $macro->{type}");
+    }
+    return $text;
+}
+
+sub apply_macros {
+    my ($state, $text) = @_;
+
+    foreach my $macro (@macros) {
+	$text = apply_macro($state, $macro, $text);
+    }
+    return $text;
+}
+
+# caching support
+
+sub prime_cache {
+    my ($macrokey) = @_;
+    return if (!$use_caching);
+    eval "require Storable";
+    if ($@) {
+	debug(1, "cache disabled, Storable not available");
+	$use_caching = 0;
+	return 0;
+    }
+    if (!Storable->can('lock_retrieve')) {
+	debug(1, "cache disabled, Storable::lock_retrieve not available");
+	$use_caching = 0;
+	return 0;
+    }
+    $cache = (-r $cachefile ? Storable::lock_retrieve($cachefile) : {});
+    if (defined $cache->{macrokey}) {
+	if ($cache->{macrokey} eq $macrokey) {
+	    debug(1, "Using restored cache");
+	    return 1;
+	}
+	$cache = {};
+	debug(1, "Macros changed, flushing cache");
+    } else {
+	debug(1, "Cache empty, creating");
+    }
+    $cache->{macrokey} = $macrokey;
+    return 0;
+}
+sub save_cache {
+    return if (!$use_caching || !$save_cache);
+    debug(1, "Saving cache");
+    Storable::lock_store($cache, $cachefile);
+}
+
+sub story {
+    my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    my $state = {};
+    use bytes;
+
+    my $r = $cache->{story}{"$path/$filename"};
+    if ($r && $r->{orig} eq $$body_ref) {
+	$$body_ref = $r->{expanded};
+	return 1;
+    }
+    debug(1, "Cache miss due to story change: $path/$filename") if $r;
+    $cache->{story}{"$path/$filename"}{orig} = $$body_ref;
+    $$body_ref = apply_macros($state, $$body_ref);
+    $cache->{story}{"$path/$filename"}{expanded} = $$body_ref;
+    $save_cache = 1;
+    return 1;
+}
+
+sub start {
+    my $macrokey = '';
+    if (opendir MACROS, $macrodir) {
+	foreach my $macrofile (grep { /^\d*\w+$/ && -f "$macrodir/$_" } 
+			       sort readdir MACROS) {
+	    my $mtime = stat("$macrodir/$macrofile")->mtime;
+	    $macrokey .= "$macrofile:$mtime|";
+	    require "$macrodir/$macrofile";
+	}
+    }
+    prime_cache($macrokey);
+    return 1;
+}
+
+sub end {
+    save_cache();
+    1;
+}
+1;
+
+=head1 NAME
+
+Blosxom Plug-in: macros
+
+=head1 SYNOPSIS
+
+Purpose: Generalized macro system modelled on MT-Macros
+
+   * String macros: replace a string with another string
+
+   * Pattern macros: replace a regular-expression pattern with a
+     string optionally based on the replaced text
+
+   * Tag macros: replace html-style content-less tags (like img)
+     (specified with either a string or a pattern) with a string,
+     optionally based on the replaced entity and attributes, with
+     default attributes available
+
+   * Content Tag macros: relace html-style content tags (like a)
+     (specified with either a string or a pattern) with a string,
+     optionally based on the replaced entity, attributes, and
+     contents, with default attributes available
+
+=head1 VERSION
+
+0+1i
+
+1st wide-spread test release
+
+=head1 AUTHOR
+
+Todd Larason  <jtl@molehill.org>, http://molelog.molehill.org/
+
+=head1 BUGS
+
+None known; address bug reports and comments to me or to the Blosxom
+mailing list [http://www.yahoogroups.com/groups.blosxom].
+
+=head1 Customization
+
+=head2 Configuration variables
+
+C<$macrodir> is the name of the directory to look for macro definition files
+in; defaults to $plugin_state_dir/.macros.  Each file in this directory
+whose name matches /^\d*\w+$/ (that is, optional digits at the beginning,
+followed by letters, numbers and underscores) is read, in order sorted by
+filename.  See "Macro Definition" section for details on file contents.
+
+C<$use_caching> controls whether or not to try to cache formatted results;
+caching requires Storable, but the plugin will work just fine (although
+possibly slowly, with lots of macros installed) without it.
+
+C<$debug_level> can be set to a value between 0 and 5; 0 will output
+no debug information, while 5 will be very verbose.  The default is 1,
+and should be changed after you've verified the plugin is working
+correctly.
+
+=head2 Macro Definitions
+
+The macro files are simply perl scripts that are read and executed.  
+Normally, they consist simply of literal calls to define_macro(), but
+any other perl content is allowed.
+
+As with all perl scripts, loading this script needs to return a true value.
+define_macro() returns 1, so in most cases this will be taken care of
+automatically, but if you're doing something fancy you need to be aware of
+this.
+
+define_macro() takes a single argument, a reference to a hash.  The hash 
+must contain a 'type' element, which must be one of "string", "pattern",
+"tag" and "ctag".  The other elements depend on the type.
+
+=head3 String Macros
+
+To define a string macro, pass define_macros() a hash containing:
+
+   * type => "string", required
+   * string => string, required; the string to be replaced
+   * body => string, required; the string to replace with; no variables are
+     useful, but the same replacement method is used as others, so $ is magic.
+   * inhtml => boolean, optional; if 1, then the string will be replaced even 
+     if it appears in the HTML markup; of 0, the string will only be replaced
+     in content.  The default is 0 (this is reverse MT-Macros' option, and
+     apparently reverse MT-Macros' default)
+   * once => boolean, optional; if 1, then the string will only be replaced
+     the first time it's seen in a given piece of text (that is, story body).
+     The default is 0.
+   * name => string, optional; currently names aren't used for anything, but
+     they may be in the future.
+
+=head3 Pattern Macros
+
+To define a pattern macro, pass define_macros() a hash containing:
+
+   * type => "pattern", required
+   * pattern => pattern, required; the regular expression to be replaced
+   * body => string, required; the string to replace with; ${1} through ${9} 
+     are replaced with the RE match variables $1 through $9; $<1> through $<9>
+     are the same thing, URL encoded.
+   * inhtml => boolean, optional; if 1, then the string will be replaced even 
+     if it appears in the HTML markup; of 0, the string will only be replaced
+     in content.  The default is 0 (this is reverse MT-Macros' option, and
+     apparently reverse MT-Macros' default).  Note that if inhtml is 0, then
+     the pattern is matched against each chunk of content separately, and thus
+     the full pattern must be included in a single markup-less chunk to be 
+     seen.
+   * once => boolean, optional; if 1, then the pattern will only be replaced
+     the first time it's seen in a given piece of text (that is, story body).
+     The default is 0.
+   * name => string, optional; currently names aren't used for anything, but
+     they may be in the future.
+
+=head3 Tag Macros
+
+To define a tag macro, pass define_macros() a hash containing:
+
+   * type => "tag", required
+   * pattern => pattern, required; a regular expression matching the entity
+     tag to be replaced; in normal cases this will just be a string, but
+     something like pattern => 'smily(\d+)' could be used to define a whole
+     set of tags like <smily47> at once.
+   * defaults => hashref, optional; a hash reference mapping attribute names
+     to default values.  "$\w+" patterns in the default values are replaced
+     the same way "${\w}" patterns in body strings are
+   * body => string, required; the string to replace with; ${1} through ${9} 
+     are replaced with the RE match variables $1 through $9; $<1> through $<9>
+     are the same thing, URL encoded. ${attrib} and $<attrib> are replaced with
+     the values of the specified attributes, or with the default for that
+     attribute if the attribute wasn't specified.
+   * once => boolean, optional; if 1, then the tag will only be replaced
+     the first time it's seen in a given piece of text (that is, story body).
+     The default is 0.
+
+=head3 Content Tag Macros
+
+To define a content tag macro, pass define_macros() a hash containing:
+
+   * type => "ctag", required
+   * pattern => pattern, required; a regular expression matching the entity
+     tag to be replaced; in normal cases this will just be a string.  The
+     closing tag must exactly match the opening tag, not just match the
+     pattern.
+   * defaults => hashref, optional; a hash reference mapping attribute names
+     to default values.  "$\w+" patterns in the default values are replaced
+     the same way "${\w}" patterns in body strings are; in particular, $body
+     can be useful
+   * body => string, required; the string to replace with; ${1} through ${9} 
+     are replaced with the RE match variables $1 through $9; $<1> through $<9>
+     are the same thing, URL encoded. ${attrib} and $<attrib> are replaced with
+     the values of the specified attributes, or with the default for that
+     attribute if the attribute wasn't specified.  ${body} and $<body> are
+     replaced with the content of the tag.
+   * once => boolean, optional; if 1, then the tag will only be replaced
+     the first time it's seen in a given piece of text (that is, story body).
+     The default is 0.
+
+=head3 examples
+
+=head4 Tatu
+
+This defines a macro that replaces the word "Tatu" with its proper (Cyrllic) 
+spelling the first time it's seen in a story; it won't much with markup, so
+URLs containting "Tatu" are safe.
+
+define_macro {
+    type   => 'string',
+    string => "Tatu",
+    body   => qq!<acronym title=\"Tatu\">&#x0422;&#x0430;&#x0442;&#x0443;</acronym>!,
+    once   => 1
+};
+
+This is just like above, but is safer -- it won't match the "Tatu" in 
+"Tatuuie".
+
+define_macro {
+    type    => 'pattern',
+    pattern => qr/\bTatu\b/,
+    body    => qq!<acronym title=\"Tatu\">&#x0422;&#x0430;&#x0442;&#x0443;</acronym>!,
+    once    => 1
+};
+
+=head4 Line
+
+This defines a <line> tag with an optional width= attribute
+
+define_macro {
+    type => 'tag',
+    name => 'line',
+    defaults => {width => "100%"},
+    body => '<hr noshade="noshade" width="${width}">'
+};
+
+This can be used either as just <line> or as <line width="50%">.
+
+=head4 Amazon
+
+this defines a fairly fancy <amazon tag
+
+define_macro {
+    type => 'ctag',
+    name => 'amazon',
+    defaults => {domain => 'com', assoc => 'mtmolel-20'},
+    body => '<a href="http://www.amazon.${domain}/exec/obidos/ASIN/${asin}/ref=nosim/${assoc}">${body}</a>'
+};
+
+In normal use, it's something like
+<amazon asin=B00008OE6I>Canon Powershot S400</amazon>
+but it can also be used to refer to something on one of the international 
+Amazon sites, like
+on asin=B000089AS9 domain=co.uk>Angel Season 3 DVDs</amazon>
+
+If you wanted to give referral credit to someone else, you could with:
+<amazon asin=B00008OE6I assoc=rael-20>Canon Powershot S400</amazon>
+ 
+=head4 Google
+
+This defines a <google> tag with a completely optional query attribute; if
+it's not given, then the phrase enclosed by the tag is what's searched for.
+
+define_macro {
+    type => 'ctag',
+    name => 'google',
+    defaults => {query => "\$body"},
+    body => '<a href="http://www.google.com/search?q=$<query>">${body}</a>'
+};
+
+=head4 Programmatic Definitions
+
+There's no reason the macro files need to be literal calls to define_macro.
+
+This example defines its own simplified syntax for defining a set of similar 
+macros, reads the definitions, and makmes the appropriate define_macro() 
+calls.  It's directly translated from a similar MT-Macros definition file,
+(with more macros defined) found at http://diveintomark.org/inc/macros2
+
+while (<DATA>) {
+    chomp;
+    my ($name, $tag, $attrlist) = m/"(.+?)"\s+(\w+)(.*)/;
+    next if !$name;
+    my $attrs = '';
+    my (@attrs) = $attrlist =~ m/\s+(\w+)\s+"(.*?)"/g;
+    for ($i = 0; $i < scalar(@attrs); $i += 2) {
+	my ($attr, $value) = ($attrs[$i], $attrs[$i+1]);
+	$value =~ s/"/&quot;/g; #";
+	$attrs .= qq{ $attr="$value"};
+    }
+    if ($tag =~ /acronym/) {
+  	define_macro({
+  		      name    => "abbr_$name",
+  		      type    => pattern,
+  		      pattern => qr/\b$name\b/,
+  		      body    => "<$tag$attrs>$name</$tag>",
+  		      once    => 1
+  		     });
+    } elsif ($tag =~ /img/) {
+	define_macro({
+		      name    => "img_$name",
+		      type    => string,
+		      string  => $name,
+		      body    => "<$tag$attrs>"
+		     });
+    } else {
+	define_macro({
+ 		      name    => "abbr_$name",
+ 		      type    => pattern,
+ 		      pattern => qr/\b$name\b/,
+ 		      body    => "<$tag$attrs>$name</$tag>"
+		     });
+    }
+}
+
+1;
+__DATA__
+"AOL" acronym title "America Online"
+"API" acronym title "Application Interface"
+"CGI" acronym title "Common Gateway Interface"
+"CMS" acronym title "Content Management System"
+"CSS" acronym title "Cascading Style Sheets"
+"DMV" acronym title "Department of Motor Vehicles"
+":)"     img alt "[smiley face]"  title "" src "/images/smilies/smile.gif"   width "20" height "20"
+":-)"    img alt "[smiley face]"  title "" src "/images/smilies/smile.gif"   width "20" height "20"
+"=)"     img alt "[smiley face]"  title "" src "/images/smilies/smile.gif"   width "20" height "20"
+"=-)"    img alt "[smiley face]"  title "" src "/images/smilies/smile.gif"   width "20" height "20"
+__END__
+
+=head1 Possible Deficiencies
+
+   * MT-Macros 'recursion' option isn't available.  If this is a real problem
+     for you, please let me know, preferably with a good example of what you
+     can't accomplish currently (remember, macros are invoked in the order
+     they're defined, which you can control with filename naming)
+   * tag and ctag macros can't be used in HTML markup.  This would be a big
+     problem for Movable Type, where parameter replacement is done with
+     psuedo-HTML, but doesn't seem to be a problem for Blosxom.  If it is
+     for you, please let me know, again along with an example.
+   * MT-Macros 'no_case' option isn't available.  This can be done by
+     including (?i) in your patterns or defining them with qr//i, instead.
+   * tag and ctag macros can't be explicitely named, because the 'name'
+     parameter is already being used.  Future versions may change tag
+     and ctag to use 'string' or 'pattern' for what 'name' is currently
+     used for, and use 'name' to define a macro.  That will only be done
+     if there's a good use for names, though.
+   * Once defined, macros are always active.  They can't be deactivated on a
+     per-story basis.  This might be handled with a meta- header at some 
+     point, if someone gives me a reasonable example for why they need it.
+   * There's no built-in data-based macro definition syntax.  It's not clear
+     to me that a literal define_macro() call is any more difficult than
+     MT-Macros' HTML-looking (but not HTML-acting) definition syntax, though,
+     and as shown above simpler syntaxes ban be custom-built as appropriate.
+     I'd be more than happy to include a simpler syntax, though, if someone
+     were to develop one that were obviously better than define_syntax().
+
+=head1 Caching
+
+If the Storable module is available and $use_caching is set, formatted
+stories will be cached; the cache is globally keyed off the list of macro
+files and their modification date, and per-story on the contents of the
+story itself.  It should thus not ever be necessary to manually flush the
+cache, but it's always safe to do so, by removing the 
+$plugin_state_dir/.macros.cache file.
+
+=head1 LICENSE
+
+this Blosxom Plug-in
+Copyright 2003, Todd Larason
+
+(This license is the same as Blosxom's)
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+

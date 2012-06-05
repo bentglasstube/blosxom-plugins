@@ -1,0 +1,177 @@
+# Blosxom Plugin: mood
+# Author: Sehrgut
+# Version: 1.1
+# Documentation: See the bottom of this file or type: perldoc mood
+
+package mood;
+
+# --- Configurable Variables ---
+# The base HTML root of your site. This is only important in its relationship
+# to $imgdir, so divide up the path between the two however you like.
+# Set to '/' to use paths from your document root. Must have trailing slash.
+$url = '/';
+
+# The path from $url to your mood image directory,for $mood::img
+# Must have trailing slash
+$imgdir = 'b_objects/moods/';
+
+# The wrapper tags for your mood. Note the unclosed $pre tag, which is
+# necessary to allow the wrapping element to be titled.
+$pre = '<p class="mood"';
+$post = '</p>';
+
+# To use mood images, uncomment the "require" directive and place
+# "moodlist.pl" into your plugin state directory. See moodlist.pl for details.
+ require $blosxom::plugin_state_dir.'/moodlist.pl';
+# ------------------------------
+
+
+sub start {
+1;
+}
+
+sub story {
+
+# Pull the current story's mood from the meta plugin
+$mood = $meta::mood;
+
+# Don't bother if the story doesn't have a mood
+if ($mood) {
+
+# Provide a capitalized mood variable for display
+$moodcap = $mood;
+$moodcap =~ s/(\w+)/\u\L$1/;
+
+# Write the text mood
+$text = $pre.' title="Mood: '.$moodcap.'">Mood: '.$moodcap.$post;
+
+
+# Try to write the image mood
+# This allows mood images to be used even when not all moods have images.
+
+# First, define the variable we're looking for.
+$moodvar = 'mood_'.$mood;
+
+# If the given mood is defined, write the image link.
+if ($$moodvar) {
+# Write the image tag
+$src = $url.$imgdir.$$moodvar;
+$itag = '<img class="mood" src="'.$src.'" alt="Mood: '.$moodcap.'" /><br />';
+}
+
+# Write the entire image mood, including the image tag if available.
+$img = $pre.' title="Mood: '.$moodcap.'">'.$itag.'Mood: '.$moodcap.$post;
+
+}
+
+# Wipe previous story's mood from memory
+else {
+$text = '';
+$img = '';
+$src = '';
+$itag = '';
+$moodcap = '';
+}
+
+}
+1;
+__END__
+
+=head1 NAME
+
+Blosxom plugin: mood
+
+=head2 SYNOPSIS
+
+Mood
+
+Mood retrieves $meta::mood from a meta-mood tag within an entry file and
+uses it to provide either a textual or graphical representation of the mood.
+Requires Blosxom plugin: meta
+
+=head1 INSTALLATION AND CONFIGURATION
+
+Note: Be sure you have Blosxom plugin meta installed!
+
+1. Set all user-configured variables according to their instructions. It is
+important that the final tag of $pre be left without its closing angle
+bracket, as a title attribute is inserted by the script later.
+
+2. If you plan on using mood icons, uncomment the "require" line (#28) and
+copy moodlist.pl to your plugin state directory.
+
+3. Put mood icons in the $imgdir and edit moodlist.pl to associate images with moods.
+
+4. Add $mood::text or $mood::img in your story template.
+
+5. Declare p.mood and img.mood in your stylesheet if desired.
+
+=head1 DESCRIPTION
+
+Some variables which may come in handy are:
+
+$mood::text, which places a textual representation of any mood tag found
+$mood::img, which places a textual, and when available, graphical repre-
+sentation of any mood tag found
+
+These variables are not strictly useful, but they may be handy for integrating
+Mood into your Blosxom.
+$mood::src, the web path of the mood icon
+$mood::itag, the completed image tag, with trailing linebreak
+$mood:moodcap, the mood name, capitalized for user-friendliness
+
+A minor hack could use the $flavour bit as the directory, and then pull the
+image from a directory corresponding to the flavour. However, the implications
+of having a mood defined, with only graphics for some flavours is that, if
+you're not careful, you could end up with 404-image icons on some of your posts.
+
+=head1 VERSION
+
+2005-06-21
+
+=head1 VERSION HISTORY
+
+2005-06-21 v1.1 Fixed bug which caused a mood to be used for all stories
+after one with a mood, until a new mood was declared.
+
+2005-06-20 v1 First Release
+
+=head1 AUTHOR
+
+Sehrgut <sehrgut <at> sehrgut <dot> co <dot> uk>, http://sehrgut.co.uk/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to author.
+
+=head1 LICENSE
+
+mood Blosxom plugin copyright 2005 Sehrgut http://sehrgut.co.uk/foaf/foaf.rdf
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+
+
+

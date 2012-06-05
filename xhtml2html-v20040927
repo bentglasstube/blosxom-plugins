@@ -1,0 +1,93 @@
+# Blosxom Plugin: xhtml2html
+# Author: KITAMURA Akatsuki <kits@akatsukinishisu.net>
+# Version: 2004-09-27
+# Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+# This script is encoded in UTF-8.
+
+package xhtml2html;
+use strict;
+
+# --- Configurable variables -----------
+
+# --- Plug-in package variables --------
+
+# --------------------------------------
+
+sub start {
+	return ($blosxom::static_or_dynamic eq 'dynamic') ? 1 : 0;
+}
+
+sub last {
+	my $content_type = $blosxom::header->{-type};
+	return 1 if ($content_type !~ m{^application/xhtml\+xml}i);
+
+	if ( $ENV{HTTP_ACCEPT} !~ m{application/xhtml\+xml}i ) {
+		$content_type =~ s{application/xhtml\+xml}{text/html}i;
+		$blosxom::header->{-type} = $content_type;
+	}
+	1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: xhtml2html
+
+=head1 SYNOPSIS
+
+目的: XHTMLに対応したブラウザにはContent-Typeをapplication/xhtml+xmlで、
+そうでないブラウザにはtext/htmlで文書を提供するためのプラグインです。
+動的生成の場合のみに動作します。
+
+=head1 INSTALLATION
+
+このプラグインファイルをプラグインディレクトリ($plugin_dir)に
+置いて下さい。
+
+=head1 CONFIGURATION
+
+XHTMLを出力するフレーバーの content_type.flavour ファイルに
+以下の様に記述します。
+
+ application/xhtml+xml; charset=UTF-8
+
+=head1 VERSION
+
+2004-09-27
+
+=head1 AUTHOR
+
+北村曉 (KITAMURA Akatsuki)
+<kits@akatsukinishisu.net>, http://www.akatsukinishisu.net/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+Blosxom Plugin Docs: http://www.blosxom.com/plugins/
+
+=head1 LICENSE
+
+This Blosxom Plug-in Copyright (c) 2004, KITAMURA Akatsuki
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

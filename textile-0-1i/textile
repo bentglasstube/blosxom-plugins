@@ -1,0 +1,62 @@
+package textile;                         # -*- perl -*-
+
+
+my $do_imagesize = 1;
+my $do_auto_encode = 0;
+my $head_offset = 3;
+my $document_root = "/var/www/html/molelog/blog";
+
+use lib qq{$blosxom::plugin_dir/lib};
+
+use strict;
+
+sub encode_html {
+    my ($text) = @_;
+    eval {require HTML::Entities;};
+    if (!$@) {
+	return HTML::Entities::encode_entities($text);
+    }
+    die "entity encoding without HTML::Entities not yet implemented";
+}
+
+sub image_size {
+    my ($file, $pctw, $pcth) = @_;
+    eval {require Image::Size;};
+    if (!$@) {
+	my ($w, $h) = Image::Size::imgsize($file);
+	if ($pctw || $pcth) {
+	    $w = int($w * $pctw / 100);
+	    $h = int($h * $pcth / 100);
+	}
+	return ($w, $h);
+    }
+    warn "Image sizing without Image::Size not implemented";
+    undef;
+}
+
+sub start {
+    eval {require bradchoate::textile;};
+    return 1 if (!$@);
+    return 0;
+}
+
+sub story {
+  my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+  return 1 if $meta::markup ne 'textile';
+
+  my $c = {
+      encode_html   => \&encode_html,
+      smarty        => undef,
+      imagesize     => $do_imagesize ? \&imagesize : undef,
+      auto_encode   => $do_auto_encode,
+      head_offset   => $head_offset,
+      document_root => $document_root,
+      site_path     => "$document_root/$path"
+      };
+
+  $$body_ref = bradchoate::textile::textile_1($$body_ref, $c);
+  return 1;
+}
+
+1;

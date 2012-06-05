@@ -1,0 +1,90 @@
+# -*- perl -*-
+# Blosxom Plugin: multcat
+# Author(s): Axel Beckert <blosxom@deuxchevaux.org>
+# Version: 0.01
+# Licensing: GPL v2 or newer, http://www.gnu.org/licenses/gpl.txt
+# multcat web page: http://noone.org/blosxom/multcat
+# Blosxom web page: http://www.blosxom.com/
+
+### Documentation:
+#
+# This is a plugin for blosxom.
+#
+# Installation:
+#
+#  Just drop it into your blosxoms plugin directory and it should start
+#  working. It needs a symbolic link supporting operating system, so it
+#  may not work under Windows. Unices should work fine, if you don't do
+#  ugly things with file systems. ;-)
+# 
+# What it does:
+#
+#  It allows to have postings in multiple categories without having
+#  them multiple times on the main page or any category's page which
+#  includes at least two categories, the posting appears in. Designed
+#  to work together with categorytree, which still counts all
+#  occurrences of a posting.
+#
+# Plugin Order:
+#
+#  If you change the plugin order and have the categorytree plugin
+#  installed, it must come before multcat to work as intended.
+#
+#  If you have the moreentries plugin installed, you may change it's
+#  position in the plugin order to run after multcat.
+#
+# Version History:
+#
+#  0.01: Initial release
+#
+
+package multcat;
+
+use File::Basename;
+
+sub start { 1; }
+
+sub filter {
+    my ($pkg, $files_ref) = @_;
+
+    my @keys = 
+	#grep { m(^$blosxom::datadir/?$blosxom::path_info) }
+	keys %$files_ref;
+    my %localfiles = ();
+    my %debug = ();
+    my %debug2 = ();
+    my %debug3 = ();
+
+    foreach (@keys) {
+	$localfiles{$_} = $files_ref->{$_} if m(/$blosxom::path_info);
+    }
+
+    foreach my $key ( @keys ) {
+	if (-l $key) {
+	    my $dest = readlink($key);
+	    $debug{$key} = 
+	    $dest = dirname($key)."/$dest";
+	    while ($dest =~ m(/../)) {
+		$dest =~ s(/[^/]+/\.\./)(/);
+	    }
+	    $debug2{$key} = $dest;
+
+	    $debug3{$key} = 
+	    my $destdate = $localfiles{$dest};
+
+	    # The found symlink is not a story which is to be
+	    # displayed, so we don't need to extinct it from the
+	    # website
+	    next unless $destdate;
+	    
+	    delete($files_ref->{$key});
+	}
+    }
+
+    use Data::Dumper;
+    $debug = Dumper $blosxom::path_info, $files_ref, \@keys, \%localfiles, \%debug, \%debug2, \%debug3;
+
+    1;
+}
+
+1;

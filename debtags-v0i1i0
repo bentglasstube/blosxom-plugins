@@ -1,0 +1,71 @@
+# Blosxom Plugin: debtags   vim:ft=perl:
+# Author: Gerfried Fuchs <alfie@debian.org>
+# Version: 0.1.0 (2004-02-19)
+# Documentation: See the end of this file or type: perldoc debtags
+
+package debtags;
+
+# --- Configurable variables -----
+
+# none needed
+
+# --------------------------------
+
+sub detagit {	# detaggs the reference
+	my ($reference) = @_;
+	$$reference =~ s#<debbug\s+([^>]+)\s*/?>#<a href="http://bugs.debian.org/$1">$1</a>#sg;
+	$$reference =~ s|#(\d{4,6})|<a href="http://bugs.debian.org/$1">#$1</a>|g;
+	$$reference =~ s#<debpkg\s+([^>]+)\s*/?>#<a href="http://packages.debian.org/$1">$1</a>#sg;
+	1;
+}
+
+sub start {
+	1;
+}
+
+sub story {
+	my ($class, $path, $fn, $story, $title, $body) = @_;
+	detagit($body);
+	1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plugin: debtags
+
+=head1 SYNOPSIS
+
+You can use two new tags in your text: <debbug 12345> which will result in a
+<a href="http://bugs.debian.org/12345">12345</a> link, and <debpkg blosxom>
+which in turn turns into
+<a href="http://packages.debian.org/blosxom">blosxom</a>. More are planed, I
+am always up for suggestions.
+
+Suggestion for #12345 for a bug number link received from Marco d'Itri. Thanks.
+
+=head1 VERSION
+
+0.1.0
+
+=head1 AUTHOR
+
+Gerfried Fuchs <alfie@debian.org>, http://alfie.ist.org/projects/blosxom/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+None that I know of. If you find one feel free to fix it and send me a patch
+so I can incorporate it in future releases.
+
+=head1 LICENSE
+
+GPLv2

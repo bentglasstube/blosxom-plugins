@@ -1,0 +1,77 @@
+# Blosxom Plugin: redir
+# Author(s): cho45 <cho45@lowreal.net>
+# Version: $Revision$
+# Documentation: Set the bottom of this file or type: perldoc redir
+# vim:set ft=perl:
+
+
+package redir;
+
+use strict;
+use warnings;
+
+
+# --- Configurable variables -----------
+
+# no configure
+
+# --- Plug-in package variables --------
+
+# --------------------------------------
+
+use CGI qw/:standard :netscape/; 
+
+sub start {
+	if ($blosxom::path_info) {
+		return 0;
+	};
+	1;
+}
+
+sub skip {
+	my $path_info = path_info();
+
+	if ($path_info =~ m{^/\d{4}(/\d\d(/\d\d)?)?$}) {
+		$blosxom::header->{'Status'} = "303 See Other add slash";
+		$blosxom::header->{'Location'} = $blosxom::url . "$path_info/";
+		return 1;
+	}
+
+	return 0;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plugin: redir
+
+=head1 SYNOPSIS
+
+Date base URI integration.
+
+=head1 AUTHOR
+
+cho45 <cho45@lowreal.net>, http://lowreal.net/
+
+=head1 DESCRIPTION
+
+This plugins redirect the URLs like /2006, /2006/09 or /2006/09/01
+to /2006/, /2006/09/, /2006/09/01/ each.
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+all about blosxom (lang=ja): http://blosxom.info/
+
+=head1 LICENSE
+
+section Blosxom plugin Copyright 2006 cho45
+
+This plugin is licensed under Creative-Commons by 2.1 jp.
+
+See the below URL:
+http://creativecommons.org/licenses/by/2.1/jp/
+

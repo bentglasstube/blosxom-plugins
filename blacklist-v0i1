@@ -1,0 +1,130 @@
+# Blosxom Plugin: blacklist
+# Author: Fletcher T. Penney (http://fletcher.freeshell.org)
+# Version: 0.1
+
+package blacklist;
+ 
+
+# --- Configurable variables ---
+
+# Where is the blacklist file?
+$blacklist_file = "$blosxom::plugin_state_dir/blacklist";
+
+# Where is the whitelist file?
+$whitelist_file = "$blosxom::plugin_state_dir/whitelist";
+
+# Both the black and white lists consist of one IP address per line
+# you may also use regexp's to match more than one address
+# Be careful that you don't accidentally block out the world!
+# Examples:
+# 192.168.1.102 - block this ip addy
+# 192.168.1.* - block the whole subnet
+# 192.* - blocks a whole bunch of addresses
+# .* - blocks the world
+# 192.168.1 - fails to match, as this is not a complete address
+#
+
+# What should I display for a page that isn't found
+$message = "404 Not Found\n";
+
+# ------------------------------
+my ( @blacklist, @whitelist) = ();
+
+sub start {
+	
+	if (open (BLACK, "< $blacklist_file")) {
+		@blacklist = <BLACK>;
+		close BLACK;
+		
+		if (open (WHITE, "< $whitelist_file")) {
+			@whitelist = <WHITE>;
+			close WHITE;
+		}
+		
+			
+		$remoteIP = $ENV{'REMOTE_ADDR'};
+		foreach (@whitelist) {
+			chomp $_;
+			if (($_ !~ /^\s*$/) && ($remoteIP =~ /^$_$/)) {
+				return 0 ;
+				warn "IP address $_ is whitelisted\n";
+			}
+		}
+		
+		foreach (@blacklist) {
+			chomp $_;
+			if (($_ !~ /^\s*$/) && ($remoteIP =~ /^$_$/)) {
+				#$blosxom::output = "Status: 404", exit;
+				warn "IP address $_ is blacklisted\n";
+				
+				# You may want to disable certain plugins,
+				# such as writebacks here, as blosxom is still
+				# functioning - it just won't return any results
+				#$blosxom::plugins{'writebacks'} = 0;
+				
+				return 1;				
+			}
+		}
+		return 0;  # We're finished
+	}
+}
+
+
+sub last {
+	# We only end up here if we are blacklisting someone
+	
+	$blosxom::output = $message;
+	print "Status: 404\n";
+	
+	1;
+}
+
+1;
+
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: blacklist
+
+=head1 SYNOPSIS
+
+Allows you to blacklist (or whitelist) certain IP addresses or IP ranges by using regexp's.  You create two files, consisting of one term per line.  The plugin compares the visitor's IP address to each term and quits when it finds a match.  Whitelists supercede blacklists.
+
+This plugin does not prevent blosxom from performing all of its steps.  Instead, if a visitor is blacklisted, it erases all of the HTML just prior to sending it to the visitor's browser, and instead sends a 404 code, making it appear as if your web pages are no longer present.
+
+=head1 VERSION
+
+Version 0.1
+
+=head2 VERSION HISTORY
+
+0.1	- initial public release
+
+=head1 AUTHOR
+
+Fletcher T. Penney, http://fletcher.freeshell.org
+
+=head1 LICENSE
+
+Blosxom Blacklist Plug-in
+Copyright 2003, by Fletcher T. Penney
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

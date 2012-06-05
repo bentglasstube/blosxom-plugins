@@ -1,0 +1,503 @@
+# Blosxom Plugin: blogroll                                         -*- perl -*-
+# Author: Todd Larason (jtl@molehill.org)
+# Author: Kevin Scaldeferri (kevin@scaldeferri.com)
+# (line and version added by Doug Nerad to show latest version)
+# Version: 0+5i
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/blosxom
+# Blogroll plugin Home/Docs/Licensing:
+#   http://molelog.molehill.org/blox/Computers/Internet/Web/Blosxom/Blogroll/
+
+package blogroll;
+
+# -------------- Configuration Variables --- -------------
+
+# files to read; should be either OPML, NewNewsWire .plist, or 'table'
+# files (<title>tab<url>\n); with the default, just create a directory
+# "$plugin_state_dir/.blogroll" and put your files (or symlinks to
+# them) in it
+
+@source_files = glob "$blosxom::plugin_state_dir/.blogroll/*" if ($#source_files < 0);
+
+$use_caching = 1 unless defined $use_caching;
+
+$debug_level = 0 unless defined $debug_level;
+# -------------------------------------------------------------------
+
+use IO::File;
+use File::stat;
+
+my $package = 'blogroll';
+my $cachefile = "$blosxom::plugin_state_dir/.$package.cache";
+my $save_cache = 0;
+my $cache;
+
+sub debug {
+    my ($level, @msg) = @_;
+
+    $debug .= "@msg<br>\n";
+    if ($debug_level >= $level) {
+	print STDERR "$package debug $level: @msg\n";
+    }
+}
+
+sub load_template {
+    my ($bit) = @_;
+    return $blosxom::template->('', "$package.$bit", $blosxom::flavour);
+}
+
+# Output & formatting functions
+
+sub report {
+    my ($bit, $title, $htmlurl, $xmlurl) = @_;
+
+    my $f = load_template($bit);
+    $f =~ s/((\$[\w:]+)|(\$\{[\w:]+\}))/$1 . "||''"/gee;
+    return $f;
+}
+
+sub finish_file_tree {
+    my ($tree) = @_;
+    my $results;
+
+    if ($tree->{items}) {
+	$results .= report('sub_head', $tree->{title});
+	$results .= finish_file_tree($_) foreach @{$tree->{items}};
+	$results .= report('sub_foot', $tree->{title});
+    } else {
+	$results .= report($tree->{xmlurl} ? 'item_xml':'item_no_xml', 
+			   $tree->{title}, $tree->{htmlurl}, $tree->{xmlurl});
+    }
+    return $results;
+}
+
+sub finish_file {
+    my ($fc, $filename, $tree) = @_;
+    local $_;
+    my $results;
+
+    $filename =~ s:.*/::;
+    $filename =~ s:[^a-zA-Z0-9]+:_:g;
+    $$filename = $fc->{blogroll}{$blosxom::flavour};
+    return if defined $$filename;
+
+    $results = report('head');
+    foreach (@{$tree->{items}}) {
+	$results .= finish_file_tree($_);
+    }
+    $results .= report('foot');
+
+    $$filename = $fc->{blogroll}{$blosxom::flavour} = $results;
+}
+
+sub finish {
+    my (@filenames) = @_;
+    my $key = '';
+
+    foreach (@filenames) {
+	my $fc = $cache->{file}{$_};
+	$key .= "|$fc->{mtime}";
+	finish_file($fc, $_, $fc->{tree}) if ($fc->{tree});
+    }	
+    return $cache->{blogroll}{$blosxom::flavour} 
+      if ($cache->{blogroll_key}{$blosxom::flavour} eq $key);
+
+    debug(1, "cache miss: blogroll results: $key");
+    my @items;
+    foreach my $filename (@filenames) {
+	my $fc = $cache->{file}{$filename};
+	foreach (@{$fc->{items}}) {
+	    push @items, $_;
+	}
+    }
+
+    my $results;
+    
+    $results = report('head');
+    foreach (sort {lc($a->[0]) cmp lc($b->[0])} @items) {
+	$results .= report(defined($_->[2]) ? 'item_xml':'item_no_xml', @{$_});
+    }
+    $results .= report('foot');
+
+    $cache->{blogroll_key}{$blosxom::flavour} = $key;
+    $cache->{blogroll}{$blosxom::flavour} = $results;
+    $save_cache = 1;
+
+    return $results;
+}
+
+# input and parsing functions
+
+sub handle_item {
+    my ($fc, @record) = @_;
+    push @{$fc->{items}}, [@record];
+    debug(3, "handle_item(@record)");
+}
+
+sub handle_tree {
+    my ($fc, $tree) = @_;
+
+    if ($tree->{items}) {
+	handle_tree($fc, $_) foreach @{$tree->{items}};
+    } else {
+	handle_item($fc, $tree->{title}, $tree->{htmlurl}, $tree->{xmlurl});
+    }
+}
+
+sub handle_opml_subscription_file {
+    my ($fh, $fc) = @_;
+    my $count = 0;
+    # XXX this should maybe do 'real' xml parsing
+    # XML::Simple fast enough?  worth requiring more
+    # modules installed?
+    my $text = join '',<$fh>;
+    while ($text =~ m!\s<outline (.*?)>!msg) {
+	$_ = $1;
+        next unless m|/$|;
+	my ($htmlurl, $title, $xmlurl);
+	($htmlurl) = m:html[uU]rl=" ( [^\"]+ ) ":x;
+	($title  ) = m:title     =" ( [^\"]+ ) ":x;
+	($xmlurl ) = m:xml[uU]rl =" ( [^\"]+ ) ":x;
+	if (defined($title) && (defined($htmlurl) || defined($xmlurl))) {
+	    push @{$fc->{tree}{items}}, 
+	    {title   => $title, 
+	     htmlurl => $htmlurl,
+	     xmlurl  => $xmlurl};
+	    $count++;
+	}
+    }
+    debug(2, "handle_opml_subscription_file finished, $count items");
+}
+
+sub handle_tab_file {
+    my ($fh, $fc) = @_;
+    my $count = 0;
+    while ($_ = $fh->getline) {
+	chomp;
+	my ($title, $htmlurl) = split /\t+/;
+	push @{$fc->{tree}{items}},
+	{title   => $title, 
+	 htmlurl => $htmlurl,
+	 xmlurl  => $xmlurl};
+    }
+    debug(2, "handle_tab_file finished, $count items");
+}
+
+sub read_plist_dict {
+    my ($fh) = @_;
+    my $self = { type => 'dict'};
+
+    my ($key, $value);
+    while ($_ = $fh->getline) {
+	if (m!<key>(.*)</key>!) {
+	    $key = $1;
+	} elsif (m!<array>!) {
+	    $self->{$key} = read_plist_array($fh);
+	} elsif (m!<array/>!) {
+	    $self->{$key} = {type => 'array', array => []};
+	} elsif (m!<string>(.*)</string>!) {
+	    $self->{$key} = $1;
+	} elsif (m!</dict>!) {
+	    return $self;
+	} else {
+	    die "$_ in dict";
+	}
+    }
+}
+
+sub read_plist_array {
+    my ($fh) = @_;
+    my $self = { type => 'array'};
+    
+    $self->{array} = [];
+    while ($_ = $fh->getline) {
+	if (/<dict>/) {
+	    push @{$self->{array}}, read_plist_dict($fh);
+	} elsif (m!</array>!) {
+	    return $self;
+	} else {
+	    die "$_ in <array>";
+	}
+    }
+}
+
+sub prettify_plist_tree {
+    my ($tree) = @_;
+
+    if ($tree->{type} eq 'array') {
+	return [map {prettify_plist_tree($_)} @{$tree->{array}}];
+    } elsif ($tree->{isContainer}) {
+	return {title => $tree->{name},
+		items => prettify_plist_tree($tree->{childrenArray})};
+    } elsif ($tree->{type} eq 'dict' &&
+	     $tree->{name} && $tree->{home} && $tree->{rss}) {
+	return {title 	=> $tree->{name},
+		htmlurl => $tree->{home},
+		xmlurl 	=> $tree->{rss}};
+    } else {
+	die "Unexpected node: $tree->{type}";
+    }
+}
+
+sub handle_nnw_file {
+    my ($fh, $fc) = @_;
+    my $count = 0;
+
+    do {
+	$_ = $fh->getline
+    } while ($_ && !m!<key>Subscriptions</key>!);
+    $_ = $fh->getline;
+    m:<array>: or die "Unexpected format: $_ at nnw toplevel";
+    my $tree = read_plist_array($fh);
+    $fc->{tree} = {items => prettify_plist_tree($tree)};
+}
+
+sub handle_file {
+    my ($filename) = @_;
+
+    my $filecache = $cache->{file}{$filename};
+    my $mtime = stat($filename)->mtime;
+
+    # If this file is in the cache, and hasn't been modified, we're
+    # done here
+    return if (defined($filecache) && $filecache->{mtime} == $mtime);
+
+    debug(1, "cache miss $filename: $mtime");
+
+    # Either not there or outdated, start over
+    $filecache = {mtime => $mtime, items => []};
+
+    my $fh = new IO::File("< $filename");
+    if (!$fh) {
+	warn "Couldn't open $filename";
+	return;
+    }
+
+    if ($filename =~ m:\.opml$:) {
+	handle_opml_subscription_file($fh, $filecache)
+    } elsif ($filename =~ m:\.tab$:) {
+	handle_tab_file($fh, $filecache);
+    } elsif ($filename =~ m:/com\.ranchero\.NetNewsWire\.plist:) {
+	handle_nnw_file($fh, $filecache);
+    } else {
+	warn "Unrecognized filetype $filename";
+    }
+    $fh->close;
+    handle_tree($filecache, $filecache->{tree});
+
+    $cache->{file}{$filename} = $filecache;
+}
+
+# blosxom plugin interface
+
+$blogroll;
+$last_flavour = '';
+
+sub prime_cache {
+    return 0 if !$use_caching;
+    eval "require Storable";
+    if ($@) {
+	debug(1, "cache disabled, Storable not available"); 
+	$use_caching = 0; 
+	return 0;
+    }
+    if (!Storable->can('lock_retrieve')) {
+	debug(1, "cache disabled, Storable::lock_retrieve not available");
+	$use_caching = 0;
+	return 0;
+    }
+    $cache = (-r $cachefile ? Storable::lock_retrieve($cachefile) : undef);
+    # for this, the cache is always valid if it exists
+    if (defined($cache)) {
+	debug(1, "Loaded cache");
+	return 1;
+    }
+    $cache = {};
+    return 0;
+}
+
+sub save_cache {
+    return if (!$use_caching || !$save_cache);
+    debug(1, "Saving cache");
+    Storable::lock_store($cache, $cachefile);
+}
+
+sub start {
+    debug(1, "start() called, enabled");
+    while (<DATA>) {
+	chomp;
+	last if /^(__END__)?$/;
+	my ($flavour, $comp, $txt) = split ' ',$_,3;
+	$txt =~ s:\\n:\n:g;
+	$blosxom::template{$flavour}{"$package.$comp"} = $txt;
+    }
+    prime_cache();
+    return 1;
+}
+
+sub head {
+    my ($pkg, $currentdir, $head_ref) = @_;
+
+    local $_;
+
+    # for static generation, don't do the same work over and over
+
+    return 1 if ($blogroll && $last_flavour eq $blosxom::flavour); 
+    $last_flavour = $blosxom::flavour;
+
+    debug(1, "head() called");
+    foreach my $filename (@source_files) {
+	handle_file($filename) ;
+    }
+    $blogroll = finish(@source_files);
+    debug(1, "head() finished, length(\$blogroll) =", length($blogroll));
+
+    save_cache();
+    1;
+}
+
+1;
+# default flavour files; the 'error' flavour is default
+# 'blogroll.' is prepended to the name given here
+# to create an html flavour, then, create files 'blogroll.head.html' and so on.
+__DATA__
+error head <ul class="blogroll">\n
+error sub_head <li>$title<ul>\n
+error item_no_xml <li><a href="$htmlurl">$title</a></li>\n
+error item_xml <li><a href="$htmlurl">$title</a> (<a href="$xmlurl">xml</a>)</li>\n
+error sub_foot </ul></li>\n
+error foot </ul>\n
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: blogroll
+
+=head1 SYNOPSIS
+
+Purpose: Provides a blogroll from pre-exsting data files and/or an simple text file
+
+  * $blogroll::blogroll -- blogroll, sorted, combined from all input files
+  * $blogroll::<sanitized filename> -- blogroll of items from C<filename>, 
+    in their original order.  <sanitized filename> is C<filename> with all 
+    non-alphanumerics replaced with underscores
+
+=head1 VERSION
+
+0+4i
+
+4th test release
+
+=head1 AUTHOR
+
+Todd Larason  <jtl@molehill.org>, http://molelog.molehill.org/
+
+=head1 BUGS
+
+None known; address bug reports and comments to me or to the Blosxom
+mailing list [http://www.yahoogroups.com/groups.blosxom].
+
+=head1 Customization
+
+=head2 Input files
+
+Three file formats are currently supported
+
+=head3 OPML subscription files
+
+These are recognized by a '.opml' extension.  
+
+Only subscription files are supported; general OPML files are not.  Although 
+OPML itself is standardized, the subscription subset is not, and there's
+more variation than you might expect.  This is known to work with AmphetaDesk
+and Radio native subscription files (but not Radio's other OPML files), and 
+NetNewsWire export files; I'm interested in both success and failure reports
+for files from other OPML generators.
+
+=head3 TAB files
+
+These are recognized by a '.tab' extension.
+
+This is a simple text format intended for human editing, either to supplment
+the items from the other file formats or for people who don't wish to use
+one of the others.
+
+Each line represents a record.  Each record contains two fields, separated
+by a tab.  The first field is the name of the item, the second feld is the 
+URL.
+
+=head3 NNW plist files
+
+These are recognized by the full name "com.ranchero.NetNewsWire.plist" (there
+may be other plist formats supported in the future, so ".plist" isn't enough).
+
+This is the native subscription format for NetNewsWire and NetNewsWire Pro.
+
+This format supports hierarchical categorization of entries, available via the
+$blogroll::com_ranchero_NetNewsWire_plist variable.
+
+=head2 Configuration variables
+
+C<@source_files> is the list of files to be used; by default, it's all the 
+files in $blosxom::plugin_state_dir/.blogroll.
+
+C<$use_caching> controls whether or not to try to cache data and
+formatted results; caching requires Storable, but the plugin will work
+just fine without it.
+
+C<$debug_level> can be set to a value between 0 and 5; 0 will output
+no debug information, while 5 will be very verbose.  The default is 1,
+and should be changed after you've verified the plugin is working
+correctly.
+
+=head2 Class for CSS control
+
+There's a class used, available for CSS customization.
+
+  * C<blogroll> -- the blogroll list as a whole
+
+=head2 Flavour-style files
+
+If you want a format change that can't be made by CSS, you can
+override the HTML generated by creating files similar to Blosxom's
+flavour files.  They should be named blogroll.I<bit>.I<flavour>; for
+available I<bit>s and their default meanings, see the C<__DATA__>
+section in the plugin.
+
+=head1 Caching
+
+If the Storable module is available and $use_caching is set, various
+bits of data will be cached; this includes the parsed items from the
+input files and the final formatted output of any blogrolls generated.
+
+The cache will never be entirely flushed, but relevant pieces are invalidated
+when input files are modified.  If you're making template changes, 
+you may wish to either disable the cache (by setting $use_caching to 0) or 
+manually flush the cache; this can be done by removing
+$plugin_state_dir/.calendar.cache, and is always safe to do.
+
+=head1 LICENSE
+
+this Blosxom Plug-in
+Copyright 2003, Todd Larason
+
+(This license is the same as Blosxom's)
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+

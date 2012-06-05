@@ -1,0 +1,93 @@
+#!/usr/bin/perl -w
+# Blosxom Plugin: flatarchives
+# Modified archives plugin that produces a flat list
+# Modified by Joe Slag (joe@sl4g.com)
+# archives by : Brian Akins (bakins@web.turner.com)
+# Version: 1.0
+# Blosxom Home/Docs/Licensing: http://www.bloxsom.com
+
+package flatarchives;
+
+# --- Configurable Variables ---
+# Do you want the list sorted in reverse chronological order?
+my $reversechron=1;
+
+# Customize your month names here if you want to.
+my @monthname=('January', 'February', 'March', 'April', 'May', 'June', 'July',
+               'August', 'September', 'October', 'November', 'December');
+# ------------------------------
+
+$flatarchives = '';
+
+sub start {
+    return 1;
+}
+
+sub filter {
+    my ($pkg, $files) = @_;
+    my %archive;
+    
+    foreach (keys %{$files}) {
+	    my @date = localtime($files->{$_});
+        my $month = $date[4];
+    	my $year  = $date[5] + 1900;
+
+        $archive{$year}{'count'}++;
+        $archive{$year}{$month}{'count'}++;
+    }
+    
+    my $results = qq{<ul class="flatarchives">};
+
+    foreach my $year(sort {$reversechron?$b<=>$a:$a<=>$b} keys(%archive)) {
+        delete $archive{$year}{'count'};
+        
+        foreach my $month(sort {$reversechron?$b<=>$a:$a<=>$b} 
+                                      keys(%{$archive{$year}})) {
+            my $mnum = sprintf("%02d", $month+1);
+            $results .= qq{<li><a href="$blosxom::url/$year/$mnum/">};
+            $results .= qq{$monthname[$month]</a> $year };
+            $results .= qq{($archive{$year}{$month}{'count'})</li>};
+        }
+        
+    }
+
+    $results .= "</ul>";
+        
+    $flatarchives = $results;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: flatarchives
+
+=head1 SYNOPSIS
+
+Include $flatarchives::flatarchives in your templates to get an 
+unordered list of months in which you have posts.
+
+=head1 FLATARCHIVES
+
+Blosxom and this Blosxom Plug-in
+Copyright 2003, Rael Dornfest 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

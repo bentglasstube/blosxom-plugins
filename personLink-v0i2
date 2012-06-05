@@ -1,0 +1,178 @@
+# Blosxom Plugin: personLink
+# Author(s): Robert Hahn
+# Version: 0+2i
+# Documentation: See the bottom of this file or type: perldoc personLink
+
+package personLink;
+
+# --- Configurable variables -----
+
+# Who will the default author be? 
+# This can be overridden on a per post basis if required.
+my $author = 'Robert Hahn';
+
+# Search Engine Details
+my $searchEngine = 'http://www.google.com/search';
+my $queryPortion = '?q=';
+my $otherMetaData = '';
+
+# Final Representation (here, it's structured as an <a /> tag
+my $LinkTagStart = '<a href="';
+my $LinkTagStart2 = '">';
+my $LinkTagEnd = '</a> ';
+
+# Add image to link 
+# (0: link text only; 1: link image and text; 2: link image only)
+my $linkStyle = 0;
+
+# Indicate where the path to the personLink image is.
+my $pathToImage = "/rhahn/images/personLink.gif";
+
+# --------------------------------
+
+if ( $linkStyle ) {
+	$LinkTagEnd = " <img src=\"$pathToImage\" width=\"17\" height=\"9\" alt=\"Find out how this person links to the author!\" border=\"1\" />$LinkTagEnd";
+}
+
+# URI Encode spaces
+$author =~ s/ /+/g;
+
+sub start {
+  1;
+}
+
+sub story {
+  my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+  my $keywords = $meta::personlink_keywords;
+  my $body = $$body_ref;
+  my @people = split /,/, $meta::personlink_people;
+  
+  foreach $person (@people) {
+    my $encodedPerson = $person;
+	my $uri, $link;
+    $encodedPerson =~ s/ /+/g;
+	
+	if ( $body =~ /($person\S*)/ ) {
+		$person = $1;
+	}
+	$uri = $searchEngine.
+           $queryPortion.
+           '%22'.$encodedPerson.'%22+%22'.$author.'%22';
+    if($keywords) {
+      $keywords =~ s/ /+/g;
+      $uri .= '+'.$keywords;
+    }
+    $uri .=   $otherMetaData;
+
+	if ( $linkStyle == 2 ) {		# link image only
+	    $link = $person.$LinkTagStart.$uri.$LinkTagStart2.$LinkTagEnd;
+	} else {					# link text and image (if added)
+	    $link = $LinkTagStart.$uri.$LinkTagStart2.$person.$LinkTagEnd;
+	}
+
+	print STDERR $link."\n";
+    $body =~ s/$person/$link/;
+
+  }
+
+  $$body_ref = $body;
+
+  return 1;
+}
+
+1;
+
+__END__
+=head1 NAME
+
+Blosxom Plug-in: personLink
+
+=head1 SYNOPSIS
+
+Purpose: Inspired by Jon Udell's post about reflecting person to person relationships as Google search results, this plugin looks for a defined list of people and converts them to special Google Links.
+
+=head1 PREQUISITES
+
+The meta plug-in is required to be present and loaded before this plug-in.
+
+=head1 DETAILS
+
+The 'special Google link' has at least two search terms:  The author's name (which is most likely you), and the name of the person you mention in your post.  You may further refine your query results by adding subject-specific keywords.
+
+For this plug-in to work properly, each post that contains names to be linked must have the meta-personlink_people: variable set.  The value of meta-personlink_people may contain at least one person, with multiple people being separated with a comma.  Please ensure that the names in this list match the spelling used in the post.
+
+You may optionally specify a meta-personlink_keywords, which will be passed into the query.  You'd want to use this, for example, if you only wanted to return search results related to the subject of your post.
+
+=head1 CUSTOMIZATION
+
+I've made an attempt to allow you to customize the input and output streams as much as possible.
+
+$author => contains the author of the post (ie: you, or the friends who author the blog with you
+
+$searchEngine => the URI of the search engine you want to use.
+
+$queryPortion => '?q=' this is probably standard across many search engines, but check to be sure.
+
+$otherMetaData => If the search engine you want to use needs to always be augmented by other query parameters, add them in here.
+
+$LinkTagStart => contains the first part of an <a href /> link. You can use any other HTML here if you need.
+
+$LinkTagStart2 => contains the balance of the opening tag.
+
+$LinkTagEnd => contains the close tag.
+
+$linkStyle => set the link style.  If you set it to 0, then the text is linked, but there is no image. If set to 1 (default), an image is added and linked. If set to 2, only the image is linked, not the text beside it.
+
+$pathToImage => must be correctly linked to where the personLink image would be.  Please include the actual filename here as well.
+
+=head1 VERSION
+
+0+2i Added support for personLink image + some linking options.
+
+0+1i First Release.
+
+=head1 AUTHOR
+
+Robert Hahn  <rh-personlink@tenletters.com>, http://www.tenletters.com/rhahn/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+Jon Udell's post about person to person relationships: http://weblog.infoworld.com/udell/2003/12/16.html#a870
+
+My post about Googling person to person relationships (remove any hyphens that may appear in the URI): http://www.tenletters.com/rhahn/Internet/ReputationSystems/googlingRelationships.html
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Blosxom
+Copyright 2003, Rael Dornfest 
+
+personLink
+Copyright 2003, Robert Hahn
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

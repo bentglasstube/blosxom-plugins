@@ -1,0 +1,103 @@
+# Blosxom Plugin: altlinks
+# Author: Sam Pearson <sgp@domus.uklinux.net>
+# Version: 0.2 (for blosxom 2.0)
+# Docs: See below, or type "perldoc altlinks" from your shell prompt.
+
+package altlinks;
+
+# ----- Configurable variables -----
+
+# RSS 0.x/2 flavour:
+$rss_flav = "rss";
+
+# RSS 1 (RDF) flavour:
+$rdf_flav = "rdf";
+
+# Atom flavour:
+$atom_flav = "atom";
+
+# ----------------------------------
+
+$alt_rss;
+$alt_rdf;
+$alt_atom;
+
+sub start {
+    1;
+}
+
+sub head {
+    my $urlpath;
+    if ( $blosxom::path_info =~ /\.[^\/]+$/ ) {
+	$urlpath = "$blosxom::url/$blosxom::path_info";
+	$alt_rss = $urlpath; $alt_rss =~ s/[^\.]+$/$rss_flav/;
+	$alt_rdf = $urlpath; $alt_rdf =~ s/[^\.]+$/$rdf_flav/;
+	$alt_atom = $urlpath; $alt_atom =~ s/[^\.]+$/$atom_flav/;
+    }
+    else {
+	$urlpath = "$blosxom::url/$blosxom::path_info";
+	$urlpath =~ s!/$!!;
+	$alt_rss = "$urlpath/index.$rss_flav";
+	$alt_rdf = "$urlpath/index.$rdf_flav";
+	$alt_atom = "$urlpath/index.$atom_flav";
+    }
+    1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plugin: altlinks
+
+=head1 VERSION
+
+0.2
+
+=head1 DESCRIPTION
+
+altlinks is designed to allow you to include alternate <link> tags in your HTML templates for syndication feeds that mirror a visitors position in the filesystem hierarchy.  That is, the href attribute will include the path of the document viewed, all the way down to the single file level.
+
+I wrote this plugin because it always seemed to me that the root RSS feed wasn't really an "alternate" for a single entry page - especially as the root feed might not even include that entry any longer.  Also, since it is possible to subscribe to feeds for specific categories, supplying the correct information in the <head> of the HTML document seemded sensible.
+
+=head1 INSTALLATION
+
+Simply drop altlinks into your plugins directory.
+
+=head1 CONFIGURATION
+
+By default, the plugins assumes that you have flavours named B<rss>, B<rdf> and B<atom>.  You can alter these assumptions by adjusting the variables at the top of the plugin (B<$rss_flav>, B<$rdf_flav> and B<$atom_flav>) to point at the correct flavours.  There is nothing stopping you using the variables for different formats to those suggested by the variable names - you'll just have to remember what points where and adjust the <link>s in your HTML templates to match. 
+
+altlinks provides three variables for use in your templates: B<$altlinks::alt_rss>, B<$altlinks::alt_rdf>, and B<$altlinks::alt_atom>.  Each contains the full path to a given feed for the page being viewed.  To use these, include a <link> in the <head> section of your HTML template for each alternate you want to point to, something like:
+
+<link rel="alternate" type="application/rss+xml" href="$altlinks::alt_rss" />
+
+<link rel="alternate" type="application/rdf+xml" href="$altlinks::alt_rdf" />
+
+<link rel="alternate" type="application/atom+xml" href="$altlinks::alt_atom" />
+
+=head1 CHANGELOG
+
+Version B<0.1> used hardcoded flavour names.
+
+=head1 BUGS
+
+Currently altlinks only works for path-based URLs, date-based ones are ignored and the href attribute for the <link> will be formed from whatever path fragments there are in the requested URL.
+
+=head1 AUTHOR
+
+Sam Pearson <http://www.domus.uklinux.net/>
+
+=head1 LICENSE
+
+Copyright Sam Pearson, 2004
+
+This plugin is available under the same terms as blosxom itself:
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

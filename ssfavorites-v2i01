@@ -1,0 +1,229 @@
+#!/usr/bin/perl
+# Blosxom Plugin: SSFavorites
+# Author: Daniel C. Parker (writedanielp@hotmail.com)
+# Full Documentation at www.theserviceguys.com/dan/plugins/ssfavorites/
+# Version: 2.01
+# Description: A sort of server-side "favorites" or "watching" list
+# Use: Everything self-installs:
+# 1. Just put this in your plugins directory. (The order for this doesn't matter.)
+# 2. There are two variables to put in your "page" file:
+#     "$ssfavorites::fav_list" and "$ssfavorites::button".
+# 3. Variable "$ssfavorites::messages" is for debugging, though you never should need it.
+# NOTE: This requires the LOGIN PLUGIN to be functioning as well.
+# See the LOGIN plugin's NOTES as well.
+package ssfavorites;
+use CGI qw/:standard/;
+# --- Configurable variables -----
+# The Add and Remove forms. Make sure you know what you're doing if you change it.
+# The hidden names and values 'plugin', 'task', and 'fav_string' must be there to function,
+# but they're here to let you customize however you want to.
+# (Like you could make the submit button be an image and/or integrate it with JavaScript)
+$add_form = "<form class=\"addremovefav\" method=\"POST\" action=\"\">" .
+            "<input type=\"hidden\" name=\"plugin\" value=\"ssfavorites\" />\n" .
+            "<input type=\"hidden\" name=\"task\" value=\"add\" />\n" .
+            "<input type=\"hidden\" name=\"fav_string\" value=\"0&amp;&amp;$blosxom::url$path/$filename.$blosxom::default_flavour&amp;&amp;$blosxom::title&amp;&amp;$truemtime\" />\n" .
+            submit(-label=>'Add to Favorites') .
+            end_form;
+$remove_form = "<form class=\"addremovefav\" method=\"POST\" action=\"\">" .
+               "<input type=\"hidden\" name=\"plugin\" value=\"ssfavorites\" />\n" .
+               "<input type=\"hidden\" name=\"task\" value=\"remove\" />\n" .
+               "<input type=\"hidden\" name=\"fakeurl\" value=\"$blosxom::url$blosxom::path/$filename.$blosxom::default_flavour\" />\n" .
+               submit(-label=>'Remove from Favorites') .
+               end_form;
+# --------------------------------
+sub start {
+  1;
+}
+sub template {
+  return undef;
+}
+sub entries {
+  return undef;
+}
+sub interpolate {
+  return undef;
+}
+sub filter {
+  my ($pkg, $files_ref) = @_;
+  $files = $files_ref;
+  1;
+}
+sub head { #This executes once before the head is added to the output stream.
+  $messages = "<div style=\"display: block; border: 1px solid black; background-color: #EEEEEE; margin-bottom: 40px\"><h2>SSFavorites Messages</h2>\n<p>\n";
+  $fav_list = '';
+  @Favs = ();
+  $explicit = 0;
+ #Rest of head is useless if not logged in
+  if($login::username ne '') {
+#Set @Favs before anything else.
+    if(-e "$blosxom::plugin_state_dir/fav/$login::username") {
+      if(not(open(FAV, "$blosxom::plugin_state_dir/fav/$login::username"))) {
+        $messages .= "Didn't open user's favorites file for reading.<br />\n";
+      } else { #File was opened, now read it (aloud and slowly) to @Favs list
+        $messages .= "Opened and read users file ($blosxom::plugin_state_dir/fav/$login::username).<br />\n";
+        @Favs = <FAV>;
+        $messages .= "<br />Favorites in file:<br />\n";
+        $messages .= "<ul><li>" . join("</li>\n<li>", @Favs) . "</li></ul><br />\n";
+        close(FAV);
+      }
+    } else {
+      $messages .= "File ($blosxom::plugin_state_dir/fav/$login::username) does not exist.<br />\n";
+    }
+    &make_fav_list();
+#If user just pushed a button, then act {&add || &remove} and optionally print $RedirectPage.
+    if((request_method() eq 'POST') and (param('plugin') eq 'ssfavorites')) {
+      $messages .= "<b>Found POST data.</b> ";
+      if(param('task') eq 'add') {
+        &add(param('fav_string'));
+      } elsif(param('task') eq 'remove') {
+        &remove(param('fakeurl'));
+      }
+    }
+  }
+  $messages .= "</p>\n</div>\n";
+}
+sub make_fav_list {
+#Make $fav_list
+  $fav_list = "<ul id=\"favorites\">\n";
+  for (@Favs) {
+    chomp;
+    my ($fakeurl, $title, $mdate) = split(/&&/);
+    my $truemtime = &get_mtime(&make_fileurl($fakeurl));
+    $messages .= "Story $fakeurl modified: '$truemtime\n', Story in Favorites modified: '$mdate'<br />\n";
+    if($truemtime ne $mdate) {
+      $fav_list .= "   <li><a class=\"modfav\" href=\"$fakeurl\">$title</a></li>\n";
+    } else {
+      $fav_list .= "   <li><a class=\"fav\" href=\"$fakeurl\">$title</a></li>\n";
+    }
+  }
+  $fav_list .= "  </ul>\n";
+}
+sub get_mtime { #Input: "$blosxom::datadir$path/$filename.$blosxom::file_extension".
+#Goal: Get and return the modification time and date
+  my ($sec,$min,$hr,$da,$mo,$yr,$wday,$yday,$isdst) = localtime($files->{$_[0]});
+  return("$hr:$min:$sec $mo/$da/$yr");
+}
+sub add {
+#Goal: Add a favorite to a user's favorites file
+  my $input_string = pop;
+  my ($update, $fakeurl, $title, $mtime) = split(/&&/, $input_string);
+  if($input_string eq '1&&none') {
+    $messages .= "Method = updating and nothing was removed.<br />\n";
+    return 1;
+  } #Nothing was removed, so don't try to add it.
+  $messages .= "Input_string: $fakeurl&&$title&&$mtime\n";
+ #Don't want old mtime, we need to refind it.
+  $mtime = &get_mtime(&make_fileurl($fakeurl));
+ #Make fav directory if it doesn't exist
+  if(not(-e "$blosxom::plugin_state_dir/fav")) {mkdir "$blosxom::plugin_state_dir/fav"}
+  $messages .= "Task: Add <font style=\"color: red\">$input_string</font><br />\n";
+ #Open user's favorites file for writing
+  if(not(open(FAV, ">$blosxom::plugin_state_dir/fav/$login::username"))) {
+    $messages .= "Couldn't open user's favorites file for writing.<br />\n";
+  } else {
+    $messages .= "File was successfully opened for writing.<br />\n";
+   #Add $input_string to @Favs
+    push(@Favs, "$fakeurl&&$title&&$mtime");
+    print FAV join("\n", @Favs);
+    close(FAV);
+    $messages .= "<br /><font style=\"color: green\"><b>Page successfully added to Favorites.</b></font><br />\n";
+  }
+  &make_fav_list();
+}
+sub remove {
+#Goal: Remove a favorite from a user's favorites file and return removed information
+  my $input_string = pop; #Input should be: "$fileurl"
+  $messages .= "Remove Input: $input_string<br />\n";
+  my $removed = 'none'; #If &remove is called in the process of updating favorites, we want to return 'none', which will go to &add and tell it not to add the favorite.
+ #Check if and where url is in the list.
+  $messages .= "Task: Remove $input_string<br />\n";
+ #Open user's favorite file for writing
+  if(not(open(FAV, ">$blosxom::plugin_state_dir/fav/$login::username"))) {
+    $messages .= "Couldn't open user's favorites file for writing.<br />\n";
+  } else {
+    $messages .= "Looking to remove <font style=\"color: red\">$input_string</font> from these:\n<ul><li>" . join("</li>\n<li>", @Favs) . "</li></ul>\n";
+    my $notfound = 1;
+    for $i (0 .. @Favs) {
+      my($fakeurl, $title, $mdate) = split(/&&/, $Favs[$i]);
+      if($input_string eq $fakeurl) {
+        $messages .= "Found.<br />\n";
+        $removed = splice(@Favs, $i, 1);
+        $notfound = 0;
+        $messages .= "<br /><font style=\"color: green\"><b>Page successfully removed from Favorites.</b></font><br />\n";
+        print FAV join("\n", @Favs);
+        close(FAV);
+      }
+    }
+    if($notfound) {$messages .= "Not Found: May be because of a refresh.<br />\n   - Favorite may have already been removed.<br />\n"}
+  }
+  &make_fav_list();
+  return($removed); #Return what I removed.
+}
+sub story {
+#Goal: Determine Add or Remove button and add to the beginning of story body
+  my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+  $explicit++; $explicit_story = "$blosxom::url$path/$filename.$blosxom::default_flavour";
+  $messages = "<div style=\"display: block; border: 1px solid black; background-color: #EEEEEE; margin-bottom: 40px\"><h2>SSFavorites Messages</h2>\n<p>\n";
+  $truemtime = &get_mtime("$blosxom::datadir$path/$filename.$blosxom::file_extension");
+  if($login::username ne "") { #User is logged in
+    $messages .= "LOGGED IN AS $login::username" . br;
+    $messages .= "Read file:<br />\n$blosxom::plugin_state_dir/fav/$login::username<br />\n";
+#Check for the current "story" in the user's favorites list
+    for my $i (0 .. @Favs) {
+      my ($fakeurl, $title, $mdate) = split(/&&/, $Favs[$i]);
+      if("$blosxom::url$path/$filename.$blosxom::$default_flavour" eq $fakeurl) {
+        $button = $remove_form;
+        return 1;
+      }
+    }
+    $button = $add_form;
+  } else {$messages .= "NOT LOGGED IN.<br />\n"}
+  1;
+}
+sub sort {
+  return undef;
+}
+sub foot {
+  #Currently this is in foot, but would like to put it in head if there is a way to determine if the user has viewed this story, even with others on the page.
+  my ($currentdir, $foot_ref) = @_;
+  $messages = "<div style=\"display: block; border: 1px solid black; background-color: #EEEEEE; margin-bottom: 40px\"><h2>SSFavorites Update Messages</h2>\n<p>\n";
+  if($explicit == 1) {
+    &add("1&&" . &remove($explicit_story));
+  } else {
+    $messages .= "Did not update favorites: There were more than 1 stories ($explicit)<br />\n";
+  }
+    $messages .= "</p>\n</div>\n";
+  1;
+}
+sub make_fakeurl {
+  my $fileurl = pop;
+  my $fakeurl = $blosxom::url . substr($fileurl, length($blosxom::datadir), -4) . ".$blosxom::default_flavour";
+  return($fakeurl);
+  $messages .= "Used &make_fakeurl() here.<br />\n";
+}
+sub make_fileurl {
+  my $fakeurl = pop;
+  my $fileurl = $blosxom::datadir . substr($fakeurl, length($blosxom::url), -4) . $blosxom::file_extension;
+  return($fileurl);
+}
+1;
+__END__
+=head1 NAME
+Blosxom Plug-in: SSFavorites
+=head1 DESCRIPTION
+A sort of server-side "favorites" or "watching" list
+=head1 VERSION
+Version 2.01
+=head1 AUTHOR
+Daniel C. Parker (writedanielp@hotmail.com)
+=head1 LICENSE
+This source is submitted to the public domain. Feel free to use and modify it. If you like, a comment in your modified source attributing credit for my original work would be appreciated.
+THIS SOFTWARE IS PROVIDED AS IS AND WITHOUT ANY WARRANTY OF ANY KIND.
+=head1 INSTALLATION
+Everything self-installs:
+ 1. Just put this in your plugins directory. (The order for this doesn't matter.)
+ 2. There are two variables to put in your "page" file:
+     "$ssfavorites::fav_list" and "$ssfavorites::button".
+ -. Variable "$ssfavorites::messages" is for debugging, though you never should need it.
+ NOTE: This requires the LOGIN PLUGIN to be functioning as well.
+ See the LOGIN plugin's NOTES as well.

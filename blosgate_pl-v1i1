@@ -1,0 +1,456 @@
+#!/usr/bin/perl
+use strict;
+use Mail::POP3Client();
+use Storable qw(lock_retrieve lock_store);
+use Mail::Sendmail();
+use File::Find qw/find/;
+
+########################################
+# blosgate.pl
+# The blosxom email-to-blog gateway.
+# Copyright 2003, Daniel Collis Puro
+
+# This script is free software; you can redistribute it and/or modify it 
+# under the same terms as Perl itself. 
+# Use it, abuse it, and let me know what you think. Please
+# tell me about any changes you make, (especially good ones).
+
+# Daniel Collis Puro, dan@geekuprising.com
+# http://www.geekuprising.com/blosxom
+# Version 1.1
+
+# Documentation at the bottom of the file, type "perldoc blosgate.pl"
+# or see the website above.
+
+########################################
+#Beginning of configuration parameters
+########################################
+my $file_extension='txt'; #should match setting in blosxom.cgi
+my $data_dir='/www/blog/entries/'; #same as blosxom.cgi
+my $plugin_state_dir='/www/blog/plugins/state/';
+
+# This is the user that requests will be accepted from
+# and confirmations sent to.
+my $valid_poster_email='you@yourdomain.com';
+
+#This is the address you send message requests to and
+#receive responses from, and it lives on $pop3_mail_host
+my $blog_gateway_address='blog@yourdomain.com';
+
+#You probably don't need to set the $pop3_auth_mode
+#This is the type of authentication Mail::POP3Client uses.
+my $pop3_auth_mode=""; 
+
+my $pop3_mail_host='mail.yourdomain.com';
+
+#POP3 login information for $blog_gateway_address.
+my $pop3_user_name='blog'; 
+my $pop3_password='password';
+
+#Set this to an SMTP server you can send mail from
+#if you can't send from localhost. On *nix you probably
+#don't need to set this, on windows you probably do.
+my $smtp_server=''; 
+
+#What the messages are prefixed with.
+my $subject_prefix="[BlosGate] ";
+
+my $debug; #Set to a true value for debugging info
+########################################
+#End of configuration parameters
+########################################
+
+my $pop = new Mail::POP3Client(
+			       USER => $pop3_user_name,
+			       PASSWORD => $pop3_password,
+			       AUTH_MODE=>$pop3_auth_mode,
+			       HOST     => $pop3_mail_host,
+#			       USESSL => 'true',
+			       DEBUG => $debug
+			      );
+
+if($pop->Count() >= 0){
+  # There were messages. Act upon them.
+  foreach my $msg (1..$pop->Count()) {
+    take_action_on_message($pop,$msg);
+    $pop->Delete($msg);
+  }
+} else {
+  #We had an unsuccessful connection. Unfortunately
+  #there is very little debugging information available. . .
+  print STDERR <<UnsuccessfulConnection;
+POP3 connection unsuccessful!
+Don't blame me: Mail::POP3Client doesn't give much in the way of debugging. . .
+
+Try running the script again in "debug" mode.
+
+Message:  $pop->Message()
+UnsuccessfulConnection
+}
+$pop->Close();
+
+
+################################################################################
+sub take_action_on_message{
+  #The main switchboard of blosgate
+  my ($pop,$msg)=@_;
+  my ($action,$token,$email);
+  my @head= $pop->Head( $msg );
+  foreach my $line (@head) {
+    #Get the email address first. I realize this is
+    #a rather naive regex, but given that it's in a 
+    #from: header, it should mitigate strangeness.
+    if($line =~ m/^from.+?([\w\.-]+\@[\w\.-]+)/gi){
+      $email=$1;
+    }
+  }
+  if (uc($email) ne uc($valid_poster_email)) {
+    send_mail("Attempted Abuse by $email","$email attempted to use your BlosGate system, and that person ISN'T a valid sender in your configuration.");
+    return;
+  }
+  foreach my $line ( @head ) {
+    if (substr(uc($line),0,7) eq 'SUBJECT') {
+      if ($line =~ m/new\s+entry/gi) {
+	print STDERR "$line \n is a New Entry\n" if($debug);
+	new_entry();
+      } elsif ($line =~ m/submit\s+entry/gi) {
+	print STDERR "$line \n is a submitted entry\n" if($debug);
+	$token=get_token($line);
+	submit_entry($token,$pop,$msg);
+	$action='CONFIRM';
+      } else {
+	print STDERR "$line \n didn't match a default action. Assuming New Entry\n" if($debug);
+	new_entry();
+      }
+    }
+  }
+}
+########################################
+
+
+################################################################################
+sub get_sorted_directories{
+  my $directories=shift;
+  find sub{ push @$directories,$File::Find::name if(-d $_) },($data_dir);
+  print STDERR "Sorted entry directories: \n".join("\n",@$directories)."\n" if ($debug);
+  @$directories=sort @$directories;
+}
+########################################
+
+
+################################################################################
+sub get_stored_tokens{
+  #Man. Storable ROCKS.
+  if(-e $plugin_state_dir."blosgate.tokens"){
+    return lock_retrieve($plugin_state_dir."blosgate.tokens");
+  } else {
+    return {};
+  }
+}
+########################################
+
+
+################################################################################
+sub save_tokens{
+  #Man. Storable ROCKS.
+  my $tokens=shift;
+  lock_store($tokens,$plugin_state_dir."blosgate.tokens");
+}
+########################################
+
+
+################################################################################
+sub new_entry{
+  my %item;
+  my $tokens=get_stored_tokens();
+  my $new_token=create_token($tokens);
+  my @directories;
+  get_sorted_directories(\@directories);
+  my $count=1;
+  my %directories;
+  my $directory_list;
+  foreach (@directories) {
+    $directories{$count}=$_;
+    $directory_list.="[ ]  $count.\t".substr($_,length($data_dir)-1)."/\n";
+    $count++;
+  }
+  $tokens->{$new_token}={
+			 directories=>\%directories
+			};
+  save_tokens($tokens);
+  send_new_entry_mail($new_token,$directory_list);
+}
+########################################
+
+
+################################################################################
+sub send_new_entry_mail{
+    my($new_token,$directory_list)=@_;
+    my $subject="Submit Entry: $new_token";
+    my $message=qq|************************************************
+Put an "x" in the "[ ]" of the category you want to add your entry to.
+
+$directory_list
+EXACTLY what appears between these lines will be your blog entry, 
+written to the category (directory) you select above.
+
+Your Blog Entry Follows This Line:*******************************
+Erase this text and type your blog entry here.
+Your Blog Entry Ends Above This Line:****************************
+|;
+    print STDERR "Subject:\n$subject\nMessage:\n$message\n" if($debug);
+    send_mail($subject,$message);
+}
+########################################
+
+
+################################################################################
+sub send_mail{
+    my ($subject,$message)=@_;
+    my %mail = (
+		To      => $valid_poster_email,
+		SMTP =>$smtp_server||'',
+		Subject	=> $subject_prefix.$subject || $subject_prefix."Mail from Blogmail- The Email-to-blog gateway",
+		From => $blog_gateway_address,
+           	Message => $message
+	       );
+    print STDERR "Sending mail...\n" if($debug);
+    Mail::Sendmail::sendmail(%mail) or die('Couldn\'t send mail:', $Mail::Sendmail::error);
+}
+########################################
+
+
+################################################################################
+sub submit_entry{
+  #Here's where we parse out the categories and the content of the 
+  #blog message, after we verify the token exists.
+  my($token,$pop,$msg)=@_;
+  my %item;
+  my $valid_tokens=get_stored_tokens();
+  if (defined $valid_tokens->{$token}) {
+    #We have a valid entry.
+    my $category;
+    my $entry_get;
+    my @entry;
+    foreach my $line ($pop->Body($msg)) {
+      #So we make one loop through the body of the message
+      #to find the category and the message.
+      #Keep only the first selected category
+      if($line =~ m/\[\s*\S+\s*\]\s*(\d+)/gi){
+	$category=$1 if(!$category);
+      }
+      if ($line =~ m/Your Blog Entry Follows This Line/i) {
+	$entry_get=1;
+	next;
+      }
+      if ($line =~ m/Your Blog Entry Ends Above This Line/i) {
+	$entry_get=0;
+      }
+      if($entry_get){
+	push @entry,$line;
+      }
+    }
+    post_entry($valid_tokens->{$token}->{directories}->{$category||1}, \@entry);
+    delete $valid_tokens->{$token};
+    save_tokens($valid_tokens);
+  } else {
+    #We don't have a valid token
+    print STDERR "We don't have a valid token!\n"
+  }
+}
+########################################
+
+
+################################################################################
+sub post_entry{
+  my ($category,$entry)=@_;
+  my $filename_root = $entry->[0];
+  $filename_root=~ s/\s/_/g;
+  $filename_root =~ s/[^a-z\d_]//gi;
+  my $count=2;
+  my $filename=$filename_root;
+  while(-e qq|$category/$filename.$file_extension|){
+    $filename=$filename_root.sprintf("%05d",$count);
+    $count++;
+  }
+  open(ENTRY,"> ".qq|$category/$filename.$file_extension|) 
+    or die("Couldn't create entry ".qq|$category/$filename.$file_extension: $!|);
+  print ENTRY join("\n",@$entry)."\n";
+  print STDERR "Wrote blog entry:\n".qq|$category/$filename.$file_extension\n| if($debug);
+  close ENTRY;
+}
+########################################
+
+
+################################################################################
+sub get_token{
+    my $line=shift;
+    $line =~ s/\.?submit\s*entry:\s*([a-zA-Z\d]+)\s*//gi;
+    return $1;
+    print STDERR "Token is: $1\n" if($debug);
+}
+########################################
+
+
+################################################################################
+sub create_token{
+    my $tokens=shift;
+    my $new_token=generate_token();
+    do{
+	$new_token=generate_token();
+    } until (not defined $tokens->{$new_token});
+    return $new_token;
+}
+########################################
+
+
+################################################################################
+sub generate_token{
+    my @seeds=('a'..'z','A'..'Z',0..9);
+    my $token;
+    foreach (1..20) {
+	$token.=$seeds[rand(@seeds)];
+    }
+    return $token;
+}
+########################################
+
+__END__
+
+=head1 NAME
+
+BlosGate- The email-to-Blosxom Gateway
+
+=head1 SYNOPSIS
+
+BlosGate is an email-to-blog gateway that allows you to publish to Blosxom via email without procmail rules and/or root access to your server.  It should be cross-platform, and of non-core perl modules requires only Mail::POP3Client and Mail::Sendmail to function.
+
+Once you've got the script installed and working, you need but send an email to the "gateway" address that the script watches. You'll receive a "form" email to fill out, with a random token in the subject line. You reply to this message with your blosxom entry and it will be posted when the scheduled task runs again.
+
+Blosgate runs as a scheduled task via your favorite task scheduler, and allows you to publish to any subdirectory in your blosxom C<$data_dir> where your blog entries are stored.
+
+=head1 VERSION
+
+Version 1.1
+
+=head1 AUTHOR AND CONTACT INFO
+
+ Daniel Collis Puro, dan@geekuprising.com
+ Geekuprising Internet Consultants
+ http://www.geekuprising.com/blosxom
+
+=head1 INTERFACE
+
+Application flow:
+
+=over 4
+
+=item 1.
+
+User sends a "new entry" email to the C<$blog_gateway_address> set in the  configuration. The script "watches" this address (via a task scheduler) looking for new mails to act upon.
+
+=item 2.
+
+When the script sees an email from the C<$valid_poster_email> it generates a token and sends a form email with that token in the subject and a list of  subdirectories to publish the entry to.
+
+=item 3.
+
+The user replies to the "submit entry" mail, selecting a category and writing the entry in the space provided.
+
+=item 4.
+
+Script picks up this mail on it's next run, verifies the token, and writes it to the filesystem in the directory the user has selected. It then deletes the token.
+
+=back
+
+=head1 INSTALLATION
+
+=over 4
+
+=item *
+
+Install C<Mail::POP3Client> and C<Mail::Sendmail>, or ask your friendly sysadmin to do it.
+
+=item *
+
+Create your C<$blog_gateway_address> email address that blosgate will watch and that you'll send new submissions to.
+
+=item *
+
+Edit the "blosgate.pl" file to match your blosxom installation.  Make sure to set C<$plugin_state_dir> to a directory that your user account has write access to.
+
+=item *
+
+Send a message to C<$blog_gateway_address> from the C<$valid_poster_email> account. Upload the script to your server as text, set it to be executable C<chmod 755 blosgate.pl> and try running it from the command line.  If you don't get any errors, it should be working.
+
+=item *
+
+Add it to your task scheduler at whatever interval makes sense to you.  Here's a sample crontab entry that will run it every 5 minutes:
+
+  5,10,15,20,25,30,35,40,45,50,55 * * * * /path/to/script/blosgate.pl
+
+=back
+
+=head1 CAVEATS AND NOTES
+
+Blosgate expects email to come from your email client as plain-text. MAKE SURE YOU REPLY TO BLOSGATE WITH A PLAIN-TEXT EMAIL, not an HTML formatted one.
+
+As long as you don't fiddle with the token or the email too much, the script is forgiving of RE's added to subject lines and ">" (or other delimiters) used in  replies.
+
+If you don't select a category,  BlosGate will publish an entry to your root category.
+
+This script is meant to be run as a scheduled task via a task scheduler like the excellent cron daemon.
+
+BlosGate isn't meant to be run as a CGI script. 
+
+It will write the files with the same user/group ownership as the user your cronjobs run as- most likely your plain-old user account that you log in with. This means you don't need to make your entries  world-writable or change them to be owned by the user your webserver runs as.
+
+BlosGate will use the first line of your post as the filename, with any funny characters stripped out.  It will NOT overwrite existing files, it will name files C<title.txt>, C<title2.txt>, C<title3.txt> and so on.
+
+Blog entries should appear between the lines you're told to publish within, and EXACTLY what you type will be written to the category you select.  
+
+For example, if you type:
+
+ > Your Blog Entry Follows This Line:*******************************
+ Test Blog Entry
+ <p>Here's a test blog entry with Blosgate edits. . .</p>
+ <p>Man, BlosGate is COOL! I'm gonna name my firstborn after it.</p>
+ > Your Blog Entry Ends Above This Line:****************************
+
+Then the blog entry will be a file named "Test_Blog_Entry.txt" in the category you selected with:
+
+  Test Blog Entry
+ <p>Here's a test blog entry with Blosgate edits. . .</p>
+ <p>Man, BlosGate is COOL! I'm gonna name my firstborn after it.</p>
+
+as its file contents.
+
+=head1 REQUIREMENTS
+
+C<Mail::POP3Client> and C<Mail::Sendmail>
+
+=head1 THE FUTURE
+
+Here's some directions BlosGate could go:
+
+=over 4
+
+=item *
+
+Editing blog entries via email,
+
+=item *
+
+A "full package" installer that includes the required modules (possibly via PAR),
+
+=item *
+
+More abstraction- allow for different modules to serve as mailers and data persistence mechanisms.
+
+=back
+
+=head1 LICENSE
+
+Copyright 2003, Daniel Collis Puro
+
+This script is free software; you can redistribute it and/or modify it under the same terms as Perl itself.  Use it, abuse it, and let me know what you think. Please tell me about any changes you make, (especially good ones).

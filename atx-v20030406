@@ -1,0 +1,224 @@
+# Blosxom Plugin: atx
+# Author(s): Aaron Swartz <me@aaronsw.com>
+# Version: 2003-04-06
+# Documentation: See the bottom of this file or type: perldoc atx
+
+package atx;
+
+# --- Configurable variables -----
+
+# --------------------------------
+
+sub start {
+  exists &_start and return &_start();
+  1;
+}
+
+sub entries {
+  exists &_entries and return \&_entries;
+  return undef;
+}
+
+sub filter {
+  my($pkg, $files_ref) = @_;
+  exists &_filter and $files_ref = _filter($files_ref); 
+  1;
+}
+
+sub entries {
+  exists &_entries and return \&_entries();
+  return undef;
+}
+
+sub template {
+  exists &_template and return \&_template();
+  return undef;
+}
+
+sub sort {
+  exists &_sort and return \&_sort();
+  return undef;
+}
+
+sub head {
+  my($pkg, $path, $head_ref) = @_;
+  exists &_head and ($path, $$head_ref) = _head($path, $$head_ref);
+  1;
+}
+
+sub date {
+  my ($pkg, $date_ref, $mtime, $dw,$mo,$mo_num,$da,$ti,$yr) = @_;
+  exists &_date 
+    and ($$date_ref, $mtime, $dw,$mo,$mo_num,$da,$ti,$yr)
+      = _date($$date_ref, $mtime, $dw,$mo,$mo_num,$da,$ti,$yr);
+  1;
+}
+
+sub story {
+  my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+  exists &_story 
+    and ($path, $filename, $$story_ref, $$title_ref, $$body_ref)
+      = _story($path, $filename, $$story_ref, $$title_ref, $$body_ref);
+  1;
+}
+
+sub foot {
+  my($pkg, $path, $foot_ref) = @_;
+  exists &_foot and ($path, $$foot_ref) = _foot($path, $$foot_ref);
+  1;
+}
+
+sub end {
+  exists &_end and return &_end();
+  1;
+}
+
+1;
+
+# PYTHON BITS
+
+use Inline Python => <<'END';
+
+import atx
+
+#def _start():
+#  return 1
+
+#def _filter(files_hash):
+#  return (files_hash)
+
+#def _template(path, chunk, flavour)
+#  return template_string
+
+#def _entries():
+#  return (files_hash, indexes_hash)
+
+#def _sort(entries_hash):
+#  return sorted_entries_array
+
+#def _head(path, head_template):
+#  return (path, head_template)
+
+#def _date(date_template, mtime, dw,mo,mo_num,da,ti,yr):
+#  return (date_template, mtime, dw,mo,mo_num,da,ti,yr)
+
+def _story(path, filename, story_template, title, body):
+	body = atx.atx(body, full=0)
+	return (path, filename, story_template, title, body)
+
+#def _foot(path, foot_template):
+#  return (path, foot_template)
+
+END
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: atx
+
+=head1 SYNOPSIS
+
+Allows you to write Blosxom entries in atx.
+
+=head1 REQUIREMENTS
+
+1. Python
+
+2. The Inline and Inline::Python Perl modules, found at:
+     http://search.cpan.org/search?query=inline%3A%3Apython&mode=all
+
+3. The atx module, found at:
+     http://www.aaronsw.com/2002/atx/atx.py
+
+=head1 INSTALLATION
+
+1. Install the Inline and Inline::Python Perl modules.
+
+2. Drop the atx plugin and atx.py into your Blosxom plugins directory.
+
+=head1 USAGE
+
+Write your entries in atx, documented here:
+
+http://www.aaronsw.com/2002/atx/
+
+=head1 BUGS
+
+If you encounter an error like:
+
+   Couldn't find an appropriate DIRECTORY for Inline to use.
+
+You need to make the directory Blosxom is in writable by the web server.
+
+If you encounter an error like:
+
+--
+  Error. You have specified 'Python' as an Inline programming language.
+
+  I currently only know about the following languages:
+      C, Foo, PDLPP, Pdlpp, foo, pdlpp
+
+  If you have installed a support module for this language, try deleting the
+  config file from the following Inline DIRECTORY, and run again:
+
+      $datadir/_Inline
+
+   at blosxom.cgi line 0
+  INIT failed--call queue aborted.
+--
+
+you've not got Python configured as one of the Inline language choices.  
+You'll need to add the appropriate Python bits to the appropriate sections
+of the "config" file found in $datadir/_Inline...
+
+languages : %
+    Python : Python
+types : %
+    Python : interpreted
+modules : %
+    Python : Inline::Python
+suffixes : %
+    Python : py
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 VERSION
+
+2003-04-06
+
+=head1 AUTHOR
+
+Aaron Swartz <me@aaronsw.com>, http://www.aaronsw.com/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+atx: http://www.aaronsw.com/2002/atx/
+
+=head1 LICENSE
+
+Blosxom and this Blosxom Plug-in
+Copyright 2003, Rael Dornfest 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

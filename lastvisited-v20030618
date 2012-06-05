@@ -1,0 +1,109 @@
+# Blosxom Plugin: lastvisited
+# Author: Bob Schumaker <cobblers@pobox.com>
+# Version: 20030618
+# http://www.cobblers.net/blog/
+# License: Public Domain
+
+package lastvisited;
+
+use strict;
+use warnings;
+
+use Data::Dumper;
+
+# --- Plug-in package variables -----
+
+my $cookie;
+my $lastvisited;
+my $newvisited;
+
+# --- Output variables -----
+
+# --- Configurable variables -----
+
+my $cookie_name;
+
+my $new_class = "new";
+my $new_marker = "&nbsp;<b>NEW!</b>&nbsp;";
+
+# --------------------------------
+
+sub start {
+  1;
+}
+
+sub head {
+  my($pkg, $currentdir, $head_ref) = @_;
+  if(defined($cookies::domain)) {
+    $cookie_name ||= "$blosxom::blog_title Last Visit";
+    $cookie_name =~ s/ /_/g;
+    $cookie = &cookies::get($cookie_name);
+    if(defined($cookie)) {
+      my @v = keys %$cookie;
+      $lastvisited = $v[0];
+    }
+    else {
+      $lastvisited = $lastmodified::latest_iso8601;
+    }
+    $newvisited = $lastmodified::now_iso8601;
+    $new_marker = "<span class=\"$new_class\">$new_marker</span>";
+    return 1;
+  }
+}
+
+sub story {
+  my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) =@_;
+
+  if( defined($lastvisited) && $lastvisited lt $lastmodified::story_iso8601 ) {
+  	$$story_ref = $new_marker . $$story_ref;
+  }
+
+  return 1;
+}
+
+sub foot {
+  if( defined($cookies::domain) ) {
+    &cookies::add(
+      &CGI::cookie(
+        -name=>$cookie_name,
+        -value=>$newvisited,
+        -path=>$cookies::path,
+        -domain=>$cookies::domain
+      )
+    );
+  }
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: lastvisited
+
+=head1 DESCRIPTION
+
+In cooperation with the cookie plugin and the lastmodified plugin, the lastvisited plugin
+marks 'new' stories. A 'new' story is defined as "a story that a previous visitor hasn't read yet.;"
+Brand-new visitors (and visitors who don't save cookies) won't have stories marked, since by
+definition they're all new stories...
+
+There are a couple of configurable variables:
+
+   $lastvisited::new_class: the new marker is enclosed in a &lt;span&gt; of this class
+   $lastvisited::new_marker: the marker to prefix the story with (it will end up at the end of the title of the post)
+
+=head1 AUTHOR
+
+Bob Schumaker <cobblers@pobox.com> http://www.cobblers.net/blog
+
+
+=head1 LICENSE
+
+This source is submitted to the public domain.  Feel free to use and modify it.  
+If you like, a comment in your modified source attributing credit to myself for 
+my work would be appreciated.
+
+THIS SOFTWARE IS PROVIDED AS IS AND WITHOUT ANY WARRANTY OF ANY KIND.  USE AT 
+YOUR OWN RISK!

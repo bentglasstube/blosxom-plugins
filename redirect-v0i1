@@ -1,0 +1,107 @@
+# Blosxom Plugin: redirect
+# Author: Fletcher T. Penney (http://fletcher.freeshell.org)
+# Version: 0.1
+
+package redirect;
+ 
+
+# --- Configurable variables ---
+
+# Where is the redirect file?
+$redirect_file = "$blosxom::plugin_state_dir/redirect";
+
+# ------------------------------
+
+$path = $blosxom::path_info;
+
+sub start {	
+warn "Flavour check $blosxom::flavour\n";
+	if (open (REDIRECT, "< $redirect_file")) {
+		while ( $line = <REDIRECT> ) {	
+			if ($line =~ /(.*)=>(.*)/) {
+				$old = $1;
+				$new = $2;
+				if ( $path =~ s/^$old/$new/ ) {
+					return 1;
+				}
+			}
+		}
+		
+		close REDIRECT;
+	}
+	
+	return 0;
+}
+
+
+sub last {
+	# We only end up here if we are redirecting this url
+
+	$message = qq!This page has been moved.  The new URL is <a href="$blosxom::url/$path">$blosxom::url/$path</a>.\n!;
+	
+	$blosxom::output = $message;
+	print "Status: 301\n";
+	print "Location: $blosxom::url/$path\n";
+	1;
+}
+
+1;
+
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: redirect
+
+=head1 SYNOPSIS
+
+One problem with having a weblog is that you become somewhat committed to your URL structure.  If you decide to rearrange your site, you run the risk of breaking external links.  The autocorrect plugin helps, attempting to find a story that might have moved.
+
+The difficulty with this is that the url's don't really get fixed.
+
+I recently moved my site out  of the "/weblog" directory by improving my .htaccess file.  I like the url's better, but I have lots of links out there that still point to the "/weblog" hierarchy.  I came up with some ways of pointing this out to human viewers, but robots still travel the old hierarchy, and it's a pain for people to figure out where to go.
+
+This plugin allows you to set up a redirect file that consists of lines like the following:
+path/to/some/article=>new/path/to/article
+
+If someone tries to go to a non-existent directory, you can re-route them automatically to the new location, and the url is updated in their browser.  For instance, my redirect file looks like this:
+weblog/=>
+
+Basically it strips out the weblog directory, creating a URL that is now valid.
+
+
+=head1 VERSION
+
+Version 0.1
+
+=head2 VERSION HISTORY
+
+0.1	- initial public release
+
+=head1 AUTHOR
+
+Fletcher T. Penney, http://fletcher.freeshell.org
+
+=head1 LICENSE
+
+Blosxom Redirect Plug-in
+Copyright 2003, by Fletcher T. Penney
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

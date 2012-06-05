@@ -1,0 +1,62 @@
+package strip_unix_comments;
+use strict;
+
+sub start { 1; }
+
+sub story {
+  # We really only care about the last item but
+  # just popping @_ might cause weirdness in the
+  # future so...
+  my (undef, undef, undef, undef, undef, $sr_body) = @_;
+  $$sr_body = join("\n", grep { ! /^#/ } (split("\n",$$sr_body)));
+}
+
+return 1;
+
+__END__
+
+=head1 NAME
+
+strip_unix_comments - remove any line beginning with a I<#> character.
+
+=head1 SYNOPSIS
+
+ Put this file in your I<bloxsom> plug-ins directory.
+
+=head1 DESCRIPTION
+
+Remove any line beginning with a I<#> character.
+
+By convention most Unix tools treat the I<#> character and any content
+following it up to the end of the line as comments which are neither
+interpreted or displayed outside of the document itself.
+
+It a bloxsom context, you might want to CVS your source files and include
+a variety of version control stamps (Id, Log, etc.) that should not be
+displayed when rendered as HTML.
+
+=head1 VERSION
+
+1.0
+
+=head1 DATE
+
+$Date: 2003/03/19 18:24:38 $
+
+=head1 AUTHOR
+
+Aaron Straup Cope
+
+=head1 SEE ALSO
+
+http://www.raelity.org/apps/blosxom
+
+http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 LICENSE
+
+This is free software, you may use it and distribute it under
+the same terms as Perl itself.
+
+=cut
+

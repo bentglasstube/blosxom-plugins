@@ -1,0 +1,31 @@
+# Plugin name: sort_reverse
+# Author: Barijaona Ramaholimihaso
+# Version: 2004-08-22blosxom2
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+# Documentation:
+# This is a pretty simple plugin;
+# it simply sorts your entries in the chronological order
+# (instead of the antichronological order usual to blogs)
+
+package sort_reverse;
+
+# --- Configurable variables -----
+
+# (none)
+
+# --------------------------------
+
+sub start {
+    1;
+}
+
+sub sort {
+    return sub {
+      my($files_ref) = @_;
+      return sort { $files_ref->{$a} <=> $files_ref->{$b} } keys %$files_ref;
+    };
+}
+
+1;
+

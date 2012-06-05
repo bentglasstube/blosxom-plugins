@@ -1,0 +1,24 @@
+# -*- perl -*-
+
+# There's no good way for this to deal with 'sort' or 'entries'
+
+use Time::HiRes;
+
+package timer_start;
+
+%t = ();
+
+sub t {
+  $t{shift @_} = [Time::HiRes::gettimeofday];
+  1;
+}
+
+sub start  { t("start");  1; }
+sub filter { t("filter"); 1; }
+sub head   { t("head");   1; }
+sub date   { t("date");   1; }
+sub story  { t("story");  1; }
+sub foot   { t("foot");   1; }
+sub end    { t("end");    1; }
+
+1;

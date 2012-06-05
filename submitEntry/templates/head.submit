@@ -1,0 +1,19 @@
+<html>
+<head>
+<title>Submit a new entry in the $blosxom::blog_title</title>
+<body>
+<p>Welcome! Please write your entry here:</p>
+<form name="submit" method="post" action="$url">
+<input type="text" name="-name" value="Entry title"/>
+<br/>
+Section: <input type="text" name="-directory" value=""/>
+<select name="existingDir" onChange="this.form.elements[1].value = this.options[this.selectedIndex].value"/>
+$directoryIndex::options
+</select>
+<br/>
+<textarea rows='6' cols='45' name="-text"></textarea>
+<br/>
+<input type="submit" name="-submit" Value="Submit"/>
+</form>
+</body>
+</head>

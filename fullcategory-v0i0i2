@@ -1,0 +1,123 @@
+# Blosxom Plugin: fullcategory
+# Author(s): Mark Ivey <zovirl@zovirl.com>
+# Version: 0.0.2
+# Documentation: See the bottom of this file or type: perldoc fullcategory
+
+package fullcategory;
+
+# --- Configurable variables -----
+
+# --------------------------------
+
+# print debug messages or not?
+my $debug = 1;
+
+sub start 
+{
+    return 1;
+}
+
+sub filter 
+{
+    my($pkg, $files_ref) = @_;
+    
+    my $path = "$blosxom::datadir/$blosxom::path_info";
+    
+    # if there is a flavor, this is a story and we don't have to help blosxom
+    return if ($path =~ m!\.[^/]*?$!); 
+    
+    # the / on the end of $path is what prevents partial matches
+    $path .= "/";
+    $path =~ s!//$!/!;  # remove extra trailing /'s 
+
+    warn "fullcategory: path is [$path]\n" if $debug >= 1; 
+    
+    foreach my $file (keys %$files_ref)
+    {
+        my $string = "fullcategory: checking file [$file]: ";
+        unless ($file =~ m!^$path!)
+        {
+            delete $files_ref->{$file};
+            $string .= "deleted\n";
+        }
+        else
+        {
+            $string .= "kept\n";
+        }
+        warn $string if $debug >= 1;
+        
+    }
+
+    return 1;
+}
+
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: fullcategory
+
+=head1 SYNOPSIS
+
+Changes blosxom behavior so full category names are required (partial names
+will no longer work)
+
+=head1 VERSION
+
+0.0.2
+
+=head1 AUTHOR
+
+Mark Ivey <zovirl@zovirl.com>, http://zovirl.com
+
+=head1 DESCRIPTION
+
+fullcategory fixes blosxom so only complete category names will work.
+By default, blosxom will return results for partial category name matches.
+For example, if "telephone" is a category, these would all return posts about
+telephones:
+http://example.com/telephone
+http://example.com/telepho
+http://example.com/tele
+
+(If "television" was also a category, that last example would include
+posts from both the television & telephone categories)
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+parsedate() taken from Fletcher T. Penney's entriescache plugin:
+http://www.blosxom.com/plugins/indexing/entries_cache.htm
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+fullcategory Blosxom Plugin Copyright 2004, Mark Ivey
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

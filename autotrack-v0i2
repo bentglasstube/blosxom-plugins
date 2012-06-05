@@ -1,0 +1,414 @@
+# Blosxom Plugin: autotrack					  -*- cperl -*-
+# Author: Todd Larason (jtl@molehill.org)
+# Version: 0+2i
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/blosxom
+# AutoTrack plugin Home/Docs/Licensing:
+#   http://molelog.molehill.org/blox/Computers/Internet/Web/Blosxom/AutoTrack/
+package autotrack;
+
+# -------------- Configuration Variables --------------
+
+# regular expression matching URLs not to trackback
+# there's no reason to try google or amazon, and most people don't
+# want to trackback their own stories
+$dont_tb_re = qr!(?:http://(?:
+			 (?: www\.google\.com ) |
+			 (?: www\.amazon\.com )
+			)
+                  ) |
+                  (?: $blosxom::url )!ix
+  unless defined $dont_tb_re;
+
+# what to do if the timestamp file doesn't exist?  if $start_from_now is
+# set, autotrack future stories but not old ones
+$start_from_now = 1 unless defined $start_from_now;
+
+# how automatic?  if $semi_auto is set, only send trackbacks if ?autotrack=yes
+# otheriwse, fully automatic
+$semi_auto = 1 unless defined $semi_auto;
+
+# networking implementation to be used
+#   can be 'LWP', 'curl' or 'wget' (or a full pathname to a curl or wget
+#   executable)
+#   wget must be at least a 1.9 beta to support the --post-data option
+$networking = "curl" unless defined $networking;
+
+$debug_level = 1
+  unless defined $debug_level;
+
+# -----------------------------------------------------
+
+# template-visible vars
+
+use CGI qw/param/;
+#use HTML::Entities;
+use File::stat;
+use strict;
+use vars qw/$dont_tb_re $start_from_now $semi_auto $networking $debug_level/;
+
+my $dont_really_ping = 0;
+my $package 	   = "autotrack";
+my $timestamp_file = "$blosxom::plugin_state_dir/.$package.timestamp";
+my $last_timestamp;
+my $files;
+
+sub debug {
+    my ($level, @msg) = @_;
+
+    if ($debug_level >= $level) {
+	print STDERR "$package debug $level: @msg\n";
+    }
+}
+
+# utility funcs
+sub url_escape {
+    local ($_) = @_;
+
+    s/([^a-zA-Z0-9])/sprintf("%%%02x",ord($1))/eg;
+    s/%20/+/g;
+    return $_;
+}
+
+sub GET {
+    my ($url) = @_;
+
+    if ($networking =~ m:curl:) {
+	return `$networking -m 30 -s $url`;
+    } elsif ($networking =~ m:wget:) {
+	return `$networking --quiet -O - $url`;
+    } elsif ($networking eq 'LWP') {
+	foreach (qw/LWP::UserAgent HTTP::Request::Common/) {
+	    eval "require $_";
+	    if ($@) {
+		debug(0, "Can't load $_, can't use LWP networking");
+		return undef;
+	    }
+	}
+	my $ua 	= LWP::UserAgent->new;
+	my $res = $ua->request(HTTP::Request::Common::GET $url);
+	if (!$res->is_success) {
+	    my $error = $res->status_line;
+	    debug(0, "HTTP GET error: $error");
+	    return undef;
+	}
+	return $res->content;
+    } else {
+	debug(0, "ERROR: invalid \$networking $networking");
+    }
+}
+
+sub POST {
+    my ($url, %vars) = @_;
+
+    if ($networking =~ m:curl:) {
+	my $command = "$networking -m 30 -s ";
+	$command .= join ' ',
+	  map {my $v = url_escape($vars{$_}); "-d $_=$v";} keys %vars;
+	$command .= " $url";
+	debug(2, "Posting with :$command:");
+	return `$command`
+	  unless $dont_really_ping;
+	return "<error>0</error>";  # for testing
+    } elsif ($networking =~ m:wget:) {
+	my $command = "$networking --quiet -O - --post-data='";
+	$command .= join '&',
+	  map {my $v = url_escape($vars{$_}); "$_=$v"} keys %vars;
+	$command .= "' $url";
+	debug(2, "Posting with :$command:");
+	return `$command`
+	  unless $dont_really_ping;
+	return "<error>0</error>";  # for testing
+    } elsif ($networking eq 'LWP') {
+	foreach (qw/LWP::UserAgent HTTP::Request::Common/) {
+	    eval "require $_";
+	    if ($@) {
+		debug(0, "Can't load $_, can't use LWP networking");
+		return undef;
+	    }
+	}
+	my $ua 	= LWP::UserAgent->new;
+	my $res = $ua->request(HTTP::Request::Common::POST($url, [%vars]));
+	if (!$res->is_success) {
+	    my $error = $res->status_line;
+	    debug(0, "HTTP POST error: $error");
+	    return undef;
+	}
+	return $res->content;
+    } else {
+	debug(0, "ERROR: invalid \$networking $networking");
+    }
+}
+
+sub get_trackback_url {
+    my ($url) = @_;
+
+    return undef if ($url =~ m:$dont_tb_re:);
+    my $text = GET($url);
+    return undef if (!defined($text));
+
+    while ($text =~ m!(<rdf:RDF.*?</rdf:RDF>)!msg) {
+	my $rdf = $1;
+	my ($id) = ($rdf =~ m!dc:identifier="([^\"]+)"!);
+	next unless ($id eq $url);
+	my ($tb) = ($rdf =~ m!trackback:ping="([^\"]+)"!);
+	return $tb if defined $tb;
+    }
+    if ($url =~ m:(.*)\#:) {
+	$url = $1;
+	while ($text =~ m!(<rdf:RDF.*?</rdf:RDF>)!msg) {
+	    my $rdf = $1;
+	    # XXX is this good enough?  Can't the namespace IDs be different?
+	    # the sample code in the spec @
+	    # http://www.movabletype.org/docs/mttrackback.html
+	    # does it this way
+	    my ($id) = ($rdf =~ m!dc:identifier="([^\"]+)"!);
+	    next unless ($id eq $url);
+	    my ($tb) = ($rdf =~ m!trackback:ping="([^\"]+)"!);
+	    return $tb if defined $tb;
+	}
+    }
+    debug(2, "Couldn't find tb url for $url");
+    return undef;
+}
+
+sub ping_trackback {
+    my ($tb_url, $title, $excerpt, $url) = @_;
+
+    my $txt = POST($tb_url, title => $title, url => $url, excerpt => $excerpt,
+		   blog_name => $blosxom::blog_title);
+    debug(3, "Response:$txt:");
+    if ($txt =~ m:<error>(.*?)</error>:ms) {
+	if ($1) {
+	    my $errcode = $1;
+	    $txt =~ m:<message>(.*)</message>:ms;
+	    debug(0, "Error $errcode ($1) pinging $tb_url");
+	    return 0;
+	}
+	return 1;
+    }
+    debug(0, "Malformed response while pinging $tb_url");
+    return 1;
+}
+
+sub make_excerpt {
+    my ($story) = @_;
+
+    # XXX options to use plaintext or foreshortened plugins
+
+    $story =~ s:<.+?>::msg;
+    $story = substr($story, 0, 255);
+
+    return $story;
+}
+
+# plugin funcs
+sub start {
+    return 0 unless $networking;
+    return 0 if ($semi_auto && !param('autotrack'));
+    # XXX there are at least two different race conditions here
+    # 1: two instances running at the same time could both see an old
+    #    timestamp
+    # 2: an instance run at the same time a new story is published could
+    #    (at least if there's any clock skew at all) create a timestamp
+    #    file >= timestamp(story), for a story that isn't seen.
+    $last_timestamp = -e $timestamp_file ? stat($timestamp_file)->mtime :
+      ($start_from_now ? time : 0);
+    my $fh = new FileHandle;
+    if (!$fh->open("> $timestamp_file")) {
+	debug(0, "Couldn't touch timestamp file $timestamp_file");
+	return 0;
+    }
+    $fh->close;
+
+    debug(1, "autotrack enabled");
+
+    return 1;
+}
+
+sub filter {
+    my ($pkg, $files_ref) = @_;
+
+    $files = $files_ref;
+
+    return 1;
+}
+
+sub story {
+    my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+    my ($pathname) = "$blosxom::datadir$path/$filename.$blosxom::file_extension";
+    return 1 if ($files->{$pathname} < $last_timestamp);
+    my (%pinged, $ping_tries, $ping_succeed);
+    my $excerpt = make_excerpt($$body_ref);
+    my $url 	= "$blosxom::url$path/$filename.writeback";
+    defined $meta::tb_ping and
+      ++$ping_tries and
+	ping_trackback($meta::tb_ping, $$title_ref, $excerpt, $url) and
+	  ++$ping_succeed and
+	    ++$pinged{$meta::tb_ping};
+    return 1 if (defined $meta::autotrack && $meta::autotrack eq 'no');
+    while ($$body_ref =~
+	   m!<a\s [^>]*
+	     href=(?:
+		   (http://[^ ]+) |
+		   "(http://[^\"]+)"
+		  )!msxg) {
+#	my $trackback_url = get_trackback_url(decode_entities($+));
+	my $trackback_url = get_trackback_url($+);
+	next unless defined $trackback_url;
+	next if $pinged{$trackback_url};
+	$ping_tries++;
+	ping_trackback($trackback_url, $$title_ref, $excerpt, $url) and
+	  ++$ping_succeed and
+	    ++$pinged{trackback_url};
+	debug(1, "autotracked: $trackback_url");
+    }
+
+    # XXX what do we do if some succeed and some fail?
+    # If we tried some but they all failed, revert the timestamp to
+    # try again later
+    if ($ping_succeed == 0 && $ping_tries > 0) {
+	debug(0, "All pings failed, reverting timestamp");
+	utime($last_timestamp, $last_timestamp, $timestamp_file);
+    }
+
+    1;
+}
+1;
+=head1 NAME
+
+  Blosxom Plug-in: autotrack
+
+=head1 SYNOPSIS
+
+  Automatically or semi-automatically sends trackback pings for new stories.
+=head1 VERSION
+
+  0+2i
+
+  2nd test release
+=head1 AUTHOR
+
+  Todd Larason <jtl@molehill.org> http://molelog.molehill.org/
+
+=head1 BUGS
+
+  None known; address bug reports and comments to me or to the Blosxom
+  mailing list [http://www.yahoogroups.com/groups.blosxom].
+
+=head1 Trackback Ping URL Discovery
+
+  Trackback Ping URLs are discovered two different ways.
+
+=head2 Manual Ping URLs
+
+  If you have the meta plugin installed, and have it set to run prior to the
+  autotrack plugin, you can give a trackback url with the "meta-tb_ping"
+  header; the value of the header should be the ping URL to ping.
+
+=head2 Automatic Ping URL detection
+
+  Subject to some exceptions explained below, every URL given in an 'href' in
+  the story is fetched, and the resulting content is searched for embedded RDF
+  sections giving trackback URLs for the given URL.  This is the preferred way
+  for all tools to be given trackback URLs, as it requires no human
+  intervention, but unfortunately not everyone which has a trackback server
+  includes the appropriate RDF.  Even more unfortunately, there's no easy
+  way to know whether it's included or not, other than examining the source
+  of the page.
+
+  It's always safe to give a meta-tb_ping header; if you give one, and the
+  same ping URL is found by autodiscovery, it's only pinged once.
+
+  If you don't want autodiscovery to be used for a given story, you can set
+  the meta header 'meta-autotrack' to 'no'.  If "meta-autotrack: no" is given,
+  the meta-tb_ping URL is still pinged if it's specified.
+
+=head1 Customization
+
+=head2 Configuration Variables
+
+  C<$dont_tb_re> is a regular expression agains which URLs are matched;
+  if it matches, the URL isn't fetched for autodiscovery; this is useful
+  for classes of URLs that you link to frequently that you know don't
+  include the autodiscovery RDF, or that you don't wish to be pinged.  The
+  default value matches Amazon and Google URLs, as well as references to
+  the current weblog.
+
+  C<$start_from_now> is a boolean that controls the behavior if the timestamp
+  file doesn't exist; if it's true, then it's treated as if it does exist,
+  with the current time -- no old articles are pinged.  If it's false, then
+  every story seen is treated as new.  Defaults to true.
+
+  C<$semi_auto> is a boolean controlling how automatic the pinging is.  If
+  it's false, then the plugin acts in fully automatic mode -- it's always
+  enabled, and any new story is examined.  If it's true, then the plugin
+  acts in semi-automatic mode -- it's only enabled if the URL being browsed
+  includes the paramater "autotrack" (ie, ends with "?autotrack=yes").  By
+  default, this is true.
+  
+  C<$networking> controls which networking implementation to use.  If set to
+  "LWP", an implementation which uses the common LWP (libwww-for-perl) perl
+  module set is used; if set to a string that includes the word 'curl', an
+  implementation which uses the external 'curl' utility is used, and the value
+  of $networking is used as the beginning of the command line (this can be used
+  to specify a full path to curl or to pass additional arguments); if set
+  to a string which includes the word 'wget', an implementation which uses the
+  external 'wget' utility is used with $networking used at the beginning of
+  the command line as with curl.  The wget executable must be new enough to
+  include the --post-data option; currently, that means a recent 1.9 beta.
+  Defaults to "LWP".
+
+  C<$debug_level> is an int from 0 to 5 controlling how much debugging output
+  is logged; 0 logs only errors.  Defaults to 1.
+
+=head2 CSS and Flavour Files
+
+  There is no output, so no customization through these methods.
+
+=head1 Timestamp
+
+  A timestamp file is kept as $plugin_state_dir/.autotrack.timestamp; stories
+  are considered 'new' if their timestamp is later than the timestamp file
+  (see the C<$start_from_now> variable for the behavior if the file doesn't
+  exist).  There is a small race condition between reading the timestamp
+  file and updating it when the plugin is enabled; one advantage of semi-
+  automatic mode is that this is rarely a problem, since the plugin is only
+  enabled when you want it to be.
+
+  If trackback pings are attempted but they all fail, the timestamp file is
+  reverted to its previous value, so the pings will be tried again later.  if
+  some pings succeed and others fail, however, the timestamp is left with the
+  updated values, and the failed pings won't be retried.
+
+=head1 THANKS
+
+  * Rael Dornfest -- blosxom (of course) and suggesting $start_from_now option
+  * Taper Wickel -- pointing out wget 1.9's post support
+
+=head1 LICENSE
+
+this Blosxom Plug-in
+Copyright 2003, Todd Larason
+
+(This license is the same as Blosxom's)
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+=cut
+

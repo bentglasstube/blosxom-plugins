@@ -1,0 +1,168 @@
+# Blosxom Plugin: prevnexstory
+# Author(s): Barijaona Ramaholimihaso
+# Based on chrono_nav plugin by Victor Ganata <aswang@fatoprofugus.net>
+# and tree plug-in by Ryan Schram 
+# Ideas From: Tatsuhiko Miyagawa 
+# Version: 2006-01-01blosxom2
+# Documentation: See the bottom of this file or type: perldoc tree
+
+package prevnextstory;
+
+
+use strict; 
+use vars qw($prevlink $nextlink $prevtitle $nexttitle $prevdate $nextdate @file_info @dir_info $files_ref @monthname @monthabbr);
+# --- Configuration Variables ---
+
+@monthname = qw/janvier f&eacute;vrier mars 
+                avril   mai      juin 
+                juillet    ao&ucirc;t   septembre 
+                octobre novembre d&eacute;cembre/ if ($#monthname != 11);
+@monthabbr = qw/Jan    F&eacute;v       Mar 
+                Avr    Mai       Jun 
+                Jul    Ao&ucirc;       Sep  
+                Oct    Nov       Dec/ if ($#monthabbr != 11);
+
+# -------------------------------------------------------------------
+
+$prevlink;
+$nextlink;
+$prevtitle;
+$nexttitle;
+$prevdate;
+$nextdate;
+@file_info;
+@dir_info;
+
+sub start {
+    return 1;
+}
+
+sub skip { 
+    %$files_ref = %blosxom::files;
+    # Take %files and find all the places blosxom will generate a story page. 
+    @file_info = sort { $files_ref->{$b} <=> $files_ref->{$a} } keys %$files_ref;
+0; 
+}
+
+
+
+sub head {
+    if (($blosxom::path_info =~ /$blosxom::flavour$/) or (($blosxom::path_info =~ /$blosxom::file_extension$/) && ($blosxom::static_or_dynamic eq "static"))) { 
+     # It's an individual story file.
+       my %path2idx = map { $file_info[$_] => $_ } 0..$#file_info;
+
+       my $key = "$blosxom::datadir/$blosxom::path_info";
+       $key =~ s#$blosxom::flavour#$blosxom::file_extension#;
+       my $index = $path2idx{"$key"};
+       if ($index < $#file_info ){ ($prevlink , $prevtitle, $prevdate) = make_link($index + 1) ;}
+			else {undef $prevlink};
+       if ($index > 0 ){ ($nextlink , $nexttitle, $nextdate) = make_link($index - 1) ;}
+			else {undef $nextlink;};
+
+    }
+    elsif (($blosxom::path_info eq "") && ($blosxom::path_info_yr eq "")) {
+     # it's the blog main page
+       if ($blosxom::num_entries <= $#file_info ){($prevlink, $prevtitle, $prevdate) = make_link($blosxom::num_entries) ;}
+			else { undef $prevlink ;};
+
+
+    }
+    else
+    {undef $prevlink;
+    undef $nextlink;};
+1;
+}
+
+sub make_link {
+    my ($array_index) = @_;
+    my $file = $file_info[$array_index];
+    my($path, $fn) = $file =~ m!^$blosxom::datadir/(?:(.*)/)?(.*)\.$blosxom::file_extension!;
+	my $title='';
+
+    my $fh = FileHandle->new();
+    if (-f $file && $fh->open("< $file")) {
+	chomp($title = <$fh>);
+	$fh->close;
+	}
+	$path = $path . ( $path ne "" ? "/" : "") ;
+	my @date = localtime($files_ref->{$file_info[$array_index]});
+    my $mday  = $date[3];
+    my $month = $date[4];
+    my $year  = $date[5] + 1900;
+    
+    #here we format the date as a text
+	my $datetext = $mday." ".$monthname[$month]." ".$year ;
+	return (qq($blosxom::url/$path$fn.$blosxom::flavour), $title, $datetext);
+}
+
+
+
+
+1;
+
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: chrono_nav
+
+=head1 SYNOPSIS
+
+Populates the prevnexstory namespace with links for pointing to preceding 
+and following stories (arranged chronologically). I suggest you use it with interpolate_fancy for testing whether $prevnextstory::prevlink and $prevnextstory::nextlink are defined to avoid spurious links to appear when there is no older or fresher story.
+
+=head1 INSTALLATION
+
+Drop this plugin into your plugin directory. Place substitution
+variables $prevnextstory::prevlink and $prevnextstory::nextlink in your flavour file as an href value for an anchor element. You can also use $prevnextstory::prevtitle and $prevnextstory::nextlink to get the titles of those stories, and $prevnextstory::prevdate and $prevnextstory::nextdate to get their publication dates. If you need the dates, you will have to adapt the @monthname and @monthabbr lists to your needs, and in some cases modify the formatting performed by the make_list subroutine  (default date format is DD/MM/YYYY, with month names in French).
+
+=head1 VERSION
+
+2005-02-12blosxom2
+
+Version number is the date on which this version of the plug-in was created.
+
+=head2 CHANGES
+
+2006-01-01blosxom2 : take into account the corrections of $path_info in recent versions of blosxom.cgi 
+
+2004-08-22blosxom2 : First published version
+
+=head1 AUTHOR(S)
+
+Barijaona Ramaholimihaso
+Based on chrono_nav plugin by Victor Ganata (<aswang@fatoprofugus.net>, http://blog.fatoprofugus.net )
+which was itself based on tree plugin by Ryan Schram (http://www.rschram.org)
+with inspiration and some code techniques used in prevnextentry from Tatsuhiko Miyagawa (http://www.bulknews.net) 
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

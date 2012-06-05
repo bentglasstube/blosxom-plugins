@@ -1,0 +1,106 @@
+# Blosxom Plugin : asin_simple
+# Author(s) : kay <info@ellinikonblue.com>
+# Version : 2005-09-02
+
+package asin_simple;
+
+# --------------------------------------
+# Configurable Variable
+my $associatetag   = "YOUR_ASSOCIATE_TAG";  # Associate Tag
+my $subscriptionid = "GTYDRES564THU";       # Subscription ID(Manual Default)
+my $xslfile        = "/lib/asinsimple.xsl"; # XML Stylesheet URL
+
+my $locale         = "jp";
+
+# Cache Configuration
+my $asin_dir = "$blosxom::plugin_state_dir/asin";
+my $modify = "24";
+
+# Path to no image
+my $noImage        = "no-image_URL";
+my $noImageHeight  = "130";
+my $noImageWidth   = "130";
+# --------------------------------------
+# Base URL
+my $baseurl        = "http://xml-jp.amznxslt.com/onca/xml3";
+# ======================================
+use LWP::Simple;
+
+sub start {
+    if (!-e $asin_dir) {
+        my $mkdir_r = mkdir($asin_dir, 0755) or die "Can't creat $asin_dir : $1";
+        $mkdir_r or return 0;
+    }
+
+    return 1;
+}
+
+sub story {
+    my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+    $$body_ref =~ s/´[asin:(.+)´]/getAWS($1)/gei;
+
+    return 1;
+}
+
+sub getAWS {
+    my $request = 
+        "$baseurl?" .
+        "dev-t=$subscriptionid&" .
+        "t=$associatetag&" .
+        "f=$xslfile&" .
+        "locale=$locale&type=lite&" .
+        "AsinSearch=$1";
+
+    my $cache = "$asin_dir/$1.html";
+    my $url = "s?https?://[-_.!~*'()a-zA-Z0-9;/?:@&=+$,%#]+";
+
+    # Request and get that response
+    my $rtn;
+    unless (-f $cache && -M _ < ($modify / 24) && -s _ > 160) {
+      my $ua = new LWP::UserAgent;
+      $ua->agent("asin_simple");
+      $ua->timeout(10);
+      $rtn = $ua->mirror($request, $cache);
+
+      #Cache Conversion
+      if ( open CACHE, $cache ) {
+        $rtn="";
+        while ( <CACHE> ) {
+          # Is image legal?
+          if ( /<img´s+src="($url)"´s*>/ ) {
+            my $header  = head($1);
+            my $convtag = '<img src="' . $1 . '" />';
+            
+            if ( $header->content_length < 808 ) {
+            $convtag =
+              '<img src="' . $noImage . '" ' .
+              'height="' . $noImageHeight . 'px" ' .
+              'width="' . $noImageWidth . 'px" ' .
+              '/>';
+            }
+            $_ =~ s/<img´s+src="$url"´s*>/$convtag/gs;
+          }
+          #for HTML 1.0
+          $_ =~ s/<br>/<br ´/>/gs;
+
+          $rtn .= $_;
+        }
+        
+        close CACHE;
+      }
+      if ( open CACHE, "> $cache" ) {
+        print CACHE $rtn;
+        close CACHE;
+      }
+    }
+
+    # Read from cache
+    if ( open CACHE, $cache ) {
+      $rtn = join( '', <CACHE> );
+      $rtn = '<div class="asinSimple">' . $rtn . '</div>';
+      close CACHE;
+    }
+
+    return $rtn;
+}

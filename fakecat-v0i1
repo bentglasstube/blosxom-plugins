@@ -1,0 +1,40 @@
+# Copyright 2004 Anthony Towns <aj@azure.humbug.org.au>
+# Use/modify/distribute under GNU General Public License v2.
+
+package fakecat;
+
+$catfile = "${blosxom::datadir}/${blosxom::path_info}.cat";
+$path = $blosxom::path_info;
+@cats = ();
+sub start {
+  if (-e $catfile) {
+    $blosxom::path_info = "";
+    open(CATFILE, "<$catfile") or return 0;
+    while (my $c = <CATFILE>) { chomp $c; push @cats, $c; }
+    close(CATFILE);
+    return 1;
+  }
+  0;
+}
+
+sub filter {
+  my ($files, $others) = @_;
+
+  foreach $q (keys %$others) {
+    my $path = "";
+    $path = $1
+       if ($q =~ m!^$blosxom::datadir/(?:(.*)/)?.*\.$blosxom::file_extension!);
+    my $ok = 0;
+    foreach $cat (@cats) {
+      if ($path =~ /^$cat/ or $q eq "$blosxom::datadir/$cat") {
+	$ok = 1;
+	last;
+      }
+    }
+    $ok or delete $others->{$q};
+  }
+
+  1;
+}
+
+1;

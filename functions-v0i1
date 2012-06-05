@@ -1,0 +1,79 @@
+#!/usr/bin/perl -w
+# Blosxom Plugin: functions
+# Author: Brian Akins (bakins@web.turner.com)
+# Version: 0+1i
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/blosxom
+
+package functions;
+
+use strict;
+use vars qw(%functions $functions_dir);
+
+#ugh!  blosxom need an external config..
+#this is where functions live.
+$functions_dir = "/www/u/bakins/blosxom/functions";
+
+#slurp in the functions
+
+sub start {
+
+    # Drop ending any / from dir settings
+    $functions_dir =~ s!/$!!;
+
+    # Functions: Start, lifted from blosxom core code
+
+    if ( $functions_dir and opendir FUNCTIONS, $functions_dir ) {
+        foreach my $function ( grep { /^\w+$/ && -f "$functions_dir/$_"  } sort readdir(FUNCTIONS) ) {
+
+            my($function_name) = $function =~ /^\d*(\w+)$/;
+            require "$functions_dir/$function";
+            my $package = "functions::$function_name";
+            $package->start();
+        }
+        
+        closedir FUNCTIONS;
+    }
+    
+    return 1;
+}
+
+sub story {
+  my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+  my @lines = split(/(\n|\r\n){1}/, $$body_ref);
+
+  $$body_ref = '';
+
+  foreach my $line(@lines) {
+      #lines that start with space are not processed
+      unless($line =~ /^\s/) {
+          $line =~ s/\@(.*?:.*?)\@/do_func($1)/eg;
+      }
+      $$body_ref .= $line;
+  }
+  
+  return 1;
+}
+
+sub do_func
+{
+    my ($orig, $opts) = @_;
+
+    $opts ||= {};
+    
+    my ($func, $args) = split(/\s*:\s*/, $orig, 2);
+    
+    $func =~ s/^\s*|\s*$//g;
+    $args =~ s/^\s*|\s*$//g;
+    
+    # if the function exists, do it, otherwise return original string.
+    if(exists($functions{$func})) {
+        #function must parse args
+        return $functions{$func}($args, $opts);
+    } else { 
+        return $orig;
+    }
+
+}
+
+1;

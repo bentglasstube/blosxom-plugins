@@ -1,0 +1,119 @@
+# Blosxom Plugin: sameday
+# Author(s): Peter Florijn <tooh@tooh.myweb.nl> 
+# Version: 2.0
+# Blosxom Home/Docs/Licensing: http://www/blosxom.com
+# Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+
+
+package sameday;
+
+# --- Configurable variables -----
+$debug_level ||= 0;
+
+# --------------------------------
+my $package = "sameday";
+
+
+sub debug {
+    my ($level, @msg) = @_;
+
+    if ($debug_level >= $level) {
+	print STDERR "$package debug $level: @msg\n";
+    }
+}
+
+sub start {
+  1;
+}
+
+sub story {
+	my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+$lastyear =$blosxom::yr -1;
+
+debug(1, "$blosxom::static_dir\/$lastyear\/$blosxom::mo_num\/$blosxom::da\/index.html");
+
+
+if (-e qq[$blosxom::static_dir/$lastyear/$blosxom::mo_num/$blosxom::da/index.html])
+{
+   debug(1,"file exists!");
+ $sameday="<A HREF=\"$blosxom::url/$lastyear/$blosxom::mo_num/$blosxom::da\">Last year</A>"; 
+
+} else {
+   debug(1,"file does NOT exists!");
+  $sameday="";
+}
+ 
+debug(1, "$sameday");
+
+
+1;
+}
+
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: sameday
+
+=head1 SYNOPSIS
+
+Purpose:
+I don't know if this is a usefull one. Got the idea from some Userland weblogs. 
+Use $sameday::sameday in your story template to make a link to the same day of the posting date 
+of your posting, but then in the last year.
+
+Link will only be available if there is a posting for that date. 
+Works probably only in static mode. 
+
+
+=head1 VERSION
+
+2.0
+
+Version number coincides with the version of Blosxom with which the 
+current version was first bundled.
+
+=head1 AUTHOR
+
+Peter Florijn  <tooh@tooh.myweb.nl>, http://tooh.myweb.nl/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+This Blosxom Plug-in
+Copyright 2003, Peter Florijn 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+

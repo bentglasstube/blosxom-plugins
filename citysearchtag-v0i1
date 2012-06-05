@@ -1,0 +1,50 @@
+# Blosxom Plugin: galleryref
+# Author(s): John Slee
+# Version 0.1
+
+package citysearchtag;
+
+sub citysearchize {
+	my ($a) = (@_);
+	my $b = $a; $b =~ s/\s/+/g;
+	qq{<a href="http://www.citysearch.com.au/search?query=$b&type=bridge">$a</a>};
+}
+
+sub xlate_citysearchtags {
+	my ($text_ref) = @_;
+	$$text_ref =~ s{<citysearch>([^>]*)</citysearch>}{citysearchize($1)}meg;
+	
+	1;
+}
+
+sub start {
+	1;
+}
+
+sub head {
+	my ($pkg, $currentdir, $head_ref) = @_;
+
+	xlate_citysearchtags($head_ref);
+	
+	1;
+}
+
+sub story {
+	my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+	xlate_citysearchtags($body_ref);
+	xlate_citysearchtags($title_ref);
+	xlate_citysearchtags($story_ref);
+
+	1;
+}
+
+sub foot {
+	my($pkg, $currentdir, $foot_ref) = @_;
+
+	xlate_citysearchtags($foot_ref);
+
+	1;
+}
+
+1;

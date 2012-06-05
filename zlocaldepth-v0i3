@@ -1,0 +1,68 @@
+# Blosxom Plugin: zlocaldepth
+# Author: Fletcher T. Penney
+# Version: 0.3
+
+package zlocaldepth;
+
+$localdepth = 0;
+
+sub start {
+	1;
+}
+
+sub filter {
+	my ($pkg, $files) = @_;
+
+	if ($localdepth ne 0) {
+		@files_list = sort keys %$files;
+
+		$myroot = $blosxom::datadir ."/" . $blosxom::path_info;
+		$myroot =~ s/\/$//;
+		$myroot =~ s/\/[^\/]+\.[^\/]+$//;
+		
+		foreach (@files_list) {
+			if ($_ !~ /$myroot([^\/]*\/[^\/]*){0,$localdepth}$/) {
+				delete $files->{$_};
+			}
+		}
+	}
+	
+1;
+}
+
+
+1;
+
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: zlocaldepth
+
+=head1 DESCRIPTION
+
+This plugin restricts entries to those within the $zlocaldepth::localdepth variable, which works just like blosxom's $depth variable.  Except that it is always calculated relative to the current directory.  This is useful, because unlike the built-in depth variable, it can be appropriately set from a config file via the config plugin to easily allow different depths in different parts of your site.
+
+
+BTW, the name starts with a z so that it will follow other plugins that affect 
+filters and abide by their settings.
+
+=head1 AUTHOR
+
+Fletcher T. Penney - http://fletcher.freeshell.org
+
+=head1 VERSION HISTORY
+
+=item 0.2
+
+Corrected an issue with a depth of 1 and the root directory.
+
+=head1 LICENSE
+
+This source is submitted to the public domain.  Feel free to use and modify  
+it.  If you like, a comment in your modified source attributing credit to 
+myself for my work would be appreciated.
+
+THIS SOFTWARE IS PROVIDED AS IS AND WITHOUT ANY WARRANTY OF ANY KIND.  USE AT 
+YOUR OWN RISK!

@@ -1,0 +1,133 @@
+#!/usr/bin/perl
+##
+## A blosxom-centric del.icio.us parser that
+## creates blosxom entries of your daily
+## del.icio.us links.
+##
+## Best if cron-ed to run daily.
+##
+## Make sure you check out the link output area near
+## the bottom of the script for formatting options
+## and info. on how to access other tags.
+##
+## By:  Brett O'Connor (oconnorb AT dogheadbone.com)
+##      Mike Hostetler (thehaas AT binary.net)
+##
+## Last Revision Date: 2004-09-30
+#############################################################
+require XML::Parser;
+require LWP::UserAgent;
+require HTTP::Request::Common;
+
+#your del.icio.us account info
+$login = "your_login";
+$password = "your_password";
+
+#file name and location setup for ouputting to file 
+$timestamp = time();
+$outfile = "/path/to/blosxom/entries/".$timestamp.".txt";
+
+#ouput header and footer
+$header = "today's del.icio.us links\n<ul>";
+$footer = "</ul>(Keep your own bookmarks online at <a href=\"http://del.icio.us/\">del.icio.us.</a>)";
+
+#api information (just in case it is changed)
+#$api_url = "http://api.del.icio.us/1.0/api/etc"
+$api_url = "http://del.icio.us/api";
+$api_net_loc = "del.icio.us:80";
+$api_realm = "del.icio.us API";
+
+#get todays entries
+($Second, $Minute, $Hour, $Day, $Month, $Year, $WeekDat, $DayOfYear, $IsDST) =
+localtime(time);
+my $RealMonth = $Month + 1;
+if ($RealMonth < 10)
+{
+    $RealMonth = "0" . $RealMonth;
+}
+if ($Day < 10)
+{
+    $Day = "0" . $Day;
+}
+$FixedYear = $Year + 1900;
+$date = "$FixedYear-$RealMonth-$Day";
+
+#create the output
+my $parser = new XML::Parser (Style=>'Subs', Pkg=>'SubHandlers', ErrorContext=>
+2);
+$parser->setHandlers(Char => \&charData);
+
+my $out;
+
+$parser->parse(fetchPage($login,$password,$date));
+
+#write out entry if to file
+#$outputTo = 'screen'; #debugging purposes
+$outputTo = 'file';
+if ($out ne '') {
+    if ($outputTo eq 'file') {
+        open(FILE, ">$outfile");
+        print FILE "$header";
+        print FILE "$out";
+        print FILE "$footer";
+        close(FILE);
+    } else {
+        printf($header);
+        printf($out);
+        printf($footer);
+    }
+}
+
+#subroutines
+sub fetchPage {
+    my ($user,$pass,$date) = @_;
+    my $browser = LWP::UserAgent->new( );
+    $browser->agent('Deloxom/1.0');
+    $browser->credentials($api_net_loc, $api_realm, $user => $pass);
+    my $response = $browser->get($api_url."/posts/get?dt=$date");
+
+    if ($response->is_success) {
+        return $response->content();
+    } else {
+        print $response->error_as_HTML();
+        die();
+    }
+}
+sub charData 
+{
+    #kill misc data
+}
+#xml handling subroutines
+package SubHandlers;
+sub post {
+    my $expat = shift; my $element = shift;
+    while (@_) {
+        my $att = shift;
+        my $val = shift;
+        $attr{$att} = $val;
+    }
+
+    ####################
+    # LINK OUTPUT AREA #
+    ####################
+
+    # add to output the link
+    $out .= "<li><a href=\"".$attr{'href'}."\">".$attr{'description'}."</a>";
+    # extended tag output:
+    if ($attr{'extended'}) {
+        $out .= "<blockquote>".$attr{'extended'}."</blockquote>";
+        undef $attr{'extended'};
+    }
+    $out .= "</li>";
+
+    # some other stuff you might be interested in:
+    #
+    # $attr{'time'} << timestamp like "2004-02-10T05:11:37Z"
+    # $attr{'tag'} << tags as a space-seperated list
+    #
+}
+sub post_ {
+    # by default nothing but put any formatting 
+    # you want to appear after each post here
+}
+#EOF

@@ -1,0 +1,87 @@
+# Blosxom Plugin: plain__text
+# Author(s): James Vasile <james@brutalhugs.com>
+# Version: 0.1
+# Documentation: See the bottom of this file or type: perldoc readme
+
+package plain_text;
+
+$body; # use as $plain_text::body in flavour templates
+
+sub start {
+   1;
+}
+
+sub strip_html {
+   #first param is text from which HTML tags will be stripped
+   #second (optional) param is array of tags that should NOT be stripped
+   
+   require HTML::Parser;
+   
+   my @good_tags = $_[1];
+   my $out;
+   HTML::Parser->new(start_h => [sub {$out .= "$_[0]" if grep { $_ eq $_[1]} @good_tags;}, 'text, tagname'],
+                     text_h => [sub {$out .= "$_[0]"}, 'text'],
+                     end_h => [sub {$out .= "$_[0]" if grep { $_ eq $_[1]} @good_tags;}, 'text, tagname'],
+                     end_document_h => [sub {$out .= $_[0]},'skipped_text'],
+   )->parse($_[0]."<stripmeout />"); 
+   $out;
+}
+
+sub story {
+  my (undef, undef, undef, undef, undef, $body_ref) = @_;
+  $body = strip_html(${ $body_ref});
+
+  return 1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: breadcrumbs
+
+=head1 SYNOPSIS
+
+This plugin populates $plain_text::body with a copy of $blosxom::body that has the HTML stripped.  No config required.
+
+
+=head1 VERSION
+
+0.1
+
+
+=head1 AUTHOR
+
+James Vasile <james@brutalhugs.com>, http://james.brutalhugs.com/
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 TODO
+
+Code a backup HTML stripper in case HTML::Parser is not found.
+Add code so this plugin only loads for certain flavours.
+
+=head1 LICENSE
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

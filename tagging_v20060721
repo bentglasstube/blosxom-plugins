@@ -1,0 +1,1046 @@
+# Blosxom Plugin: tagging
+# Author: Nyarla, <thotep@nyarla.net>
+# Version: 2006-07-21
+# Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+package tagging;
+
+use strict;
+use CGI qw(param);
+use Storable qw(store retrieve);
+use vars qw(
+    $tag_list $category_list $bundle_list
+    $current_tag $current_cat $find_tag
+    $tags_in_this $categories_in_this $dc_subject
+    $related_tags $tagcloud
+);
+use URI::Escape;
+use FileHandle;
+use Jcode;
+# --- configurable variables ---- #
+
+# metaプラグインの接頭辞
+# metaプラグインの$meta_prefixと同じ値にしてください
+my $meta_prefix     = 'meta-';
+# XMLHttpRequestの文字コード
+my $charset         = 'utf8';
+# タグ/カテゴリ一覧のエントリの最大表示数
+my $max_num_entries = 10;
+# XHTMLなら '1' HTMLなら'0'
+my $xhtml_or_html   = 1;
+
+# カテゴリの別名を設定
+my $aliases         = {
+  'blosxom'       => 'Blosxom'       ,
+  'book'          => 'Book'          ,
+  'coding'        => 'Coding'        ,
+  'game'          => 'Game'          ,
+  'hardware'      => 'Hardware'      ,
+  'internet'      => 'Internet'      ,
+  'miscellaneous' => 'Miscellaneous' ,
+  'project'       => 'Project'       ,
+  'software'      => 'Software'      ,
+  'webdesign'     => 'Web Design'    ,
+  'others'        => 'Others'        ,
+};
+# タグのバンドルを指定
+# 追加するときはすでにある設定を参考にしてください。
+my $tag_bundles     = {
+    # blosxomに属するタグ
+    'blosxom'       =>  [
+        'blosxom' ,
+        'flavour' ,
+    ],
+    # codingに属するタグ
+    'coding'        =>  [
+        'html',
+        'rss',
+        'css',
+        'javascript',
+        'perl',
+    ],
+};
+# キャッシュファイルの保存場所
+my $tags2files_file          = "$blosxom::plugin_state_dir/tagging_tags_to_files";
+my $files2tags_file          = "$blosxom::plugin_state_dir/tagging_files_to_tags";
+my $tagslist_file            = "$blosxom::plugin_state_dir/tagging_tags_list";
+my $categories2tagslist_file = "$blosxom::plugin_state_dir/tagging_tags_list_per_category";
+# --- Plug-in package variables - #
+my $plugin;
+my $fh = new FileHandle;
+sub new {
+    my $class = shift;
+
+    my $self  = {
+        'meta_prefix'     => $meta_prefix,
+        'charset'         => $charset,
+        'aliases'         => $aliases,
+        'tag_bundles'     => $tag_bundles,
+        'max_num_entries' => $max_num_entries,
+        'xhtml_or_html'   => $xhtml_or_html,
+        'tags_data'       => {},
+        'categories2tags' => {},
+    };
+
+    eval { $self->{'tags2files'}          = retrieve($tags2files_file)          };
+    eval { $self->{'files2tags'}          = retrieve($files2tags_file)          };
+    eval { $self->{'tagslist'}            = retrieve($tagslist_file)            };
+    eval { $self->{'categories2tagslist'} = retrieve($categories2tagslist_file) };
+
+    bless $self , $class;
+}
+# ------------------------------- #
+sub start {
+    my $plugin_name = shift;
+    $plugin = $plugin_name->new();
+    $plugin->make_lists();
+    return 1;
+}
+
+sub filter {
+    my($pkg, $files) = @_;
+
+    if( param('recache_tags') || !$plugin->{'tags2files'} ||
+        !$plugin->{'files2tags'} || !$plugin->{'tagslist'}  || !$plugin->{'categories2tagslist'} ){
+        $plugin->recache_tags($files);
+    }
+
+    if( param('category') ){
+        %$files = %{ $plugin->filter_by_categories($files,param('category')) };
+        $plugin->set_num_entries($files);
+    }
+    if( param('tag') ){
+        %$files = %{ $plugin->filter_by_tags($files,param('tag')) };
+        $plugin->set_num_entries($files);
+        $related_tags = $plugin->make_related_tags($files,param('tag'));
+    }
+
+    return 1;
+}
+
+sub story {
+    my($pkg, $path, $fn, $story_ref, $title_ref, $body_ref) = @_;
+
+    ($tags_in_this,$categories_in_this) = ('','');
+
+    my @tags = split(/,/, $meta::tags);
+    # path をタグとみなす
+    my $dir_tags = $path;
+    $dir_tags =~ s!(^/|/$)!!;
+    my @dir_tags = split(/\//,$dir_tags);
+    @tags = (@tags,@dir_tags);
+
+    # 重複を削除
+    my %tmp;
+    foreach (@tags) {
+        $tmp{$_} = 1;
+    }
+    @tags = ();
+    foreach (sort keys %tmp){
+        push(@tags,$_);
+    }
+
+    if(scalar(@tags) != 0){
+        map { $_ = lc $_; $_ =~ s/^\s*//; $_ =~ s/\s*$//; } @tags;
+
+        ($tags_in_this,$categories_in_this,$dc_subject) = (
+            $plugin->make_tags_in_this(@tags),
+            $plugin->make_categories_in_this($plugin->{'categories2tags'},@tags),
+            $plugin->make_categories_in_this_dc_subject($plugin->{'categories2tags'},@tags)
+        );
+
+    } else {
+        $tags_in_this .= qq!<ul><li>none</li></ul>!;
+        $categories_in_this .= qq!<ul><li>none</li></ul>!;
+        $dc_subject = '';
+    }
+
+    return 1;
+}
+# ------------------------------- #
+sub make_lists {
+    my $self = shift;
+
+    my $charset = $self->{'charset'};
+
+    $find_tag = Jcode->new(param('find_tag'))->$charset;
+
+    if(
+        !$blosxom::path_info_yr &&
+        ($blosxom::path_info || param('category') )
+    ){
+        my @path = $self->get_path($blosxom::path_info);
+
+        my $tags = {};
+        foreach my $path (@path){
+            foreach my $category ( keys %{ $self->{'categories2tagslist'} } ){
+                next if(!$category =~  m/$path/);
+                foreach my $tag (keys %{ $self->{'categories2tagslist'}->{$category} }){
+                    if( ($find_tag and $tag =~ /^$find_tag/i) or !$find_tag){
+                        $tags->{$tag} += $self->{'categories2tagslist'}->{$category}->{$tag};
+                    }
+                }
+            }
+        }
+
+        foreach my $tag (sort keys %{ $tags }){
+            my $escaped_tag = uri_escape($tag);
+            $self->{'tags_data'}->{$tag} = [ "$blosxom::url?tag=$escaped_tag" , $tags->{$tag} ];
+        }
+
+    }
+    else {
+        foreach my $tag (keys %{ $self->{'tagslist'} }){
+            if(($find_tag and $tag =~ /^$find_tag/i) or !$find_tag){
+                my $escaped_tag = uri_escape($tag);
+                $self->{'tags_data'}->{$tag} = [ "$blosxom::url?tag=$escaped_tag" , $self->{'tagslist'}->{$tag} ];
+            }
+        }
+    }
+
+    # タグをバンドル
+    $self->{'categories2tags'} = $self->bundle( $self->{'tags_data'} );
+
+    # 各リストを生成
+    ( $tag_list, $category_list, $bundle_list ) = (
+        $self->make_tag_list( $self->{'tags_data'} ),
+        $self->make_category_list( $self->{'tags_data'} ),
+        $self->make_bundle_list,
+    );
+    # タグクラウドを生成
+    $tagcloud = $self->make_tagcloud( $self->{'tags_data'} );
+
+    $current_tag = param('tag');
+    $current_cat = param('category');
+    $current_tag =~ s!/! + !g;
+    $current_cat =~ s!/! + !g;
+    $current_tag = $self->html_escape($current_tag);
+    $current_cat = $self->html_escape($current_cat);
+    return;
+}
+sub html_escape{
+    my $self = shift;
+    my $text = shift;
+
+    $text =~ s!&!&amp;!g;  # &            => &amp;
+    $text =~ s!<!&lt;!g;   # <            => &lt;
+    $text =~ s!>!&gt;!g;   # >            => &gt;
+    $text =~ s!"!&quot;!g; # "            => &quot;
+    $text =~ s!'!&#39;!g;  # '            => &#39;
+
+    return $text;
+}
+
+sub get_path {
+    my $self      = shift;
+    my $path_info = shift;
+
+    my $flavour = $blosxom::flavour;
+
+    my @path = ();
+
+    if($path_info =~ m{/}){
+        # $path_info = foo/bar.html
+        if( $path_info =~ m{^(.*)/[\w\-]+\.$flavour$} ){
+            push @path , $1 ;
+        }
+        # $path_info = foo/bar
+        else{
+            push @path , $path_info ;
+        }
+    }
+    else {
+        # ?category=foo
+        if( param('category') ){
+            push @path , param('category');
+        }
+        # $path_info = foo.html
+        elsif( $path_info =~ m{^(.*)\.$flavour$} ){
+            my $file_path = "$blosxom::datadir/$1.$blosxom::file_extension";
+            my @tags = ();
+
+            # タグを取り出す
+            if( defined(@{ $self->{'files2tags'}->{$file_path} }) ){
+                push @tags , sort @{ $self->{'files2tags'}->{$file_path} };
+            }
+            else {
+                push @tags , 'none' ;
+            }
+
+            my $tags2cats = $self->get_tags2category(@tags);
+            my $categories;
+
+            # 重複しているカテゴリを削除
+            foreach my $tag (keys %{ $tags2cats }) {
+                foreach my $category (keys %{ $tags2cats->{$tag}}){
+                    $categories->{$category}++;
+                }
+            }
+
+            push @path , sort keys %{ $categories };
+        }
+        # $path_info = foo
+        else {
+            push @path , $path_info;
+        }
+    }
+
+    return @path;
+}
+
+sub get_tags2category {
+    my $self = shift;
+    my @tags = @_;
+    my $tags2cats = {};
+
+    foreach my $tag (sort @tags){
+        my $flg = {};
+        foreach my $category (keys %{ $self->{'tag_bundles'} }){
+            foreach (sort @{ $self->{'tag_bundles'}->{$category} }){
+                $tags2cats->{$tag}->{$category}++;
+                $flg->{$tag}++;
+            }
+        }
+        $tags2cats->{$tag}->{'others'}++ if(!$flg->{$tag});
+    }
+
+    return $tags2cats
+}
+# ------------------------------- #
+sub bundle {
+    my $self      = shift;
+    my $tags_data = shift;
+
+    my $cats2tags = {};
+
+    foreach my $tag (keys %{ $tags_data }){
+        my $flg = {};
+        foreach my $category (keys %{ $self->{'tag_bundles'} }){
+            foreach my $bundle_tag (@{ $self->{'tag_bundles'}->{$category} }){
+                if ($tag eq $bundle_tag){
+                    $cats2tags->{$category}->{$tag} = $tags_data->{$tag};
+                    $flg->{$tag}++;
+                }
+            }
+        }
+        $cats2tags->{'others'}->{$tag} = $tags_data->{$tag} if(!$flg->{$tag});
+    }
+
+    return $cats2tags;
+}
+# ------------------------------- #
+sub filter_by_tags {
+    my $self      = shift;
+    my $files_ref = shift;
+    my $tags      = shift;
+
+    my ($files,$cnt);
+
+    my @tags = split /,/,$tags;
+
+    foreach my $tag (@tags){
+        if( !$files && !$cnt){
+            %$files = map { $_ => $files_ref->{$_} } @{ $self->{'tags2files'}->{$tag} };
+        }
+        else {
+            my $tmp_files;
+            foreach my $file (keys %{ $files }){
+                foreach (@{ $self->{'tags2files'}->{$tag} }){
+                    if($file eq $_){
+                        $tmp_files->{$_} = $files->{$_};
+                    }
+                }
+            }
+            $files = $tmp_files;
+        }
+        $cnt++;
+    }
+
+    if( scalar(keys %$files) == 0){
+        %$files = ();
+    }
+
+    return $files;
+}
+sub filter_by_categories {
+    my $self     = shift;
+    my $files_ref = shift;
+    my $category  = shift;
+
+    my ($files,$cnt);
+
+    my @tags = sort keys %{ $self->{'categories2tags'}->{$category} };
+
+    foreach my $tag (@tags){
+        if( !$files && !$cnt ){
+            %$files = map { $_ => $files_ref->{$_} } @{$self->{'tags2files'}->{$tag}};
+        }
+        else{
+            foreach (@{ $self->{'tags2files'}->{$tag} }){
+                $files->{$_} = $files_ref->{$_};
+            }
+        }
+    }
+
+    if( scalar(keys %$files) == 0 ){
+        %$files = ();
+    }
+
+    return $files;
+}
+sub set_num_entries {
+    my $self = shift;
+    my $files = shift;
+
+    my $entries_cnt = keys %{ $files };
+
+    if($entries_cnt <= $self->{'max_num_entries'}){
+        $blosxom::num_entries = $entries_cnt ;
+    } else {
+        $blosxom::num_entries = $self->{'max_num_entries'} ;
+    }
+}
+# ------------------------------- #
+sub make_html {
+    my $self= shift;
+    my %arg = @_;
+
+    my ($text,$element_name,$attr_ref,$is_empty,$is_xml);
+
+    $text         = ($arg{'text'} ne '')? $arg{'text'}  : '' ;
+    $element_name = $arg{'name'}  || 'span' ;
+    $attr_ref     = $arg{'attr'}  || {}     ;
+    $is_empty     = $arg{'empty'} || 0      ;
+    $is_xml       = $arg{'xml'}   || $self->{'xhtml_or_html'} ;
+
+    my $markuped_text = '';
+    my $empty_suffix  = '';
+
+    if($is_xml){
+        $element_name =~ tr/A-Z/a-z/;
+        $empty_suffix = ' />';
+    }
+    else {
+        $element_name =~ tr/a-z/A-Z/;
+        $empty_suffix = '>';
+    }
+
+    $markuped_text .= qq(<$element_name);
+
+    while( my($attr, $value) = each(%$attr_ref) ) {
+        if($value eq ''){
+            if($is_xml){
+                $markuped_text .= qq( $attr="$attr");
+            }
+            else {
+                $markuped_text .= qq( $attr);
+            }
+        }
+        else {
+            $markuped_text .= qq( $attr="$value");
+        }
+    }
+
+    if($is_empty){
+         $markuped_text .= qq($empty_suffix);
+    }
+    else {
+        $markuped_text .= qq(>$text</$element_name>);
+    }
+
+    return $markuped_text;
+}
+
+sub make_tag_list {
+    my $self      = shift;
+    my $tags_data = shift;
+    my ($list,$item);
+
+    foreach (sort keys %{ $tags_data }){
+        my $anchor = $self->make_html(
+            'name' => 'a',
+            'text' => $_,
+            'attr' => {
+                'href'  => $tags_data->{$_}->[0],
+                'title' => "tag : $_",
+            },
+        );
+        my $count = $self->make_html(
+            'name' => 'span',
+            'text' => '(' . $tags_data->{$_}->[1] . ')',
+        );
+        $item .= "\t" . $self->make_html(
+            'name' => 'li',
+            'text' => $anchor . $count,
+        ) . "\n";
+    }
+
+    $list = $self->make_html(
+        'name' => 'ul',
+        'text' => $item,
+        'attr' => {
+            'class' => 'tags',
+        },
+    );
+    return $list;
+}
+sub make_category_list {
+    my $self      = shift;
+    my $tags_data = shift;
+    my ($list,$item);
+
+    my $item_others = '';
+    foreach (sort keys %{ $self->{'categories2tags'} }){
+
+        my $category = $_;
+        $category = $self->{'aliases'}->{$_} if ($self->{'aliases'}->{$_});
+
+        my $anchor = $self->make_html(
+            'name' => 'a',
+            'text' => $category,
+            'attr' => {
+                'href'  => "$blosxom::url?category=$_",
+                'title' => "category : $category",
+            },
+        ) . "\n" ;
+        if($_ eq 'others'){
+            $item_others .= $self->make_html(
+                'name' => 'li',
+                'text' => $anchor,
+            );
+        }
+        else {
+            $item .= $self->make_html(
+                'name' => 'li',
+                'text' => $anchor,
+            );
+        }
+    }
+
+    $item .= $item_others;
+
+    $list = $self->make_html(
+        'name' => 'ul',
+        'text' => $item,
+        'attr' => {
+            'class' => 'categories',
+        },
+    );
+
+    return $list;
+}
+sub make_bundle_list {
+    my $self      = shift;
+    my $cats2tags = $self->{'categories2tags'};
+    my ($list,$item);
+
+    foreach (sort keys %{ $cats2tags }){
+
+        next if($_ eq 'others');
+
+        my $tmp_item = '';
+
+        my $category = $_;
+        $category = $self->{'aliases'}->{$_} if ($self->{'aliases'}->{$_});
+
+        $tmp_item .= $self->make_html(
+            'name' => 'dt',
+            'text' => $self->make_html(
+                'name' => 'a',
+                'text' => $category,
+                'attr' => {
+                    'href'  => "$blosxom::url?category=$_",
+                    'title' => "Category : $category",
+                },
+            ),
+        ) . "\n";
+
+        my $tmp_item_child = '';
+        foreach my $tag ( sort keys %{ $cats2tags->{$_} } ){
+            $tmp_item_child .= $self->make_html(
+                'name' => 'li',
+                'text' => $self->make_html(
+                    'name' => 'a',
+                    'text' => $tag,
+                    'attr' => {
+                        'href'  => $cats2tags->{$_}->{$tag}->[0], 
+                        'title' => "tag : $tag",
+                    },
+                ) . $self->make_html(
+                    'name' => 'span',
+                    'text' => '(' . $cats2tags->{$_}->{$tag}->[1] . ')',
+                ),
+            ) . "\n";
+        }
+        $tmp_item .= $self->make_html(
+            'name' => 'dd',
+            'text' => $self->make_html(
+                'name' => 'ul',
+                'text' => $tmp_item_child,
+            ),
+            'attr' => {
+                'class' => 'bundletags',
+            },
+        );
+
+        $item .= $self->make_html(
+            'name' => 'li',
+            'text' => $self->make_html(
+                'name' => 'dl',
+                'text' => $tmp_item,
+            ),
+        ). "\n" ;
+
+    }
+    my $tmp_item = '';
+    my $category = 'others';
+    $category = $self->{'aliases'}->{$category} if ($self->{'aliases'}->{$category});
+    $tmp_item .= $self->make_html(
+        'name' => 'dt',
+        'text' => $self->make_html(
+            'name' => 'a',
+            'text' => $category,
+            'attr' => {
+                'href'  => "$blosxom::url?category=others",
+                'title' => "Category : $category",
+            },
+        ),
+    ) . "\n";
+
+    my $tmp_item_child = '';
+    foreach my $tag (sort keys %{ $cats2tags->{'others'} }){
+        $tmp_item_child .= $self->make_html(
+            'name' => 'li',
+            'text' => $self->make_html(
+                'name' => 'a',
+                'text' => $tag,
+                'attr' => {
+                    'href'  => $cats2tags->{'others'}->{$tag}->[0], 
+                    'title' => "tag : $tag",
+                },
+            ) . $self->make_html(
+                'name' => 'span',
+                'text' => '(' . $cats2tags->{'others'}->{$tag}->[1] . ')',
+            ),
+        ) . "\n";
+    }
+    $tmp_item .= $self->make_html(
+        'name' => 'dd',
+        'text' => $self->make_html(
+            'name' => 'ul',
+            'text' => $tmp_item_child,
+        ),
+        'attr' => {
+            'class' => 'bundletags',
+        },
+    );
+
+    $item .= $self->make_html(
+        'name' => 'li',
+        'text' => $self->make_html(
+            'name' => 'dl',
+            'text' => $tmp_item,
+        ),
+    ) . "\n" ;
+
+    $list = $self->make_html(
+        'name' => 'ul',
+        'text' => $item,
+        'attr' => {
+            'class' => 'tagbundle',
+        },
+    );
+
+    return $list;
+}
+sub make_tagcloud {
+    my $self      = shift;
+    my $tags_data = shift;
+
+    my ($list,$item);
+
+    my ($tags_count,$tag_num);
+    foreach (keys %{ $tags_data }) {
+        $tags_count += $tags_data->{$_}->[1];
+    }
+    if( scalar(keys %{ $tags_data }) > 0 ){
+        foreach my $tag (keys %{ $tags_data }){
+            $tag_num = int( $tags_data->{$tag}->[1] / $tags_count * 20 );
+            $tag_num = 1 if($tag_num==0);
+            $item .= $self->make_html(
+                'name' => 'li',
+                'text' => $self->make_html(
+                    'name' => 'a',
+                    'text' => $tag,
+                    'attr' => {
+                        'href'  => $tags_data->{$tag}->[0],
+                        'title' => "tag : $tag",
+                    },
+                ),
+                'attr' => {
+                    'class' => "level$tag_num",
+                },
+            ) . "\n";
+            $tag_num = 0;
+        }
+    }
+    else {
+        $item = $self->make_html(
+            'name' => 'li',
+            'text' => 'none',
+            'attr' => {
+                'class' => 'level1'
+            },
+        ) . "\n";
+    }
+
+    $item = $self->make_html(
+        'name' => 'ul',
+        'text' => $item,
+        'attr' => {
+            'class' => 'tagcloud',
+        },
+    );
+
+    return $item;
+}
+sub make_related_tags {
+    my $self      = shift;
+    my $files_ref = shift;
+    my $tags      = shift;
+
+    my ($list,$item);
+
+    my $related_tags;
+    foreach my $file (keys %{ $files_ref }){
+        foreach my $tag (@{ $self->{'files2tags'}->{$file} }){
+            if($tags !~ m/$tag/){
+                $related_tags->{$tag}++;
+            }
+        }
+    }
+
+    foreach my $tag (sort keys %{ $related_tags }){
+        my $escaped_tag = uri_escape($tag);
+        my $current_tag = uri_escape($tags);
+
+        $item .= $self->make_html(
+            'name' => 'li',
+            'text' => $self->make_html(
+                'name' => 'a',
+                'text' => $tag,
+                'attr' => {
+                    'href'  => "$blosxom::url?tag=$current_tag,$escaped_tag",
+                    'title' => "tag : $tag",
+                },
+            ) . $self->make_html(
+                'text' => '(' . $related_tags->{$tag} . ')',
+            ),
+        );
+
+    }
+
+    $list = $self->make_html(
+        'name' => 'ul',
+        'text' => $item,
+        'attr' => {
+            'class' => 'related_tags',
+        },
+    );
+
+    return $list;
+}
+sub make_tags_in_this {
+    my $self = shift;
+    my @tags = @_;
+
+    my ($list,$item);
+
+    foreach my $tag (@tags){
+        my $escaped_tag = uri_escape($tag);
+        $item .= $self->make_html(
+            'name' => 'li',
+            'text' => $self->make_html(
+                'name' => 'a',
+                'text' => $tag,
+                'attr' => {
+                    'href'  => "$blosxom::url?tag=$escaped_tag",
+                    'title' => "tag : $tag",
+                },
+            ),
+        ) . "\n";
+    }
+
+    $list = $self->make_html(
+        'name' => 'ul',
+        'text' => $item,
+        'attr' => {
+            'class' => 'tags_in_this',
+        },
+    ) . "\n";
+
+    return $list;
+}
+sub make_categories_in_this {
+    my $self = shift;
+    my $cats2tags = shift;
+    my @tags = @_;
+
+    my ($list,$item);
+
+    my $categories = {};
+    foreach my $tag (@tags){
+        foreach my $category (sort keys %{ $cats2tags }){
+            foreach (sort keys %{ $cats2tags->{$category} }){
+                $categories->{$category}++ if($tag eq $_);
+            }
+        }
+    }
+
+    foreach my $cat (sort keys %{ $categories }){
+        next if($cat eq 'others');
+        my $escaped_cat = uri_escape($cat);
+        my $cat_name = $cat;
+        $cat_name = $self->{'aliases'}->{$cat} if ($self->{'aliases'}->{$cat});
+
+        $item .= $self->make_html(
+            'name' => 'li',
+            'text' => $self->make_html(
+                'name' => 'a',
+                'text' => $cat_name,
+                'attr' => {
+                    'href'  => "$blosxom::url?category=$escaped_cat",
+                    'title' => "Category : $cat_name",
+                },
+            ),
+        ) . "\n";
+    }
+
+    if(defined($categories->{'others'})){
+        my $escaped_cat = uri_escape('others');
+        my $cat_name = 'others';
+        $cat_name = $self->{'aliases'}->{$cat_name} if ($self->{'aliases'}->{$cat_name});
+
+        $item .= $self->make_html(
+            'name' => 'li',
+            'text' => $self->make_html(
+                'name' => 'a',
+                'text' => $cat_name,
+                'attr' => {
+                    'href'  => "$blosxom::url?category=$escaped_cat",
+                    'title' => "Category : $cat_name",
+                },
+            ),
+        ) . "\n";
+    }
+
+    $list .= $self->make_html(
+        'name' => 'ul',
+        'text' => $item,
+        'attr' => {
+            'class' => 'categories_in_this',
+        },
+    ) . "\n";
+
+    return $list;
+}
+sub make_categories_in_this_dc_subject {
+    my $self = shift;
+    my $cats2tags = shift;
+    my @tags = @_;
+
+    my ($list,$item);
+
+    my $categories = {};
+    foreach my $tag (@tags){
+        foreach my $category (sort keys %{ $cats2tags }){
+            foreach (sort keys %{ $cats2tags->{$category} }){
+                $categories->{$category}++ if($tag eq $_);
+            }
+        }
+    }
+
+    foreach my $cat (sort keys %{ $categories }){
+        next if($cat eq 'others');
+        my $encoded_cat = uri_escape($cat);
+        my $cat_name = $cat;
+        $cat_name = $self->{'aliases'}->{$cat} if ($self->{'aliases'}->{$cat});
+
+        $item .= $self->make_html(
+            'name' => 'dc:subject',
+            'text' => $cat_name,
+        ) . "\n";
+    }
+
+    if(defined($categories->{'others'})){
+        my $encoded_cat = uri_escape('others');
+        my $cat_name = 'others';
+        $cat_name = $self->{'aliases'}->{$cat_name} if ($self->{'aliases'}->{$cat_name});
+
+        $item .= $self->make_html(
+            'name' => 'dc:subject',
+            'text' => $cat_name,
+        ) . "\n";
+    }
+
+    $list .= $item;
+
+    return $list;
+}
+# ------------------------------- #
+sub recache_tags {
+    my $self  = shift;
+    my $files = shift;
+
+    # すでにあるデータを削除
+    (   $self->{'tags2files'} , $self->{'files2tags'} ,
+        $self->{'tagslist'} , $self->{'categories2tagslist'} ) = ({},{},{},{});
+
+    foreach my $file_path (%{ $files }){
+
+        my ($path) = ( $file_path =~ m{^(.*)/.*\.$blosxom::file_extension$} );
+        $path =~ s!$blosxom::datadir!!;
+        $path =~ s!^/|/$!!;
+
+        # カテゴリ
+        my $category = $path;
+
+        # ディレクトリをタグとみなす
+        # blosxom.cgi/foo/bar/baz.html => foo,bar
+        my @dir_tags = split m{/},$path;
+
+        my $lines = $self->load($file_path);
+
+        my @tags = ( $self->read_tags($lines) , @dir_tags );
+
+        map {
+            $_ = lc $_ ;
+            $_ =~ s/^\s*|\s*$//;
+        }@tags;
+
+        # 重複を削除
+        my %tmp;
+        foreach (@tags){
+            $tmp{$_}++;
+        }
+        @tags = ();
+        foreach (keys %tmp){
+            push @tags,$_;
+        }
+
+        # カテゴリを取得
+        my $tags2category = $self->get_tags2category(@tags);
+
+        # $tags2filesを生成
+        map {
+            push @{ $self->{'tags2files'}->{$_} },$file_path
+        }@tags;
+        # $files2tagsを生成
+        push @{ $self->{'files2tags'}->{$file_path} },@tags;
+        # $tagslistを生成
+        map { $self->{'tagslist'}->{$_}++ }@tags;
+        # $categories2tagslistを生成
+        foreach my $tag (sort keys %{ $tags2category }){
+            foreach my $category (sort keys %{ $tags2category->{$tag} }){
+                $self->{'categories2tagslist'}->{$category}->{$tag}++;
+            }
+        }
+        map { $self->{'categories2tagslist'}->{$category}->{$_}++; }@tags;
+
+        # 保存
+        store $self->{'tags2files'}          , $tags2files_file;
+        store $self->{'files2tags'}          , $files2tags_file;
+        store $self->{'tagslist'}            , $tagslist_file;
+        store $self->{'categories2tagslist'} , $categories2tagslist_file;
+    }
+    return;
+}
+sub load {
+    my $self = shift;
+    my $path = shift;
+
+    my $lines = [];
+
+    if($fh->open($path)){
+        @{ $lines } = <$fh>;
+        $fh->close;
+    }
+
+    return $lines;
+}
+sub read_tags {
+    my $self  = shift;
+    my $lines = shift;
+    my @tags = ();
+
+    foreach my $line (@{ $lines }){
+        $line =~ m/^\s*$/ and next;
+
+        my $meta_p = $self->{'meta_prefix'};
+
+        $line !~ m/^$meta_p/ and next;
+        my ($key,$value) = ($line =~ m/^$meta_p(.+?):\s*(.+)\s*$/);
+
+        if($key eq 'tags'){
+            my @tmp_tags = split /,/,$value;
+            map {
+                $_ = lc $_ ;
+                $_ =~ s/^\s*|\s*$//;
+            } @tmp_tags;
+            push @tags,@tmp_tags;
+            last;
+        }
+        else {
+            next;
+        }
+    }
+
+    return @tags;
+}
+# ------------------------------- #
+1;
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in : tagging
+
+=head1 SYNOPSIS
+
+目的: blosxomでtaggingを導入します
+
+=head1 AUTHOR
+
+にゃるら、(Nyarla,)
+<thotep@nyarla.net> , http://nyarla.net/blog/
+
+based on original code by:
+mizzy : http://mizzy.org/
+
+=head1 SEE ALSO
+
+http://nyarla.net/blog/blosxom-plugin-tagging1
+
+=head1 LICENSE
+
+This Blosxom Plug-in Copyright 2006, "Nyarla,"
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+

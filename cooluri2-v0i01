@@ -1,0 +1,246 @@
+# Blosxom Plugin: cooluri2
+# Author(s): Mark Ivey <zovirl@zovirl.com>
+# Version: 0.0.1
+# Documentation: See the bottom of this file or type: perldoc cooluri2
+
+package cooluri2;
+use strict;
+use English;
+
+use File::stat;
+use CGI qw/:standard/;
+
+my $debug = 0;   # log debug messages or not?
+
+#FIXME: Should we return 0 in static mode?
+sub start {1;}
+
+sub filter
+{
+    # get info from URI
+    my ($year, $month, $day, $blosxom_path, $path, $flavor) = 
+        parse_URI(path_info() || param('path'));
+    
+    # adjust blosxom's variables
+    $blosxom::path_info = $blosxom_path;
+    $blosxom::path_info_yr = '';
+    $blosxom::path_info_mo = '';
+    $blosxom::path_info_mo_num = '';
+    $blosxom::path_info_da = '';
+    $blosxom::flavour = $flavor;
+    
+    # delete stories not matching path
+    while (my ($file, $time) = each %blosxom::files)
+    {
+        delete $blosxom::files{$file} if ($file !~ /^$path/);
+    }
+    
+    # make sure path's date matches
+    my ($dw,$mo,$mo_num,$da,$ti,$yr) = get_date($path);
+    if (	($year and $yr ne $year) or
+            ($month and $mo_num ne $month) or
+            ($day and $da ne $day)
+        )
+    {
+        %blosxom::files = ();
+    }
+    
+    return 1;
+}
+
+# break the URI up into pieces
+sub parse_URI
+{
+    my @uri = split '/', shift;
+    shift @uri; # throw away empty item before 1st slash
+    
+    # pull off the date, then the path 
+    my (@date_parts, @path_parts);
+    while (defined $uri[0] and $uri[0] =~ /^\d/)
+    {
+        push @date_parts, shift @uri;
+    }
+    
+    while (defined $uri[0] and $uri[0] =~ /^[a-zA-Z]/)
+    {
+        push @path_parts, shift @uri;
+    }
+    
+    # pull the .flavor off the story.
+    my $flavor = param('flav') || $blosxom::default_flavour;
+    my $story = pop @path_parts; # story = last part of path
+    if ($story =~ /(.*)\.(.*)$/)
+    {
+        $flavor = $2 if ($2);
+        $story = $1;  # toss flavor off story
+    }
+    push @path_parts, $story unless ($story eq 'index'); #throw away "index"
+    
+    my $path = join "/", (@path_parts);
+    
+    # Strip spurious slashes  FIXME: Will we ever even have spurious slashes?
+    $path =~ s!(^/*)|(/*$)!!g;
+    
+    my ($year, $month, $day) = @date_parts;
+    # FIXME: I don't think we can do this, since its hard to tell
+    # a month called "Dec" from a category called "Dec"
+    #my $month_num = $month ? 
+    #( 
+    #    $month =~ /\d{2}/ ? $month : ($month2num{ucfirst(lc$month)} || undef) 
+    #) : undef;
+
+
+    my $blosxom_path = $path;
+    $path = "$blosxom::datadir/$path"; # get full path AFTER we get blosxom_path
+    
+    # don't add flavor back on for index or if file exists user might be asking 
+    # for either a category or something to be served by static_file
+    $blosxom_path .= ".$flavor" if ($story ne 'index' and not -e "$path");
+
+    warn "cooluri2: Internally: date[$year/$month/$day] path[$path] " .
+        "story[$story] flavor[$flavor]\n" if $debug > 0;
+    warn "cooluri2: Externally: date[//] path[$blosxom_path] flavor[$flavor]\n"
+        if $debug > 0;
+
+    return ($year, $month, $day, $blosxom_path, $path, $flavor);
+}
+
+# get the date of a file.
+sub get_date
+{
+    my $path = shift;
+    my $file_time = 0;
+    
+    # check %files, %others, %metadate::dirs, finally check on the disk
+    if (exists $blosxom::files{"$path.$blosxom::file_extension"})
+    {
+        $file_time = $blosxom::files{"$path.$blosxom::file_extension"};
+    }
+    elsif (exists $blosxom::others{"$path.$blosxom::file_extension"})
+    {
+        $file_time = $blosxom::others{"$path.$blosxom::file_extension"};
+    }
+    elsif (exists $metadate::dirs{"$path"})
+    {
+        $file_time = $metadate::dirs{"$path"};
+    }
+    elsif (-e "$path")
+    {
+        $file_time = stat("$path")->mtime;
+    }
+
+    return blosxom::nice_date($file_time);
+}
+
+1;
+
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: cooluri2
+
+=head1 SYNOPSIS
+
+Make Blosxom recognize date-based, extensionless URIs for everything.  See 
+http://www.w3.org/Provider/Style/URI.html for motivation.
+
+=head1 VERSION
+
+0.0.1
+
+=head1 AUTHOR
+
+Mark Ivey <zovirl@zovirl.com>, http://zovirl.com
+
+=head1 DESCRIPTION
+
+Make Blosxom recognize date-based, extensionless URIs for everything (both
+stories and categories).  http://www.w3.org/Provider/Style/URI.html explains
+the motivation.  The main goal is to use URIs which never have to be broken 
+(ever!).  The idea for this plugin came from the cooluri plugin
+by Rob Hague <http://www.blosxom.com/plugins/link/cooluri.htm>.
+
+With cooluri2, URIs like this will be recognized:
+ 
+ http://example.com/2003/12/03/category
+ http://example.com/2003/12/14/category/story
+
+Days and months can be left off if you prefer a shorter URI:
+
+ http://example.com/2003/12/category
+ http://example.com/2003/12/category/story
+ 
+ http://example.com/2003/category
+ http://example.com/2003/category/story
+
+The date part of the URI is the creation date for that document.
+It is take from %blosxom::files, %blosxom::others, %metadate::dirs, or the
+last-modification time of the file itself.  Note that stories may have
+different creation dates then the categories they are in, so you may end
+up with URIs like this:
+
+ http://example.com/2003/10/23/category
+ http://example.com/2003/12/14/category/story
+ 
+This means, unfortunately, that users probably won't be able to modify a URI 
+to find another document.
+
+Extensions can still be used to specify a flavor.  If no extension is present
+the default flavor will be used.
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head2 If you use cooluri2, some of these other plugins might come in handy:
+
+=over 4
+
+=item permalink 
+
+<http://zovirl.com/2003/software/blosxom/plugins/permalink_about>
+
+makes your life easier by automatically generating Cool URI permalinks.
+
+=item metadate
+
+<http://zovirl.com/2003/software/blosxom/plugins/metadate_about>
+
+allows you to have metadates for categories and non-story files (i.e. images,
+binaries, etc.).
+
+
+=back
+
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+metadate Blosxom Plugin Copyright 2003, Mark Ivey
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+

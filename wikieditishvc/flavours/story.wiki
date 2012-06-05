@@ -1,0 +1,5 @@
+    <!-- Current version of the post goes here: -->
+    <div class="story">
+      <h2>$title</h2>
+      $body
+    </div>

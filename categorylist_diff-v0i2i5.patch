@@ -1,0 +1,4 @@
+53c53
+< 						push @categorylist, $categoryname if $categoryname;
+---
+> 						push @categorylist, $categoryname if $categoryname && $catcount > 0;

@@ -1,0 +1,35 @@
+# Blosxom Plugin: gsitemap
+# Author(s): Kay <info@ellinikonblue.com>
+# Version: 2006-01-19
+# Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+package gsitemap;
+
+use strict;
+use vars qw($priority $changefreq);
+
+# --- Configurable variables -----------
+my $sitemapsflavour = 'xml';
+
+$priority   = 0.8;     # Top page priority(Google default is 0.5)
+$changefreq = 'daily'; # 'always' | 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'never'
+
+my $numlimit = 0;      # 0 is no limit.
+# --- Plug-in package variables --------
+# --------------------------------------
+
+sub start {
+	return 0 unless $blosxom::flavour eq $sitemapsflavour;
+
+	return 1;
+}
+
+sub filter {
+	my ( $pkg, $files_ref ) = @_;
+
+	$blosxom::num_entries = $numlimit > 0 ? $numlimit : scalar( keys %$files_ref );
+
+	return 1;
+}
+
+1;

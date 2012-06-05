@@ -1,0 +1,130 @@
+## MTworldPop by Oscar Hills 4-17-03 - just more site scraping 
+## similar to dhsLevel by Alex Halavais which is in turn
+## based on MTNetflixQueue by B. Trott.
+## Blosxom adaptation by Peter Florijn
+
+package worldpop; 
+
+use LWP::UserAgent;
+
+# --- Configurable variables -----
+$debug_level ||= 1;
+
+my $package = "worldpop";
+
+sub debug {
+    my ($level, @msg) = @_;
+
+    if ($debug_level >= $level) {
+	print STDERR "$package debug $level: @msg\n";
+    }
+}
+
+
+sub scrape_pop {
+    my $out = 'Could not retrieve population.';
+    my $population = 'http://www.census.gov/ipc/www/';
+    my $req = HTTP::Request->new(GET => $population);
+    my $ua = LWP::UserAgent->new;
+    $ua->agent('cenCheck/1.0');
+    my $res = $ua->request($req);
+    my $c = $res->content;
+    
+    if ($c =~ /<BR>World <SPAN STYLE=\"color: rgb\(255,0,0\); font-weight: 700; font-size: 10pt; \">(.*?)<\/SPAN>/)
+    { 
+          $out = $1;
+    }
+    $worldpop = $out;
+    debug(1, "worldpop is $worldpop");  
+
+}
+
+sub start {
+
+debug(1, "Start scraping");
+scrape_pop;
+}
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: worldPop
+
+=head1 SYNOPSIS
+
+Purpose: Produces a number representing the world population.
+
+Uses CSS class
+
+
+Description
+
+Produces a number representing the world population.
+
+Configuration
+
+$debug_level ||= 1;
+
+Set debuglevel to 0 when the plugin works OK.
+
+Additional Bits Required 
+
+Category
+/display ?
+
+Date
+12-7-2003
+
+Todo list
+
+
+
+=head1 VERSION
+
+2.0rc5
+
+Version number coincides with the version of Blosxom with which the 
+current version was first bundled.
+
+=head1 AUTHOR
+
+Peter Florijn  <tooh@tooh.myweb.nl>, http://tooh.myweb.nl/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+This Blosxom Plug-in
+Copyright 2003, Peter Florijn 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+
+

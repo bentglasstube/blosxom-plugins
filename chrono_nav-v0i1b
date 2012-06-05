@@ -1,0 +1,144 @@
+# Blosxom Plugin: chrono_nav
+# Author(s): Victor Ganata <aswang@fatoprofugus.net>
+# Based on tree plug-in by Ryan Schram 
+# Ideas From: Tatsuhiko Miyagawa 
+# Version: 0.1b
+# Documentation: See the bottom of this file or type: perldoc tree
+
+package chrono_nav;
+
+# --- Configurable variables -----
+$ante="bogus_ante"; # specify URL previous to beginning of postings
+$post="bogus_post"; # specify URL next to end of postings
+# --------------------------------
+
+use strict; 
+use vars qw($prev $prev_title $next $next_title @file_info @dir_info $ante $post);
+
+$prev;
+$prev_title;
+$next;
+$next_title;
+@file_info;
+@dir_info;
+
+sub start {
+    return 1;
+}
+
+sub filter { 
+    my($pkg, $files_ref) = @_;
+
+    # Take %files and find all the places blosxom will generate a story page. 
+    @file_info = sort { $files_ref->{$b} <=> $files_ref->{$a} } keys %$files_ref;
+1; 
+}
+
+
+
+sub story {
+    if ($blosxom::path_info =~ /$blosxom::flavour/) { 
+     # It's an individual story file.
+
+     my %path2idx = map { $file_info[$_] => $_ } 0..$#file_info;
+
+       my $key = "$blosxom::datadir/$blosxom::path_info";
+       $key =~ s#$blosxom::flavour#$blosxom::file_extension#;
+
+       my $index = $path2idx{"$key"};
+       ($prev, $prev_title) = ($index < $#file_info ? make_link($index + 1, \@file_info)
+		           : $ante );
+       ($next, $next_title) = ($index > 0 ? make_link($index - 1, \@file_info) 
+		       	 	     : $post );
+
+    } else {
+       $prev=$ante;
+       $next=$post;
+    }
+1;
+}
+
+sub make_link {
+    my($array_index, $pi) = @_;
+    my $file = $pi->[$array_index];
+    my $title;
+    open (FH, "<$file");
+    chomp ($title = <FH>);
+    close FH;
+    my($path, $fn) = $file =~ m!^$blosxom::datadir/(?:(.*)/)?(.*)\.$blosxom::file_extension!;
+    return ( qq($blosxom::url/$path/$fn.$blosxom::flavour), $title );
+}
+
+
+
+
+1;
+
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: chrono_nav
+
+=head1 SYNOPSIS
+
+Populates the chrono_nav namespace with links for pointing to preceding 
+and following stories (arranged chronologically).  Plugs into &blosxom::story and &blosxom::filter.  Only useful with individual entry pages.  Suggest using with interpolate_fancy and testing for $ante and $post in order to eliminate spurious links in first and last post and more importantly on index pages (See examples at http://blog.fatoprofugus.net/computers/www/blosxom/chrono_nav)
+
+=head1 INSTALLATION
+
+Drop this plugin into your plugin directory.  Configure $ante to the URL
+that you want the first post's "prev" to point to.  Configure $post to the URL that you want the last post's "next" to point to.  Place substitution
+variables $chrono_nav::next and $chrono_nav::prev in the story.flavour as
+an href value for an anchor element. 
+
+=head1 VERSION
+
+0.1
+
+=head1 AUTHOR(S)
+
+Victor Ganata <aswang@fatoprofugus.net>, http://blog.fatoprofugus.net
+based on tree plugin by Ryan Schram, http://www.rschram.org
+with inspiration and some code techniques from Tatsuhiko Miyagawa's 
+(http://www.bulknews.net) prevnextentry
+
+=head1 HISTORY 
+
+Sept 16, 2003: Removed code to generate URLs to index files from tree plugin
+
+=head1 TODO
+
+* Cleaner usage with interpolate_fancy (how do I make $prev and $next return as undefined?)
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

@@ -1,0 +1,46 @@
+package tagnorati;
+
+# creates a technorati-style "tag" for each story  
+# displayed, per www.technorati.com/help/tags.html 
+# (if that's the right place to be lookin' ;-)
+
+#
+# Configuration
+#
+#  Type of Tag
+#    When set to 0, the plugin creates a <category> tag; 
+#    when set to 1, the tag is created as a link to the 
+#    current story. 
+#      0 = "category" tag; 1 = "link" tag  (normal is 0)
+ my $use_link_tag = 1;
+#
+#  Top-level Category Name
+#    You may have entries assigned to no "category" other 
+#    than the root of your blog. What text should be used 
+#    as the tag for these entries? (default is '/')
+#      ex: my $root_tag = 'blog';
+ my $root_tag = '/';
+#
+
+use strict;
+
+#call $tagnorati::tag in story templates
+use vars qw { $tag };
+
+sub start {1;}
+
+sub story {
+  my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+  $root_tag ||= '/';
+  (my $str) = $path =~ m/([^\/]+)$/;
+  $str ||= $path;
+  $str ||= $root_tag;
+  $tag = $use_link_tag ? 
+    qq{<a href="$blosxom::url$path" rel="tag">$str</a>} : 
+    qq{<category>$str</category>};
+}
+
+1;
+
+__END__

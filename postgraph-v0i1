@@ -1,0 +1,325 @@
+# Blosxom Plugin: postgraph					   -*- perl -*-
+# Author: Todd Larason jtl@molehill.org and Nilesh Chaudhari http://nilesh.org/
+# Version: 0+1i
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/blosxom
+# Categories plugin Home/Docs/Licensing:
+#   http://molelog.molehill.org/blox/Computers/Internet/Web/Blosxom/Graph/
+# parts Copyright (c) 2002 Nilesh Chaudhari http://nilesh.org/
+
+package postgraph;
+
+# --- Configuration Variables ---
+$destination_dir ||= ''; # must be configured
+$graph_start_day ||= "19000101";
+$graph_num_bars  ||= 24;
+$graph_width 	 ||= 200;
+$graph_height 	 ||= 100;
+$barcolor 	 ||= "#f5deb3";  # the bars themselves
+$bordercolor 	 ||= "#83660f";  # the borders of the bars
+$outlinecolor 	 ||= "#83660f";  # the outline of the box around the graph
+$boxcolor 	 ||= "#fffbf0";  # the inside of the box
+$textcolor 	 ||= "#4f0000";  # the various text bits
+
+$bt_width 	||= 400;
+$bt_height 	||= 30;
+$bt_linecolor 	||= '#ffffff';
+$bt_textcolor 	||= '#757575';
+$bt_fillcolor 	||= '#757575';
+$bt_bordercolor ||= '#757575';
+$bt_padding 	  = 5 unless defined $bt_padding;
+$bt_show_text 	  = 1 unless defined $bt_show_text;
+
+$debug_level = 2 unless defined $debug_level;
+# ------------------------------------------------------------
+
+use File::stat;
+use GD;
+use GD::Graph::bars;
+use GD::Graph::colour qw/:convert :colours/;
+use strict;
+use vars qw/$destination_dir $graph_start_day $graph_num_bars $graph_width
+    $graph_height $barcolor $bordercolor $outlinecolor $boxcolor $textcolor
+    $bt_width $bt_height $bt_linecolor $bt_textcolor $bt_fillcolor 
+    $bt_bordercolor $bt_padding $bt_show_text $debug_level/;
+
+my $package 	   = "postgraph";
+my $timestamp_file = "$blosxom::plugin_state_dir/.$package.timestamp";
+my $last_timestamp;
+
+sub debug {
+    my ($level, @msg) = @_;
+
+    if ($debug_level >= $level) {
+	print STDERR "$package debug $level: @msg\n";
+    }
+}
+
+# utility funcs
+sub max {
+    my $max = 0;
+    foreach (@_) {
+ 	$max = $_ if $_ > $max;
+    }
+    return $max;
+}
+sub round {
+    return int($_[0] + .5);
+}
+sub hex2rgb {
+    my ($hex) = @_;
+
+    my ($r, $g, $b) = ($hex =~ m!\#(..)(..)(..)!);
+    return (hex($r),hex($g),hex($b));
+}
+
+my @bucketcount;
+my $secs_per_bucket = 86400 / $graph_num_bars;
+my $mins_per_bucket  = 1440 / $graph_num_bars;
+my $buckets_per_hour = $graph_num_bars / 24;
+
+sub graph_add {
+    my ($hour, $min, $sec) = @_;
+    my $time 		= $hour * 3600 + $min * 60 + $sec;
+    my $bucket 		= $time / $secs_per_bucket;
+    $bucketcount[$bucket]++;
+}
+
+sub build_graph {
+    my @labels;
+    for (my $hour = 0; $hour < 24; $hour++) {
+ 	for (my $min; $min < 60; $min += $mins_per_bucket) {
+ 	    push @labels, $hour; # sprintf("%d:%02d", $hour, $min);
+ 	}
+    }
+    my $graph = GD::Graph::bars->new($graph_width, $graph_height);
+    $graph->set(
+# 		title        => 'Posts per hour of day',
+ 		y_max_value  => max(@bucketcount) + 2,
+ 		x_label_skip => $buckets_per_hour * 4,
+# 		bgclr 	     => add_colour($bgcolor),  # does nothing?
+ 		fgclr 	     => add_colour($outlinecolor),
+ 		boxclr 	     => add_colour($boxcolor),
+ 		labelclr     => add_colour($textcolor),
+ 		axislabelclr => add_colour($textcolor), 
+ 		legendclr    => add_colour($textcolor),
+ 		valuesclr    => add_colour($textcolor),
+ 		textclr      => add_colour($textcolor), 
+ 		dclrs        => [add_colour($barcolor)],
+ 		borderclrs   => [add_colour($bordercolor)],
+ 		);
+    $#bucketcount = $graph_num_bars;
+    my $gd = $graph->plot([\@labels, \@bucketcount]);
+    open IMG, "> $destination_dir/graph.png";
+    binmode IMG;
+    print IMG $gd->png;
+    close IMG;
+    debug(2, "build graph");
+}
+
+# blogtimes directly derived from BLOGTIMES by Nilesh Chaudhari
+# -- http://nilesh.org/mt/blogtimes/
+
+my @monthname=('null', 'JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE',
+	       'JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER');
+
+my @bt_entry_times;
+sub bt_add {
+    my ($hour, $min) = @_;
+    push @bt_entry_times, $hour*60 + $min;
+}
+sub build_blogtimes {
+  my ($year, $month) = @_;
+  my $txtpad 	     = $bt_show_text ? gdTinyFont->height : 0;
+  my $scale_width    = $bt_width  + ($bt_padding*2);
+  my $scale_height   = $bt_height + ($bt_padding*2) + ($txtpad*2);
+  my $img 	     = GD::Image->new($scale_width,$scale_height);
+  my $white 	     = $img->colorAllocate(255,255,255);
+  my $linecolor	     = $img->colorAllocate(hex2rgb($bt_linecolor));
+  my $textcolor	     = $img->colorAllocate(hex2rgb($bt_textcolor));
+  my $fillcolor	     = $img->colorAllocate(hex2rgb($bt_fillcolor));
+  my $bordercolor    = $img->colorAllocate(hex2rgb($bt_bordercolor));
+  my $line_y1 	     = $bt_padding + $txtpad;
+  my $line_y2 	     = $bt_padding + $txtpad + $bt_height;
+  $img->transparent($white);
+  $img->rectangle(0, 0, $scale_width-1, $scale_height-1, $bordercolor);
+  $img->filledRectangle($bt_padding, $line_y1, $bt_padding + $bt_width,  
+			$line_y2, $fillcolor);
+  my ($line_x,$i);
+  foreach $i (@bt_entry_times) {
+    $line_x = $bt_padding + (round(($i/1440) * $bt_width));
+    $img->line($line_x, $line_y1, $line_x, $line_y2, $linecolor);
+  }
+  # Shut off text if width is too less.
+  if ($bt_show_text) {
+      if ($bt_width >= 100) {
+	  my $ruler_y = $bt_padding + $txtpad + $bt_height + 2;
+	  my $ruler_x;
+	  for ($i = 0; $i <= 23; $i += 2) {
+	      $ruler_x = $bt_padding + round($i * $bt_width/24);
+	      $img->string(gdTinyFont,$ruler_x,$ruler_y,"$i",$textcolor);
+	      debug(5, 'tinyfont',$ruler_x,$ruler_y,"$i",$textcolor);
+	  }
+	  $img->string(gdTinyFont, $bt_padding + $bt_width-2,
+		       $ruler_y, "0", $textcolor);
+	  my $caption_x = $bt_padding;
+	  my $caption_y = $bt_padding-1;
+	  my $caption = "B L O G T I M E S   $monthname[$month] $year";
+	  $img->string(gdTinyFont, $caption_x, $caption_y,
+		       $caption, $textcolor);
+	  debug(5, 'tinyfont', $caption_x, $caption_y, $caption, $textcolor);
+      } else {
+	  my $ruler_y = $bt_padding + $txtpad + $bt_height + 2;
+	  my $ruler_x;
+	  for ($i = 0; $i <= 23; $i += 6) {
+	      $ruler_x = $bt_padding + round($i * $bt_width/24);
+	      $img->string(gdTinyFont,$ruler_x,$ruler_y,"$i",$textcolor);
+	  }
+	  $img->string(gdTinyFont, $bt_padding + $bt_width - 2,
+		       $ruler_y, "0", $textcolor);
+	  my $caption_x = $bt_padding;
+	  my $caption_y = $bt_padding-1;
+	  my $caption = "$month $year";
+	  $img->string(gdTinyFont, $caption_x, $caption_y,
+		       $caption, $textcolor);
+      }
+  }
+  open IMG, "> $destination_dir/blogtimes.png" or die "$!";
+  binmode IMG;
+  print IMG $img->png or die "$!";
+  close IMG;
+  debug(2, "build blogtimes");
+}
+
+sub filter {
+    my ($pkg, $files) = @_;
+    my $latest_story = (sort {$b <=> $a} values %$files)[0];
+    return 1 if $latest_story <= $last_timestamp;
+    my @now = localtime;
+    my $now_month = $now[4] + 1;
+    my $now_year  = $now[5] + 1900;
+
+    debug(1, "updating graph");
+
+    foreach (keys %{$files}) {
+	my @date  = localtime($files->{$_});
+	my $mday  = $date[3];
+	my $month = $date[4] + 1;
+	my $year  = $date[5] + 1900;
+	graph_add($date[2], $date[1], $date[0])
+	    if (sprintf("%04d%02d%02d", $year, $month, $mday) ge 
+		$graph_start_day);
+	bt_add($date[2], $date[1])
+	    if ($year == $now_year and $month == $now_month);
+    }
+    build_graph();
+    build_blogtimes($now_year, $now_month);
+}
+
+sub start {
+    return 0 unless $destination_dir;
+    $last_timestamp = -e $timestamp_file ? stat($timestamp_file)->mtime : 0;
+    my $fh = new FileHandle;
+    if (!$fh->open(">$timestamp_file")) {
+	debug(0, "Couldn't touch timestamp file $timestamp_file");
+	return 0;
+    }
+    $fh->close;
+    debug(1, "$package enabled");
+    return 1;
+}
+1;
+
+=head1 NAME
+
+Blosxom Plug-in: graph
+
+=head1 SYNOPSIS
+
+Purpose: creates graphs showing the time of day stories are posted
+
+Files created: 
+  * $destination_dir/graph.png -- bar graph showing number of posts per
+    period of time (default: hour) since $graph_start_day (default: 19000101)
+  * $destination_dir/blogtimes.png -- a vertical-line form of a scatterplot,
+    showing the posting time of all stories posted this month
+
+=head1 VERSION
+
+0+1i
+
+1st test release
+
+=head1 AUTHOR
+
+Todd Larason  <jtl@molehill.org>, http://molelog.molehill.org/
+
+portions (the "BLOGTIMES" chart style) based on code by Nilesh Chaudhari;
+see http://nilesh.org/mt/blogtimes/.  Nilesh gets credit, but direct bugs
+to Todd Larason.
+
+=head1 BUGS
+
+None known; address bug reports and comments to me or to the Blosxom
+mailing list [http://www.yahoogroups.com/groups.blosxom].
+
+=head1 Customization
+
+=head2 Configuration variables
+
+There are many configuration variables controlling height, width and colors
+of the two graphs; see the configuration variable section for those.
+
+There's also:
+
+C<$destination_dir>, the directory where the output files will be created; 
+this must be configured.
+
+C<$graph_start_day>, the earlist date to consider stories from for the bar 
+graph.  If you've converted from another weblogging package and lost time of
+day information on converted stories, you probably want to set this to when
+you started using Blosxom.
+
+C<$graph_num_bars> is the number of bars to create in the bargraph form;
+if it isn't evenly divisible by 24, things probably act weird -- that isn't
+well tested.
+
+The C<bt_> variables control the "BLOGTIMES" style chart; the others the
+bar graph.  For the bargraph, the width and height is the size of the overall
+image; for the blogtimes, it's for the graph portion only -- padding is added
+for a border and optionally for text.  One or the other of these is likely to 
+change in a future version to provide consistency.
+
+=head1 Caching
+
+The images are only recreated when they appear to be out of date; a timestamp
+file is maintained for this.  To force them to be regenerated, remove
+$plugin_state_dir/.postgraph.timestamp.
+
+=head1 LICENSE
+
+this Blosxom Plug-in
+Copyright 2003, Todd Larason
+"BLOGTIME" Portions
+Copyright (c) 2002 Nilesh Chaudhari http://nilesh.org/
+
+(This license is the same as Blosxom's and the original BLOGTIME's)
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+

@@ -1,0 +1,123 @@
+# Blosxom Plugin: blosxom_anacron
+# Author(s): Fletcher T. Penney <http://fletcher.freeshell.org/> 
+# Version: 0.1
+package blosxom_anacron;
+
+# This plugin performs a similar purpose as the anacron utility
+# It reads the anacrontab file which specifies commands and 
+# how frequently they should be run.
+# When a blosxom page is loaded, the plugin checks to see if any commands
+# are overdue to be run, and if so, runs them. 
+
+# --- Configurable variables -----
+
+# anacron_tab is the file that you need to prepare.  The format consists
+# of the command to be run, followed by "=>" followed by the interval
+# in seconds.
+#
+# For example:
+# /path/to/command=>86400
+# 'command' will be run every 24 hours
+
+$anacron_tab = "$blosxom::plugin_state_dir/anacrontab";
+
+# This file stores the timestamps of the last time a command was run
+# This file is created automatically.
+$anacron_timestamp = "$blosxom::plugin_state_dir/anacronstamp";
+
+# --------------------------------
+
+
+sub start {
+	my %interval = ();
+	my %lastrun = ();
+	my $now = time();
+	my $last = 0;
+
+	if (open (CRON, "<$anacron_tab")) {
+		while ($line = <CRON> ) {
+			if ($line =~ /(.*)=>\s*(\d+)/) {
+				$interval{$1}=$2;
+			}
+		}
+		close CRON;
+		
+		if (open (LAST, "<$anacron_timestamp")) {
+			while ($line= <LAST>) {
+				if ($line =~ /(.*)=>(.*)/) {
+					$lastrun{$1}=$2;
+				}
+			}
+			close LAST;
+		}
+		
+		open (LAST, ">$anacron_timestamp");
+		
+		foreach $job (sort (keys %interval)) {
+			$last = $lastrun{$job};
+			if (($last == 0) || (( $last + $interval{$job}) lt $now )) {
+				system($job);
+				$lastrun{$job} = $now;
+			}
+			
+			print LAST "$job=>$lastrun{$job}\n";
+		}
+		
+		close LAST;
+	}
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: blosxom_anacron
+
+=head1 SYNOPSIS
+
+The blosxom_anacron plugin provide a built-in "anacron" like function into 
+blosxom.  Basically, it runs specified commands after a given interval has 
+elapsed since the last time that command was performed.
+
+=head1 VERSION
+
+0.1
+
+=head1 VERSION HISTORY
+
+0.1		Initial public release
+
+
+=head1 AUTHOR
+
+Fletcher T. Penney
+
+=head1 BUGS
+
+
+=head1 LICENSE
+
+blosxom_anacron plugin
+Copyright 2003, Fletcher Penney
+
+Blosxom Copyright 2003, Rael Dornfest 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

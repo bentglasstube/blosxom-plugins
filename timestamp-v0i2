@@ -1,0 +1,301 @@
+# Blosxom Plugin: timestamp
+# Author(s): Taper Wickel <taper@waxwolf.com>
+# Version: 0+2i
+# Documentation: See the bottom of this file or type: perldoc jdnstamp
+
+package timestamp;
+
+# --- Configurable variables -----
+
+# The Julian Day Number at the epoch.  The included number is accurate
+# for most unix systems.
+$epoch = 2440587.5;
+
+# Number of decimal places to show
+$precision = 5;
+
+@monthname = qw/January February March 
+                April   May      June 
+                July    August   September 
+                October November December/ if ($#monthname != 11);
+
+@monthabbr = qw/Jan    Feb       Mar 
+                Apr    May       Jun 
+                Jul    Aug       Sep  
+                Oct    Nov       Dec/ if ($#monthabbr != 11);
+
+@downame   = qw/Sunday Monday    Tuesday Wednesday Thursday 
+                Friday Saturday/ if ($#downame != 6);
+
+@dowabbr = qw/Sun Mon Tue Wed Thu Fri Sat/ if ($#dowabbr != 6);
+
+
+# --------------------------------
+
+# The Julian day number (and fraction); use $timestamp::jdn 
+$jdn = 0;
+
+# The formatted timestamp; use $timestamp::stamp
+$stamp = "";
+
+my $package = "timestamp";
+my $files;
+
+sub start {
+  while (<DATA>) {
+    chomp;
+    last if /^(__END__)?$/;
+    my ($flavour, $comp, $txt) = split ' ',$_,3;
+    $txt =~ s:\\n:\n:g;
+    $blosxom::template{$flavour}{"$package.$comp"} = $txt;
+  }
+  
+  1;
+}
+
+sub filter {
+  my ($pkg, $files_ref) = @_;
+  $files = $files_ref;
+  1;
+}
+
+sub story {
+  my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) =@_;
+
+
+  $timestamp =
+    $files->{"$blosxom::datadir$path/$filename.$blosxom::file_extension"};
+  
+  # JDN stuff
+  $formatstring = "%.$precision" . "f";
+  $jdns = sprintf($formatstring, ($timestamp/86400 + $epoch));
+  ($days, $frac) = split(/\./,$jdns,2);
+  while ($days =~ s/(.*)(\d)(\d\d\d)/$1$2,$3/){}
+  $jdn = qq{<span class="timestamp-jdn">$days.$frac</span>};
+
+  # Gregorian stuff
+  ($sec,$min,$hr,$da,$mo_num,$yr_num,$wday,$yday,$isdst)= localtime($timestamp);
+  $month = $monthname[$mo_num];
+  $mo = $monthabbr[$mo_num];
+  $dw = $dowabbr[$wday];
+  $weekday = $downame[$wday];
+  $hr12 = ($hr % 12);
+  if ($hr12 == 0) {
+    $hr12 = 12;
+  }
+  $hr24 = sprintf("%02d", $hr);
+  $min = sprintf("%02d", $min);
+  $sec = sprintf("%02d", $sec);
+  $day = sprintf("%02d", $da);
+  $mon = sprintf("%02d", $mo_num);
+  $yr = $yr_num + 1900;
+  $yr2 = sprintf("%02d", ($yr_num % 100));
+
+  $ampm = 'AM';
+  if ($hr >= 12) {
+    $ampm = 'PM';
+  }  
+
+  $stamp = $blosxom::template->('', "$package.stamp", $blosxom::flavour);
+  $stamp =~ s/((\$[\w]+)|(\$\{[\w]+\}))/$1 . "||''"/gee;
+
+  return 1;
+}
+
+sub end {
+  1;
+}
+
+1;
+
+__DATA__
+error stamp <span class="timestamp-stamp">$hr24:$min:$sec $da $mo $yr</span>
+
+__END__
+
+=head1 NAME
+ 
+Blosxom Plug-in: timestamp
+
+=head1 SYNOPSIS
+
+Purpose: Provides timestamps for each story for inclusion in its display.
+
+=over 4
+
+=item $timestamp::stamp
+
+Timestamp
+
+=item $timestamp::jdn
+
+Timestamp as a Julian day number
+
+=back
+
+=head1 INSTALLATION & CONFIGURATION
+
+Drop the timestamp plug-in into your Blosxom plugins directory and
+configure the runtime variables, below.
+
+=head1 VERSION
+
+0+2i
+
+First test release
+
+=head1 AUTHOR
+
+Taper Wickel <taper@waxwolf.com>, L<http://www.waxwolf.com/blosxom.cgi>
+
+
+=head1 BUGS
+
+None known. Address bug reports and comments to me.
+
+=head1 CUSTOMIZATION
+
+=head2 Configuration Variables
+
+=over 4
+
+=item @monthname, @monthabbr, @downame, and @dowabbr 
+
+contain the long and short forms of the months and says of the
+week.
+
+=item $epoch 
+
+holds the Julian day number that corresponds to the zero point of your
+system's time() implementation.  On (most?) Unix systems, including
+MacOS X, this is 12:00:00 1/1/1970; on MacOS classic it is 1/1/1904,
+which would be 2416480.5 .  Check your system's implementation.  If
+your system's perl port has a different date,
+L<http://fourmilab.ch/documents/calendar/> has a converter.
+
+If you'd like the modified Julian day, you can set $epoch to 40587.  
+
+=item $precision 
+
+sets the number of decimal digits to display in $timestamp::jdn .
+
+=back
+
+=head2 CSS classes
+
+=over 4
+
+=item timestamp-stamp
+
+The timestamp
+
+=item timestamp-jdn
+
+The JDN number
+
+=back
+
+=head2 Flavour-style files
+
+The format of the timestamp may be overridden by creating a file
+(similar to Blosxom's flavour files) called timestamp.stamp.I<flavour>
+. See the C<__DATA__> section for the default. Only timestamp-specific
+variables will work. The variables attempt to mimic blosxom's
+variables for date.I<flavour> :
+
+=over 4
+
+=item $hr
+
+=item $hr12 
+
+=item $hr24 
+
+zero-padded
+
+=item $ampm
+
+=item $min 
+
+zero-padded
+
+=item $sec 
+
+zero-padded
+
+=item $ampm 
+
+in caps
+
+=item $da 
+
+=item $day 
+
+zero-padded
+
+=item $mo 
+
+short name
+
+=item $month 
+
+long name
+
+=item $mo_num 
+
+number
+
+=item $mon 
+
+zero-padded
+
+=item $yr 
+
+four digits
+
+=item $yr2 
+
+two digits
+
+=item $dw 
+
+short day of week
+
+=item $weekday 
+
+long day of week
+
+=back
+
+=head1 SEE ALSO
+
+Blosxom Plugin Docs: L<http://www.raelity.org/apps/blosxom/plugin.shtml>
+
+Julian Day Numbers and Date Algorithms:
+L<http://home.capecod.net/~pbaum/date/back.htm#JDN>
+
+=head1 LICENSE
+
+This Blosxom Plug-in Copyright 2003, Taper Wickel
+
+(This license is the same as Blosxom's)
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restric- tion, including
+without limitation the rights to use, copy, modify, merge, publish,
+dis- tribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+

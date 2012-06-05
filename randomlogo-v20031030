@@ -1,0 +1,113 @@
+# Blosxom Plugin: randomlogo
+# Author(s): Eli the Bearded <blossom@eli.users.panix.com>
+# Version: 2003-10-30
+# Documentation: See the bottom of this file or type: perldoc readme
+
+package randomlogo;
+
+# --- Configurable variables -----
+
+# directory with logos
+my $logodir = "/home/user/public_html/logos";
+
+# only consider logos matching this regular expression
+# eg: ".\\.png\$" match only files ending with ".png"
+my $filter_re = ".\\.png\$";
+
+# I name my images like this: "foo-w77-h99.png". That's
+# 77 wide, and 99 tall. To extract width and height without
+# worring about which comes first, I use:
+# my $width_re = "-w(\\d+)[.-]";
+# my $height_re = "-h(\\d+)[.-]";
+
+# If this matches, the width tag "%w" will be set to $1
+my $width_re = "-w(\\d+)[.-]";
+
+# If this matches, the height tag "%h" will be set to $1
+my $height_re = "-h(\\d+)[.-]";
+
+# template for the image tag:
+# %f is the logo file (no directory)
+# %w is the width, as pulled out of the filename with $width_re
+# %h is the height, as pulled out of the filename with $height_re
+# %% is a literal %
+my $imgtmpl = "<img src=/~user/logos/%f alt='alt text' width=%w height=%h>";
+
+# --------------------------------
+
+$img; # use as $randomlogo::$img in flavour templates
+
+sub start {
+  my $file;
+  my @logos;
+  my %replace = ( '%' => '%' );
+
+  if(opendir(LOGO, $logodir)) {
+    while(defined($file = readdir(LOGO))) {
+      if ($file =~ /$filter_re/o) {
+	push(@logos, $file);
+      }
+    }
+    closedir(LOGO);
+  }
+
+  if(@logos) {
+    $file = $replace{f} = $logos[rand(@logos)];
+
+    if($file =~ /$width_re/o) {
+      $replace{w} = $1;
+    }
+    if($file =~ /$height_re/o) {
+      $replace{h} = $1;
+    }
+
+    if(!$replace{w}) { $replace{w} = ''; }
+    if(!$replace{h}) { $replace{h} = ''; }
+
+    $img = $imgtmpl;
+
+    $img =~ s/%(.)/defined($replace{$1})? $replace{$1} : ''/ge;
+  } else {
+    $img = '<!-- no logo found -->';
+  }
+  1;
+}
+
+1;
+
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: randomlogo
+
+=head1 SYNOPSIS
+
+Searches a supplied directory for a random image matching the filter
+regular expression and builds an img tag for it, $randomlogo::$img
+
+If no logo is found, sets $randomlogo::$img to a comment:
+
+	<!-- no logo found -->
+
+=head1 VERSION
+
+2003-10-30
+
+=head1 AUTHOR
+
+Eli the Bearded <blossom@eli.users.panix.com>
+
+=head1 SEE ALSO
+
+Blosxom, http://www.blosxom.com/
+
+gozer, http://www.linuxbrit.co.uk/gozer/, to make logos
+
+=head1 LICENSE
+
+Released under the same license as blosxom.
+
+=cut
+

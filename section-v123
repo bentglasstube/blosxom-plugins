@@ -1,0 +1,134 @@
+# Blosxom Plugin: section
+# Author(s): cho45 <cho45@lowreal.net>
+# Version: $Revision$
+# Documentation: Set the bottom of this file or type: perldoc section
+# vim:set ft=perl:
+
+
+package section;
+
+use strict;
+use warnings;
+
+
+# --- Configurable variables -----------
+
+# no configure
+
+# --- Plug-in package variables --------
+
+# section number in a day.
+our $se;
+
+# --------------------------------------
+
+use CGI qw/:standard :netscape/; 
+use Data::Dumper;
+
+# internal variables
+our ($s, %sections, %section_table, $date, $debug);
+
+sub start {
+	$debug = 0;
+	print "content-type: text/plain\n\n" if $debug;
+
+	print Dumper $blosxom::path_info if $debug;
+	1;
+}
+
+sub filter {
+	my ($pkg, $files_ref, $others_ref) = @_;
+	my ($t, $y, $m, $d, $ms) =  map { int($_) } split '/', path_info() ;
+	$s = $ms;
+
+	$s and $blosxom::path_info = "";
+
+	for my $fn (keys %$files_ref) {
+		my ($sec, $min, $hour, $mday, $mon, $year) = localtime($files_ref->{$fn});
+		$year += 1900; $mon++;
+		my $key = sprintf "%04d-%02d-%02d", $year, $mon, $mday;
+		$sections{$key} ||= [];
+		push @{ $sections{$key} }, $fn;
+	}
+
+	print Dumper \%sections if $debug;
+
+	for my $date (keys %sections) {
+		my $i = 0;
+		$section_table{$date} ||= {};
+		%{ $section_table{$date} } =
+			map { $i++; $_ =~ s/${blosxom::datadir}//;($_, $i) }
+			sort { $files_ref->{$a} <=> $files_ref->{$b} }
+			@{ $sections{$date} };
+	}
+
+	print Dumper \%section_table if $debug;
+	return 1;
+}
+
+sub date {
+	my ($pkg, $path, $date_ref, $mtime, $dw, $mo, $mo_num, $da, $ti, $yr) = @_;
+	$date = join '-', ($yr, $mo_num, $da);
+	return 1;
+}
+
+sub story {
+	my ($pkg, $path, $fn, $story_ref, $title_ref, $body_ref) = @_;
+
+	my $fpath = "$path/$fn.${blosxom::file_extension}";
+
+	print Dumper $date  if $debug;
+	print Dumper $fpath if $debug;
+	
+	$se = $section_table{$date}->{$fpath};
+
+	print Dumper [$s, $se] if $debug;
+	if ($s && $s != $se) {
+		$$story_ref = "";
+	}
+
+	return 1;
+}
+
+
+
+1;
+
+__END__
+
+
+=head1 NAME
+
+Blosxom Plugin: section
+
+=head1 SYNOPSIS
+
+Make blosxom more diary like.
+
+=head1 AUTHOR
+
+cho45 <cho45@lowreal.net>, http://lowreal.net/
+
+
+=head1 DESCRIPTION
+
+This enable you to access like blosxom.cgi/2006/09/09/1 as 
+first entry in 2006-09-09. The section number is reference in 
+story flavor as $section::se, so above path is make with 
+"$yr/$mo_num/$da/$section::se". Extension can be directly added 
+to the path like 2006/09/09/1.html.
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+all about blosxom (lang=ja): http://blosxom.info/
+
+=head1 LICENSE
+
+section Blosxom plugin Copyright 2006 cho45
+
+This plugin is licensed under Creative-Commons by 2.1 jp.
+
+See the below URL:
+http://creativecommons.org/licenses/by/2.1/jp/
+

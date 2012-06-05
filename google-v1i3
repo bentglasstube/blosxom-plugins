@@ -1,0 +1,173 @@
+# google -- Turn a string of keywords in a blog entry into a link
+#           to search at Google
+#
+# Author: Joey Gibson <joey@joeygibson.com>
+# Version: $Id: google,v 1.3 2003/11/26 05:46:05 jgibson Exp $
+#
+# History:
+# $Log: google,v $
+# Revision 1.3  2003/11/26 05:46:05  jgibson
+# Now supports the use of meta-google_keywords: instead of the old KW: line.
+# It will work with both ways of doing it, but the meta version is now preferred.
+#
+# Revision 1.2  2003/03/02 04:36:45  jgibson
+# Added licenses to google and uainclude.
+#
+# Revision 1.1.1.1  2003/03/02 04:25:57  jgibson
+#
+#
+
+package google;
+
+# -- Configurable Variables --
+# What string should the keywords line start with?
+$keyword_string = "KW:";
+
+# What should the HTML for the beginning of the link
+#  look like?
+$link_start = qq{ | <a href="http://www.google.com/search?q=};
+
+# What should the link title be?
+$link_title = qq{Google};
+
+# What should go after we close the anchor?
+$link_end = qq{};
+
+# Should the link open a new window or not?
+#  0 = no, 1 = yes
+$open_new_window = 1;
+# ----------------------------
+
+# -- Don't mess with the stuff below this line
+
+$google = '';
+
+sub start
+{
+	1;
+}
+
+sub story
+{
+	my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+	$google = '';
+
+	if ($meta::google_keywords)
+	{
+		$google = $link_start;
+		$google .= join "+", (split /\s+/, $meta::google_keywords);
+		chomp $google;
+	} else
+	{
+		my $first_line = (split /\n/, $$body_ref)[0];
+
+		return 1 unless $first_line =~ /^(?:<!--)?\s*$keyword_string/;
+	
+		$$body_ref = substr($$body_ref, length($first_line));
+
+		@chunks = split /\s+/, $first_line;
+		$google = $link_start;
+
+		shift @chunks;
+
+		foreach (@chunks)
+		{
+			next if /$keyword_string/;
+			next if /^.{1}$/;
+			next if /\<?--\>?/;
+			$google .= $_ . "+";
+		}
+		
+		chop $google;
+	}
+
+	$google .= "\"";
+
+	if ($open_new_window)
+	{
+		$google .= " target=\"googleWindow\"";
+	}
+	
+	$google .= ">" . $link_title . "</a>";
+	$google .= $link_end if $link_end !~ /^$/;
+	
+	1;
+}
+
+sub end
+{
+	1;
+}
+
+1;
+
+=head1 NAME
+	
+google: Turn a string of keywords in a blog entry into a link
+	to search at Google.
+	
+=head1 SYNOPSIS
+
+Purpose: A string of keywords can be included as the second line
+of a Blosxom story (after the title) and these keywords will be
+crafted into a URL that fires off a search at google. Optionally
+the query can take place in a separate window.
+
+=head1 VERSION
+
+0.2
+
+=head1 USAGE
+
+Add a line in your story beginning with meta-google_keywords: and
+then one or more words that you wish to be in your google query string.
+
+You can still use the old way, which required a line containing 
+KW: somewhere in it, but this is now deprecated. This module will work
+with BOTH types, but I recommend using the meta version. Obviously this
+requires the meta plugin, and it must run BEFORE this one, so name it
+appropriately.
+
+=head1 DEPRECATED USAGE
+
+You must specify a keyword indicator string, the default is "KW:".
+This should be the first string on the SECOND line of a Blosxom
+story. You may hide this keyword string inside an HTML comment, in
+which case the comment character would be the first string on the line.
+Each word is joined with a "+" to create the link. You have control
+over what the link should look like and also where you put it. This
+plugin exposes $google::google for each story; if no keywords were
+specified/found, then this variable will be empty.
+	
+=head1 AUTHOR
+
+Joey Gibson <joey@joeygibson.com>, http://www.joeygibson.com
+
+=head1 BUGS
+
+Send bug reports and comments to joey@joeygibson.bom
+
+=head1 LICENSE
+
+google - Blosxom plugin
+	
+Copyright (C) 2003, Joey Gibson <joey@joeygibson.com>
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files
+(the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify,
+merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished
+to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,.
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE. 

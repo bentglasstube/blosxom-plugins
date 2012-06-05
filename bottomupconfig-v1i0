@@ -1,0 +1,42 @@
+# Blosxom Plugin: config
+# Author(s): Simon Fraser, based on config by Rael Dornfest <rael@oreilly.com> 
+# Version: 1.0
+# Documentation: Like 'config' but reads config files starting from the root directory
+#                and traversing into subdirectories, allowing config files in subdirs
+#                to override those in parent dirs.
+
+package bottomupconfig;
+
+sub start
+{
+  return 1;
+}
+
+# this has to be a head routine, so that it works correctly for static rendering
+sub head
+{
+  my($pkg, $currentdir, $head_ref) = @_;
+
+  my $path = $blosxom::path_info;
+
+  $path &&= "/$path";  # prepend slash if not empty
+
+  # go from the root up, because we want config files in subdirs to override config files
+  # in their parents
+  
+  my $cur_path = "";
+  my $cur_depth = 0;
+
+  do
+  {
+    $cur_depth++;
+
+    $blosxom::others{"$blosxom::datadir$cur_path/config.$blosxom::flavour"} and eval { require "$blosxom::datadir$cur_path/config.$blosxom::flavour" } and ( $@ ? warn $@ : 1 );
+    $blosxom::others{"$blosxom::datadir$cur_path/config"} and eval { require "$blosxom::datadir$cur_path/config" } and ( $@ ? warn $@ : 1 );
+  }
+  while (($path =~ m/^((\/[^\/]+){$cur_depth})/) and $cur_path = $1);
+  
+  return 1;
+}
+
+1;

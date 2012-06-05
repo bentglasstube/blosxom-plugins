@@ -1,0 +1,212 @@
+# Blosxom Plugin: rating
+# Author(s): Rael Dornfest <rael@oreilly.com> 
+# Version: 2003-06-27
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+# Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+package rating;
+
+# --- Configurable variables -----
+
+# What's the default rating minimum?
+my $default_min = 1;
+
+# What's the default rating maximum?
+my $default_max = 5;
+
+# What's the width per rating point for graphical style?
+my $width = 10;
+
+# What's the height for graphical style?
+my $height = 10;
+
+# Where are the graphical images (rating_below.gif, rating.gif, 
+# rating_above.gif) kept?
+my $image_url = "/images";
+
+# --------------------------------
+
+$numerical; # use as $rating::numerical in flavour templates
+$textual; # use as $rating::textual in flavour templates
+$graphical; # use as $rating::graphical in flavour templates
+$star; # use as $rating::star in flavour templates
+
+my $min = $meta::rating_min || $default_min;
+my $max = $meta::rating_max || $default_max;
+
+$image_url =~ s!/+$!!;
+
+sub start {
+  1;
+}
+
+sub story {
+  my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+  # Don't bother unless there's a rating; clear out previous ratings
+  unless ($meta::rating) {
+    ($numerical, $textual, $graphical, $star) = (undef, undef, undef, undef);
+    return 0;
+  }
+
+  # The numerical representation
+  $numerical = $meta::rating || 0;
+  
+  # Sanity checks
+  $numerical < $min and $numerical = $min;
+  $numerical > $max and $numerical = $max;
+
+  # The textual representation
+  $textual = 
+      '&lt;'
+    . '=' x ($numerical - $min)  
+    . 'O' 
+    . '=' x ($max - $numerical)  
+    . '&gt;';
+
+  # The star representation
+  $star ='*' x  $numerical;
+ 
+  # The graphical representation
+  $graphical = 
+      qq{<img src="$image_url/rating_below.gif" height="$height" width="} 
+        . ( $width * ( $numerical - $min ) ) . qq{" align="absmiddle">}
+    . qq{<img src="$image_url/rating.gif" height="$height" width="$width" align="absmiddle">}
+    . qq{<img src="$image_url/rating_above.gif" height="$height" width="} 
+        . ( $width * ( $max - $numerical ) ) . qq{" align="absmiddle">};
+
+  return 1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: rating
+
+=head1 SYNOPSIS
+
+For stories specifying a meta-rating value (using the meta plug-in), 
+this plug-in generates numerical, textual, star, and graphical representations 
+of said rating for use in a flavour template.
+
+For example, a story specifying:
+
+  meta-rating: 4
+
+results in the following flavour template variables and associated 
+representations (the minimum, in this case, being 1 and maximum being 5):
+
+  $rating::numerical:   4
+
+  $rating::textual:     <===O=>
+
+  $rating::star:        ****
+
+  $rating::graphical: 
+               <img src="/images/rating_below.gif" height="10" width="30">
+               <img src="/images/rating.gif" height="10" width="10">
+               <img src="/images/rating_above.gif" height="10" width="10">
+
+Simply add one of these template variables wherever you please in your 
+story.{flavour} (e.g. story.html) flavour template and it'll be replaced
+on the fly with your rating in the selected style.
+
+A rating lower than the minimum is set to the minimum; a rating higher than
+the maximum is set to the maximum.
+
+=head1 PREREQUISITES
+
+The rating plug-in requires the meta plug-in, available at:
+
+  http://www.raelity.org/apps/blosxom/plugins/meta/meta.individual
+
+=head1 INSTALLATION
+
+Drop the rating  plug-in into your Blosxom plugins folder.
+
+=head1 CONFIGURATION
+
+The plug-in will just work out of the box without any configuration.  All
+further configuration is entirely optional.
+
+# What's the default rating minimum?
+my $default_min = 1;
+
+The default minimum ($default_min) specifies the default minimum for the
+rating scale.  Besides adjusting the value of $default_min in the 
+plug-in's configuration section, you can override the minimum on a weblog
+posting by posting basis by setting a meta-rating_min value in the entry
+itself.
+
+# What's the default rating maximum?
+my $default_max = 5;
+
+The default maximum ($default_max) specifies the default maximum for the
+rating scale.  Besides adjusting the value of $default_max in the 
+plug-in's configuration section, you can override the maximum on a weblog
+posting by posting basis by setting a meta-rating_max value in the entry
+itself.
+
+# What's the width per rating point for graphical style?
+my $width = 10;
+
+Sets the width in pixels for each rating point (e.g. a rating of 2 with
+$width set to 10 results in a bar of 20 pixels wide)..
+
+# What's the height for graphical style?
+my $height = 10;
+
+Sets the height in pixels for each rating point.
+
+# Where are the graphical images (rating_below.gif, rating.gif, 
+# rating_above.gif) kept?
+my $image_url = "/images";
+
+A relative or absolute URL pointing at the location of 1-pixel 
+rating_below.gif, rating.gif, and rating_above.gif images for use
+in creating the graphical representation of the rating.
+
+=head1 VERSION
+
+2003-06-27
+
+=head1 AUTHOR
+
+Rael Dornfest  <rael@oreilly.com>, http://www.raelity.org/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Blosxom and this Blosxom Plug-in
+Copyright 2003, Rael Dornfest 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

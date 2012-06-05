@@ -1,0 +1,18 @@
+<div class="writeback-author">
+	<a href="$writeback::url">$writeback::name$writeback::blog_name</a>
+	wrote:
+</div>
+
+<div class="writeback-title">
+	$writeback::title
+</div>
+
+
+<div class="writeback-date">
+	$writeback::date
+</div>
+
+<div class="writeback-body">
+	$writeback::comment$writeback::excerpt
+</div>
+

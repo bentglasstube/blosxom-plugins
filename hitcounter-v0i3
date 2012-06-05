@@ -1,0 +1,109 @@
+# Blosxom Plugin: hitcounter -*- perl -*-
+# Author: Steve Schwarz <http://agilitynerd.com/>
+# 2006-JAN-15	0.1 initial version.
+# 2006-JAN-21	0.2 added config var to only retrieve and not increment for
+#		    specifed flavours
+# 2006-JAN-24   0.3 added check for invalid write of cache
+#
+# Based on categories plugin by Todd Larason (jtl@molehill.org)
+
+package hitcounter;
+
+# Counts are stored keyed on full path without the flavour
+# so story/ideas/money_maker.html and story/ideas/money_maker.htm
+# both increment the same counter.
+
+# -- Configuration --
+#
+# Name of file holding hash of paths and their current count.
+# This file is created automatically in your plugins' state directory:
+my $file_name = "$blosxom::plugin_state_dir/hit_stats";
+
+# Set $reset_count = 1 so you can append ?count=100 to the URL to
+# set the count for the supplied $path to 100.  You can use this
+# feature to seed each of your pages based on existing
+# statistics. Then turn off this feature so no mischief makers set
+# your values incorrectly. No error checking is performed on the
+# count CGI parameter.
+my $reset_count = 0;	# set to 1 to allow setting count from URL
+
+# Set to a flavour you want to use only for retrieving counts
+# without incrementing the count. Use this flavour to view the
+# counts for URLs of interest.
+my $retrieve_only_flavour = 'hd';
+# -------------------
+use CGI qw/:standard/;
+
+sub start {
+    # Add filters here to not increment for specific urls or flavours
+    # This filter ignores the rss and atom feed variants I provide
+    return (($blosxom::flavour =~ /rss/ or 
+	     $blosxom::flavour eq 'atom') ? 0 : 1);
+}
+
+$count = 0;	# use $hitcounter::count to get the current count
+
+sub head {
+    my($pkg, $path, $body_ref) = @_;
+    $path = '/' if (!$path);	# convert root path to "/"
+    $path =~ s/\.$blosxom::flavour$//;	# strip flavour from end of path
+    eval "require Storable";
+    if ($@) {
+	print STDERR "hitcounter disabled, Storable package not available"; 
+	return 0;
+    }
+    if (!Storable->can('retrieve')) {
+	print STDERR "hitcounter disabled, Storable::retrieve() not available";
+	return 0;
+    }
+
+    my %cache;
+    my 	$cacheref = \%cache;
+    if (-r $file_name) {
+	$cacheref = Storable::retrieve($file_name);
+    } else {
+	$cacheref->{$path} = 0;		# no file yet set the count
+    }
+    return 1 unless defined $cacheref;
+    $count = CGI::param('count') or 0 if ($reset_count == 1);
+    if (0 == $count) {
+	$count = $cacheref->{$path};
+	$count = 0 if (! defined $count);
+	# Don't increment my own views
+	return 1 if ($blosxom::flavour eq $retrieve_only_flavour);
+	++$count;
+    }
+    $cacheref->{$path} = $count;
+    # Store in network order to allow editing/transporting to/from different platforms
+    Storable::nstore($cacheref, $file_name);
+
+    return 1;
+}
+1;
+
+__END__
+
+=head1 LICENSE
+
+this Blosxom Plug-in
+Copyright 2006, Steve Schwarz
+
+(This license is the same as Blosxom's)
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

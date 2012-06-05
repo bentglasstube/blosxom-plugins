@@ -1,0 +1,110 @@
+# Blosxom Plugin: blok
+# Author: Stu MacKenzie <blok@DELETEMEenilnomi.net>
+# Version: 2003-09-14 (v0.96)
+# License: Public Domain
+# Blosxom Home/Docs/Licensing: http://www.blosxom.com
+# blox docs/: http://www.enilnomi.net/download.html
+
+#  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# The blok plugin intercepts the "story" subroutine and 
+# converts Mac (ascii 13) or Windows (ascii 10,13) line-ends 
+# to the "newline" (ascii 10) that blosxom expects.
+
+# This enables you to stop thinking about the line-end 
+# format in your word processor, and whether your ftp 
+# app is set to convert your native line-ends to *nixies. 
+# (Also helpful for processing writebacks.)
+
+# You want this to load early, so be prepared to prepend "00" 
+# to the plugin's file name. See Blosxom documentation for 
+# full details on setting plugin load order.
+
+
+package blok;
+
+sub start {
+  1;
+}
+
+sub story {
+ my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+# Blosxom expects \n line endings (ascii 10), but macs might use 
+# \r (ascii 13), and windows might use \r\n (ascii 13,10); we'll 
+# just clean that up...
+if ($$title_ref =~ m/\r/) {
+  # convert first return to newline
+  $$title_ref =~ s/\r/\n/;
+  # re-populate the two vars
+  my $temp;
+  ($$title_ref,$temp) = split /\n/, $$title_ref, 2;
+  $$body_ref = $temp . $$body_ref;
+}
+
+if ($$body_ref =~ m/\r/) {
+  # convert leading line-ends into double newline
+  $$body_ref =~ s/^\r\n/\n\n/ or $$body_ref =~ s/^\r/\n\n/;
+
+  # convert any winlines in $body into newlines
+  $$body_ref =~ s/\r\n/\n/gm;
+
+  # convert any maclines in $body into newlines
+  $$body_ref =~ s/\r/\n/gm;
+}
+
+ 1;
+
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: blok -- converts Mac and Windows line-endings to Unix lines.
+
+=head1 SYNOPSIS
+
+Use blok to sort out line-ends from Mac, *nix, or Windows for processing by blosxom.
+
+=head1 CONFIGURABLE VARIABLES
+
+None.
+
+=head1 INSTALLATION
+
+Drop this file into your blosxom plugins folder; blog on.
+
+NOTE: if you are using the "blox" plugin, you should not use blok; its functionality is built into blox. You can either delete blok, or change its name to "blok-".
+
+=head1 VERSION
+
+2003-09-14 (v0.96) - more thorough
+2003-09-09 (v0.95) - LOL! put Win line-end chars in correct order ;-)
+2003-08-31 (v0.9)  - it's alive
+
+=head1 LICENSE
+
+this Blosxom Plug-in
+Copyright 2003, Stu MacKenzie
+
+(This license is the same as Blosxom's)
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

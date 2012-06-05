@@ -1,0 +1,135 @@
+# Blosxom Plugin: posthaed
+# Version: 1.32
+# Date:    2006.01.09
+# Author:  color99
+# wikieditishプラグインのフロントエンドとして使用
+# 任意のフレーバー内で $posthead::posting_form を記述
+# wikieditishで新規投稿直後は既存カテゴリリストに反映されない
+# ⇒ ブラウザをリロードすれば反映されます（ＩＥ）
+#---------------------------------------------
+
+package posthead;
+
+use strict;
+use CGI::Carp qw(fatalsToBrowser); #エラー時にはブラウザへ表示する
+use CGI qw(:standard);
+use File::Find;
+use vars qw($posting_form); # posting form for flavour
+
+# --- Configurable variables -----------
+# 通常は設定不要なはず
+my $form_width           = 25;                 # 投稿フォームの横幅指定 
+my $post_name            = '新規エントリ作成'; # 投稿ボタンに表示させる内容
+my $new_category_title   = '新規カテゴリ';     # 新規カテゴリ欄のタイトル
+my $exist_category_title = '既存カテゴリ';     # 既存カテゴリ欄のタイトル
+my $entry_name_title     = 'エントリ名';       # エントリ欄のタイトル
+my $data_dir             = './entries';        # エントリ投稿先ディレクトリルート
+my $entry_prefix         = 'c';                # 自動でファイル名を決める時の先頭文字(英文字のみ）
+my $sepa                 = '::';               # 既存カテゴリ欄のディレクトリ間区切り文字
+my $align                = 'center';           # 配置を'left','center','right'より選択
+# --------------------------------------
+
+# --- Initial Settings -----------------
+my $package      = __PACKAGE__;
+my $version      = 'v1.32';
+my $parmalink    = qq(<a href="http://kangaroo.oh.land.to/blosxom/plugin/$package.htm" 
+                     title="http://kangaroo.oh.land.to/blosxom/plugin/$package.htm" target="_blank">
+                     - $package $version -</a>);
+my $file_extension  = 'txt'; # エントリ拡張子
+my $req_url      = "http://$ENV{'HTTP_HOST'}$ENV{'REQUEST_URI'}";
+my @new_category = ($new_category_title  , 'new_category', $form_width);
+my @category     = ($exist_category_title, 'category'    , $file_extension);
+my @entry_name   = ($entry_name_title    , 'entry_name'  , $form_width);
+my @basedir = split m[/], $ENV{'SCRIPT_FILENAME'}; pop @basedir;
+my $basedir = join '/',@basedir; # blosxom.cgiディレクトリ
+chdir($data_dir) or die("cannot chdir to $data_dir");
+my $form_table = &make_input_text_tr(@new_category).&make_select_dir_tr(@category).&make_input_text_tr(@entry_name);
+chdir($basedir) or die("cannot chdir to $basedir");
+# --------------------------------------
+
+sub start{
+  &make_form; # wikieditish pluginで投稿してdirectoryが作成されてからフォームを作成
+  if(request_method() eq 'POST' and param('plugin') eq $package){
+    my $abspath    = url(-absolute=>1); $abspath =~ s!/$!!;
+    my $category   = param('new_category') || param('category'); 
+       $category   =~ s!$sepa!/!g; # added at v1.32
+    my $p_time     = time; my ($ss,$mm,$hh,$dd,$mo,$yy) = localtime $p_time; # 年、月、日、時、分、秒  形式
+    my $entry_name = sprintf("$entry_prefix"."_%04d_%02d_%02d_%02d_%02d_%02d",$yy+1900,$mo+1,$dd,$hh,$mm,$ss);
+       $entry_name = param('entry_name')   || $entry_name;
+    my $go_url     = 'http://'.$ENV{'HTTP_HOST'}."$abspath/$category/$entry_name\.wikieditish";
+    print "Location: $go_url\n\n" if($entry_name); # postheadからの移動先(編集ページ)
+  }
+  0;
+}
+
+sub make_form{
+  $posting_form = qq
+  !<div class="posthead">
+  <form action="$req_url" method="post">
+
+   <div align = "$align">
+   <table>
+    $form_table
+    <tr>
+     <td><p align = "left"><input type="submit" value="$post_name"/></p></td>
+    </tr>
+    <tr>
+     <td><p align = "center">$parmalink</p></td>
+    </tr>
+   </table>
+   </div>   
+   
+   <input type="hidden" name="plugin" value="$package"/>
+  </form>
+  </div>!;
+}
+
+sub make_input_text_tr{
+  my ($title, $name, $size) = @_;
+  my $tr = qq
+  ! <tr>
+     <td><p align = "left">$title</p><input type="text" name="$name" size="$size"/></td>
+    </tr>
+  !;
+  return $tr;
+}
+
+# $file_extension拡張子を持つディレクトリの選択リストボックスを作成
+sub make_select_dir_tr{
+  my ($title, $name, $file_extension) = @_;
+  my @dirlist = &get_dirlist($file_extension);
+  map{ s!/!$sepa!g } @dirlist;
+  @dirlist  = map{ if($blosxom::categories_aliases{$_}){
+                       qq!<option value="$_">$blosxom::categories_aliases{$_}</option>\n! 
+                   }else{qq!<option>$_</option>\n!}
+                 } @dirlist;
+  my $sel_box  = join('',@dirlist);
+  # カテゴリの別名対応 start #################
+  my @key = keys %blosxom::categories_aliases;
+  my($key,$value);  
+  foreach $key(@key){
+    $sel_box =~ s!>$key!>$blosxom::categories_aliases{$key}!g;
+    $sel_box =~ s!>::$key!::$blosxom::categories_aliases{$key}!g;
+  }
+  # カテゴリの別名対応 end ###################
+  $sel_box = qq
+  ! <tr>
+     <td><p align = "left">$title<br /><select name="$name">$sel_box</select></p></td>
+    </tr>
+  !;
+  return $sel_box;  
+}
+
+sub get_dirlist{ # need File::Find perl module
+  my $file_extension = shift;
+  my($name,@dirlist,%dirname);
+  find({wanted => sub{
+    $name = $File::Find::dir;  # $File::Find::dir is the complete pathname to the file. 
+    $name =~ s!^\./!!g;        # 先頭の ./ は削除
+    $dirname{$name} = 1;       # dir + filename hash
+    }},'.');                   # カレントディレクトリ内をサーチ
+  @dirlist = sort grep{!/\./} keys %dirname;
+  return @dirlist;
+}
+
+1;

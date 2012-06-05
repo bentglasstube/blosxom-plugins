@@ -1,0 +1,361 @@
+package ts_nearlinks;
+use strict;
+use warnings;
+
+=head1 NAME
+
+ts_nearlinks - Blosxom plugin to give "headline"-like info when using type_sniffer
+
+=head1 VERSION
+
+This describes version B<0.01> of ts_nearlinks.
+
+=cut
+
+our $VERSION = '0.01';
+
+=head1 DESCRIPTION
+
+This is similar to the B<headlines> plugin, but it is oriented towards
+building a list of links in the current category (those that are "near").
+It uses the information gathered by the B<type_sniffer> plugin rather than
+getting it itself.  This means that the list of files it is dealing with is
+the full list, not a subset.  However, the files can be restricted
+by giving particular options.
+
+This plugin provides the ability to present a list of headlines
+for all the selected stories.  Each headline in the list is a path-based
+permalink to the story.  The headlines shown are determined by a function
+call using the B<interpolate_fancy> plugin.  The arguments to this function
+describe which headlines to show and how to show them.  Therefore you can
+implement multiple calls within your flavour files.  Each call can present
+a completely different set of headlines (e.g. different categories,
+different sort methods, different layout, etc).
+
+=head1 INSTALLATION
+
+=head2 Installation
+
+Drop the ts_nearlinks plug-in into your Blosxom plugins folder.
+Make sure that it runs after the B<type_sniffer> plugin.
+
+=head2 Configuration
+
+The following configuration variables can be set by editing the
+plugin file.
+
+=over
+
+=item B<@monthabbr>
+
+If you are going to use the long date format, modify this array
+to the month strings you would like to use.
+
+=cut
+
+my @monthabbr = qw{Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec};
+
+=back
+
+=cut
+
+use CGI qw/:standard/;
+use File::Spec;
+
+sub start {
+	1;
+} # start
+
+=head1 FUNCTIONS
+
+=head2 get
+
+Function to be called from an B<interpolate_fancy> call.
+
+The most basic call is as follows:
+
+    <@ts_nearlinks.get output="yes" />
+
+This would return an unordered list of all the story headlines on your site.
+There are a number of arguments you can pass to the B<get> function that are
+used to modify the list returned.  Here are the descriptions of each and their
+default setting if not passed to the B<get> function:
+
+=over
+
+=item B<category>
+
+the category to pull headlines from (default: all categories)
+
+=item B<localdepth>
+
+Prune the headlines to only those in the given local depth range.
+A value of zero means don't prune at all.
+(default: 0)
+
+=item B<sort_method>
+
+how to sort the headlines (default: B<by_date>)
+
+The available sort methods are:
+    B<by_date> sorted by date (newest to oldest)
+    B<by_date_reverse> sorted by date (oldest to newest)
+    B<by_path_name> sorted alpha by the story's path
+    B<by_path_name_reverse> sorted reverse alpha by the story's path
+    B<by_title> sorted alpha by headline
+    B<by_title_reverse> sorted reverse alpha by headline
+
+=item B<max_to_show>
+
+the max number of headlines to show in the list (default: all)
+
+=item B<show_dates>
+
+show a date string before the headline, headlines occuring on
+the same day fall under the same date headline (1 = yes, 0 = no) (default: 0)
+
+=item B<showLongDates>
+
+show Apr 8, 1973 instead of 4/8/1973 (1 = yes, 0 = no)
+(default: 0)
+
+=item B<indent>
+
+indent string inserted before a headline, useful with B<show_dates>
+for contrast between the date and headline strings (default: "")
+
+=item B<css_class>
+
+the CSS class identifier to use for the unordered list tag
+(default: "")
+
+=item B<css_date_class>
+
+the CSS class identifier to use for the date string list
+item (default: "")
+
+=item B<css_item_class>
+
+the CSS class identifier to use for the headline string list
+item (default: "")
+
+=back
+
+=cut
+sub get
+{
+    my ($self, $attributes, $content) = @_;
+
+    my %args = (
+	category => '',
+	css_class => '',
+	css_date_class => '',
+	css_item_class => '',
+	css_link_class => '',
+	max_to_show => undef,
+	sort_method => 'by_date',
+	show_long_dates => 0,
+	indent => '',
+	localdepth => 0,
+	%{$attributes}
+    );
+    my $category        = $args{"category"};
+    my $css_class       = $args{"css_class"};
+    my $css_date_class  = $args{"css_date_class"};
+    my $css_item_class  = $args{"css_item_class"};
+    my $css_link_class  = $args{"css_link_class"};
+    my $max_to_show     = $args{"max_to_show"};
+    my $sort_method     = $args{"sort_method"};
+    my $show_dates      = $args{"show_dates"};
+    my $show_long_dates = $args{"show_long_dates"};
+    my $indent          = $args{"indent"};
+    my $localdepth      = $args{"localdepth"};
+
+    my $return_data = '';
+    my $count = 0;
+    my @sorted;
+    my $url;
+    my $hl;
+    my $lastmonth;
+    my $lastday;
+    my $lastyear;
+    my $month;
+    my $day;
+    my $year;
+    my $blogs = $type_sniffer::filetypes;
+
+    if ($sort_method eq 'by_path_name')
+    {
+        @sorted = sort keys %$blogs;
+    }
+    elsif ($sort_method eq 'by_path_name_reverse')
+    {
+        @sorted = reverse sort keys %$blogs;
+    }
+    elsif ($sort_method eq 'by_title')
+    {
+        @sorted = sort { $blogs->{$a}->{title} cmp $blogs->{$b}->{title} } keys %$blogs;
+    }
+    elsif ($sort_method eq 'by_title_reverse')
+    {
+        @sorted = reverse sort { $blogs->{$a}->{title} cmp $blogs->{$b}->{title} } keys %$blogs;
+    }
+    elsif ($sort_method eq 'by_date_reverse')
+    {
+        @sorted = reverse sort { $blogs->{$b}->{date} <=> $blogs->{$a}->{date} } keys %$blogs;
+    }
+    else # ($sort_method eq 'by_date')
+    {
+        @sorted = sort { $blogs->{$b}->{date} <=> $blogs->{$a}->{date} } keys %$blogs;
+    }
+
+    if (defined $css_class) {
+	$return_data .= qq{<ul class="$css_class">\n};
+    } else {
+	$return_data .= qq{<ul>\n};
+    }
+
+    my $lastMonth;
+    my $lastDay;
+    my $lastYear;
+    foreach (@sorted)
+    {
+        # skip this entry if not part of the specified category
+        next if !/^$blosxom::datadir$category(.*)$/;
+	my $rest_of_path = $1;
+	# skip this entry if it is too deep
+	if ($localdepth > 0) {
+	    $rest_of_path =~ s!^/!!; # remove the leading slash
+	    my @rest_of_dirs = File::Spec->splitdir($rest_of_path);
+	    my $this_depth = @rest_of_dirs;
+	    next if $localdepth < $this_depth;
+	}
+
+        $hl = $blogs->{$_}->{title};
+
+        my @date  = localtime($blogs->{$_}->{date});
+        $month = $date[4] + 1;
+        $day   = $date[3];
+        $year  = $date[5] + 1900;
+
+        $url = $_;
+        $url =~ s/^$blosxom::datadir(.*)$blosxom::file_extension$/$blosxom::url$1$blosxom::flavour/;
+
+        if ($show_dates)
+        {
+            if (($month != $lastMonth) or ($day != $lastDay) or ($year != $lastYear))
+            {
+                if ($show_long_dates)
+                {
+                    $return_data .= qq{<li class="$css_date_class">$monthabbr[$month-1] $day, $year</li>\n};
+                }
+                else
+                {
+                    $return_data .= qq{<li class="$css_date_class">$month/$day/$year</li>\n};
+                }
+
+                $lastMonth = $month;
+                $lastDay   = $day;
+                $lastYear  = $year;
+            }
+        }
+
+	if (defined $css_item_class) {
+	    $return_data .= qq{<li class="$css_item_class"><a href="$url">$indent$hl</a></li>\n};
+	} else {
+	    $return_data .= qq{<li><a href="$url">$indent$hl</a></li>\n};
+	}
+
+        last if ($max_to_show and (++$count == $max_to_show));
+    }
+
+    $return_data .= qq{</ul>\n};
+
+    return $return_data;
+} # get
+
+=head1 EXAMPLES
+
+The following will display all the headlines from the current
+category, sorted by path.
+
+    <@ts_nearlinks.get category="$path"
+                    sort_method="by_path_name"
+                    output="yes" />
+
+The following will display the last 10 headlines from the "/sports" category
+with the writeback count for each headline and each count looking like "- N".
+
+    <@ts_nearlinks.get category="/sports"
+                    show_wb_count="1"
+                    wb_prefix="- "
+                    max_to_show="10"
+                    output="yes" />
+
+The following will display all headlines sorted alphabetically by the title
+string.
+
+    <@ts_nearlinks.get sort_method="by_title"
+                    output="yes" />
+
+The following will display the last 25 headlines (any category) with the
+date headers.  Also specified are some CSS class identifiers.
+
+    <@ts_nearlinks.get show_dates="1"
+                    max_to_show="25"
+                    css_class="headlines"
+                    css_date_class="headlines_date"
+                    css_item_class="headlines_item"
+                    output="yes" />
+
+The following will display the last 100 headlines from the
+"/computers/software/blosxom" category sorted in reverse date order
+(i.e. from oldest to newest).  Long date strings will be inserted into
+the headline list and each headline will be indented four spaces.
+Also specified are some CSS class identifiers.
+
+    <@ts_nearlinks.get category="/computers/software/blosxom"
+                    sort_method="by_date_reverse"
+                    show_dates="1"
+                    show_long_dates="1"
+                    indent="&nbsp;&nbsp;&nbsp;&nbsp;"
+                    max_to_show="100"
+                    css_class="blosxom_headlines"
+                    css_date_class="blosxom_headlines_date"
+                    css_item_class="blosxom_headlines_item"
+                    output="yes" />
+
+=head1 REQUIRES
+
+Perl 5.6.0
+CGI
+File::Spec
+type_sniffer plugin
+interpolate_fancy plugin
+
+=head1 SEE ALSO
+
+type_sniffer
+
+=head1 BUGS
+
+Please report any bugs or feature requests to the author.
+
+=head1 AUTHOR
+
+    Kathryn Andersen (RUBYKAT)
+    perlkat AT katspace dot com
+    http://www.katspace.com
+
+=head1 COPYRIGHT AND LICENCE
+
+Copyright (c) 2004 by Kathryn Andersen
+
+This program is free software; you can redistribute it and/or modify it
+under the same terms as Perl itself.
+
+=cut
+# vim: ft=perl ts=8 sw=4 sts=4 ai cinkeys="0{,0},0),!,o,O,e"
+
+1; # End of ts_nearlinks
+__END__

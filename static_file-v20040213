@@ -1,0 +1,174 @@
+# Blosxom Plugin: static_file
+# Author(s): Barijaona Ramaholimihaso <static_file@barijaona.com>
+# original idea by Raffi Krikorian <r@bitwaste.com> (binary plugin)
+# Version: 2004-02-13
+# Documentation: See the bottom of this file or type: perldoc static_file
+
+package static_file;
+use CGI qw/:standard :netscape/;
+use File::Copy;
+use File::Cat;
+use File::Find;
+use File::Path;
+use FileHandle;
+use MIME::Types;
+
+
+# --- Configuration Variables ---
+
+# You may want to hide from the public some kind of files,
+# for instance the files Blosxom renders, generally .txt files.
+# Files whose filename extension is in the following list
+# will be ignored in dynamic rendering 
+@exclude_extensions_dynamic = ();
+
+# Files whose filename extension is in the following list
+# will be ignored in static rendering
+@exclude_extensions_static = ("$blosxom::file_extension"); 
+
+# This is the MIME type that will be used if nothing else
+# can be found. If your server contains mostly text or HTML
+# documents, "text/plain" is a good value.  If most of your
+# content is binary, such as applications or images, you may
+# want to use "application/octet-stream" instead to keep browsers
+# from trying to display binary files as though they are text.
+$default_type="text/plain";
+
+# --------------------------------
+
+sub start {
+    1;
+}
+
+sub skip {
+    if( $blosxom::static_or_dynamic eq "dynamic" ) {
+	# if Blosxom is being dynamically generated -- then we have to
+	# see if the URL requested specifies a file that is on the
+	# filesystem, then it will return that file with the right
+	# Content-Type header
+ 	if( ( $blosxom::path_info =~ m!^(.*?/?)([^/]*?\.?)([^\.]*?)$! ) &&
+	  ( -e "$blosxom::datadir/$1$2$3" ) && (! -d "$blosxom::datadir/$1$2$3" ) ) 
+	    {
+	    # access path and name, name and extension of the file
+	    $fileaccess = "$blosxom::datadir/$1$2$3" ;
+	    # adequate file extension ?
+	    if ( grep(/$3/, @exclude_extensions_dynamic) ) {return 0 ;}
+	    my MIME::Types $types = MIME::Types->new;
+	    my MIME::Type $mimetype = $types->mimeTypeOf($blosxom::flavour);
+	    $blosxom::header = 
+		header( { -type=>
+			      ( $mimetype ) ? 
+			      $mimetype->mediaType . "/" . $mimetype->subType :
+			      $default_type } );
+		my @data = stat( $fileaccess );
+		# forge some HTTP header stuff
+		print("Accept-Ranges: bytes\nContent-Length: $data[7]\n$blosxom::header");
+		cat( $fileaccess, \*STDOUT);
+		# empty what blosxom main script may use
+	    $blosxom::header= "";
+		$blosxom::output='';
+		# tell blosxom main script to end processing for this file
+	    return 1;
+	    }
+		return 0 ;
+    }
+	return 0;
+}
+
+sub end {
+	# if we are statically rendering the blog, then we have to copy
+	# over the entire data tree to the static tree so that it can be
+	# served out of there
+	if( $blosxom::static_or_dynamic eq "static" ) {
+	find( 
+		sub {
+			if( $File::Find::name =~ 
+				m!^$blosxom::datadir(.*?/?)([^/]*?\.?)([^\.]*?)$! ) {
+				# do we have to create a directory ?
+				if ( ( ! -e "$blosxom::static_dir$1$2$3") 
+					&&  (-d $File::Find::name) ) {
+						mkpath ("$blosxom::static_dir$1$2$3");}
+				# is it a file to be updated ?
+				elsif ( ! grep(/$3/, @exclude_extensions_static) )	{
+					my @static = stat( "$blosxom::static_dir$1$2$3" ); 
+					my @data = stat( $File::Find::name );
+					( ( ! -e "$blosxom::static_dir$1$2$3" ) ||
+					( ( ( $static[9] < $data[9] ) ||
+					( $static[7] != $data[7] ) ) ) ) &&
+					copy( $File::Find::name, 
+						"$blosxom::static_dir$1$2$3" );
+				}
+			}
+		}, $blosxom::datadir );
+
+    }
+
+    1;
+
+}
+
+
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: static_file
+
+=head1 SYNOPSIS
+
+Cause Blosxom to see if the URL requested actually exists on the filesystem.  If it does, then return the file, and then exit the script allowing for binary file serves.  If the file does not exist, then the Bloxsom script will continue noting whether it needs to do a flavour translation on the data file, etc.
+
+This allows you to integrate existing webpages to a Blosxom site.
+
+Another convinience of this is that when you wish to include an image or anything besides just the blog entry, you can place the file in the same directory as your text file, and reference it with a $url$path (supposing you are using interpolate_conditional or interpolate_fancy).
+
+=head1 VERSION
+
+2004-02-13
+
+Version number is the date on which this version of the plug-in was created.
+
+=head1 AUTHOR
+
+Barijaona Ramaholimihaso <static_file@barijaona.com>
+
+Original idea by Raffi Krikorian <r@bitwaste.com>, http://www.bitwaste.com/, author of the binary plugin.
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 NOTES
+
+If you are using this plugin in Blosxom's dynamic mode, you might consider creating a custom B<error> flavour, because Blosxom's default B<error> flavour could be confusing for the user.
+
+It is recommanded, for performance optimization, to put a number in front of the name of this plugin, for instance to name it B<00static_file>, so that it loads among the first.
+
+=head1 LICENSE
+
+static_file Blosxom plugin
+Copyright 2003, Barijaona Ramaholimihaso
+Copyright 2003, Raffi Krikorian
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

@@ -1,0 +1,187 @@
+# Blosxom Plugin: tt2
+# Author: KITAMURA Akatsuki <kits@akatsukinishisu.net>
+# Version: 2006-09-08
+# Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+package tt2;
+
+use strict;
+use Template;
+
+# --- Configurable Variables -----------
+
+# blosxom本来の変数置換も使用する
+my $use_default_interpolate = 1;
+
+# --- Plug-in package variables --------
+
+# --------------------------------------
+
+sub start {
+	1;
+}
+
+sub interpolate {
+	# 置換用の変数を設定
+	my $vars = {};
+	foreach my $plugin (@blosxom::plugins) {
+		next if ($blosxom::plugins{$plugin} < 0);
+		next if ($plugin eq __PACKAGE__);
+		$vars->{$plugin} = tt2::getvar->new($plugin);
+	}
+	$vars->{b} = $vars->{blosxom} = tt2::getvar->new('blosxom');
+
+	# 出力先の変数
+	my $output;
+
+	# Templateオブジェクト作成
+	my $tt = Template->new({
+		VARIABLES => $vars,
+		OUTPUT    => \$output,
+	});
+
+	# $blosxom::interporate を置き換えるサブルーチンを返す
+	return sub {
+		my $template = $_[0];
+
+		# blosxom本来の変数置換
+		if ($use_default_interpolate) {
+			package blosxom;
+			$template =~ s/(\$\w+(?:::)?\w*)/"defined $1 ? $1 : ''"/gee;
+		}
+
+		# Template Toolkitによる変数置換
+		$output = '';
+		$tt->process(\$template) or $output = $tt->error . $template;
+		return $output;
+	}
+}
+
+# プラグイン変数の値を取得するためのクラス
+package tt2::getvar;
+
+sub new {
+	my ($class, $plugin) = @_;
+	my $pkg = $class . '::' . $plugin;
+
+	no strict 'refs';
+	push @{ $pkg . '::ISA' }, $class;
+	bless {}, $pkg;
+}
+
+sub AUTOLOAD {
+	no strict qw(refs vars);
+
+	my $pkg_var_name = $AUTOLOAD;
+	$pkg_var_name =~ s/^.+::(\w+::\w+)$/$1/;
+
+	local *var = *{ $pkg_var_name };
+	my $var_ref;
+	if (defined $var) {
+		$var_ref = \$var;
+		*$AUTOLOAD = sub { $$var_ref };
+	}
+	elsif (@var) {
+		$var_ref = \@var;
+		*$AUTOLOAD = sub { $var_ref };
+	}
+	elsif (%var) {
+		$var_ref = \%var;
+		*$AUTOLOAD = sub { $var_ref };
+	}
+	else {
+		return;
+	}
+
+	goto &$AUTOLOAD;
+}
+
+sub DESTROY {}
+
+1;
+
+__END__
+
+=encoding utf8
+
+=head1 NAME
+
+Blosxom Plug-in: tt2
+
+=head1 DESCRIPTION
+
+blosxom本来の &$interpolate サブルーチンを置き換え、
+Template Toolkitを使用できるようにします。
+
+=head1 INSTALLATION
+
+このプラグインファイルをプラグインディレクトリ($plugin_dir)に
+置いて下さい。
+
+=head1 CONFIGURATION
+
+blosxom本来の変数置換を合わせて使う場合は、
+$use_default_interpolate を 1 に設定します。
+使わない場合には 0 に設定します。
+
+=head1 TEMPLATE
+
+blosxom本来のテンプレートでは
+
+  $plugin::variable
+
+と書いていたのを、
+
+  [% plugin.variable %]
+
+という風に記述します。
+
+blosxom.cgi本体の変数は、以下のように記述します。
+
+  [% blosxom.blog_title %] または
+  [% b.blog_title %]
+
+以下のような記述は無効です。
+
+  [% blog_title %]
+  [% blog_description %]
+
+=head1 VERSION
+
+2006-09-08
+
+=head1 AUTHOR
+
+北村曉 (KITAMURA Akatsuki)
+<kits@akatsukinishisu.net>,
+http://www.akatsukinishisu.net/
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.blosxom.com/
+
+Blosxom Plugin Docs: http://www.blosxom.com/plugins/
+
+Template Toolkit: http://www.template-toolkit.org/
+
+=head1 LICENSE
+
+This Blosxom Plug-in Copyright (c) 2006, KITAMURA Akatsuki
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

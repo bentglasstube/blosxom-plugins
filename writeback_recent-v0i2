@@ -1,0 +1,122 @@
+# Blosxom Plugin: writeback_recent
+# Author(s): John S J Anderson <genehack@genehack.org>
+# Version: 0.2
+# Documentation: See the bottom of this file or type: perldoc writeback_recent
+
+package writeback_recent;
+
+# --- Configurable variables -----
+
+# number of entries with recent comments to display
+my $writeback_count = 5;
+
+# output configuration: $list_head will be ahead of the list of
+# entries with comments; $list_foot will be after the list. each item
+# in the list will be formated according to $list_item_tmpl
+my $list_head = "<ol>\n";
+my $list_foot = "</ol>\n";
+# %F = name of entry with appropriate extension (.writeback)
+# %T = title of entry
+# %C = number of comments
+# %L = 'comment' or 'comments', depending on %C
+my $list_item_tmpl = qq|<li><a href="$blosxom::url/%F">%T</a> (%C %L)</li>\n|;
+
+# 'writeback' configuration variables -- must be the same as in
+# 'writeback' plugin
+my $writeback_dir       = "$blosxom::plugin_state_dir/writeback";
+my $trackback_extension = "wb";
+my $trackback_flavour   = "writeback";
+# --------------------------------
+
+# ------ Output variables --------
+$writeback_recent;  # use as $writeback_recent::writeback_recent in flavour templates
+# --------------------------------
+
+use File::Find;
+my %files;
+
+sub start {
+  # build list of all writeback files
+  find( { wanted => \&wanted } , $writeback_dir );
+
+  # sort by mtime 
+  my @files = sort { $files{$b} <=> $files{$a} } keys %files;
+
+  # initialize the output
+  $writeback_recent = $list_head || '';
+  for( 0 .. ( $writeback_count - 1 )) {
+    my %replace;
+    
+    # bail if we're out of files
+    last unless my $file = $files[$_];
+
+    # get entry file associated with comments
+    my $entry = $file;
+    $entry =~ s/.$trackback_extension$/.$blosxom::file_extension/o;
+
+    # get title of entry
+    open( IN , "$blosxom::datadir/$entry" );
+    chomp( my $title = <IN> );
+    close( IN );
+    $replace{T} = $title;
+    
+    # get number of comments/pings in writeback file
+    my $count;
+    open( IN , "$writeback_dir/$file" );
+    while( <IN> ) { $count++ if /^name:/ }
+    close( IN );
+    $replace{C} = $count;
+    
+    # build the output
+    $replace{L} = $count == 1 ? 'comment' : 'comments';
+    $file =~ s/.$trackback_extension$/.$trackback_flavour/o;
+    $replace{F} = $file;
+
+    my $list_item = $list_item_tmpl;
+    $list_item =~ s/%(.)/defined($replace{$1})?$replace{$1}:''/ge;
+    $writeback_recent .= $list_item;
+  }
+  # finish up the output
+  $writeback_recent .= $list_foot;
+}
+
+sub wanted {
+  /.$trackback_extension$/o or return;
+  my $name = $File::Find::name;
+  $name =~ s/$writeback_dir\/?//o;
+  my $mtime = (stat($File::Find::name))[9];
+  $files{$name} = $mtime;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: writeback_recent
+
+=head1 SYNOPSIS
+
+Searches your writeback directory and returns a list of the entries
+most recently commented upon, in $writeback_recent::writeback_recent.
+
+=head1 VERSION
+
+0.2
+
+=head1 AUTHOR
+
+John S Jacobs Anderson <genehack@genehack.org>
+
+=head1 SEE ALSO
+
+Blosxom, http://www.blosxom.com/
+writeback plugin
+
+=head1 LICENSE
+
+Released under the same license as blosxom.
+
+=cut
+

@@ -1,0 +1,49 @@
+# Blosxom Plugin: storynote
+# Author: Buck Rocks
+# Version: 20040207
+# http://www.6109.us/blog/
+# License: Confidential and proprietary. 
+# DO NOT READ FURTHER IF YOU REFUSE TO ACCEPT THE CONFIDENTIALITY REQUIREMENT.
+# Terms of License at end of this file.
+
+# The plugin generates a box within a story; the box contains text 
+# that follows these markers" ^N^. 
+# For EXAPMLPE: ^N^Summary: A dog<br />and a bush. 
+# This will produce a box containing:
+# Summary: A dog
+# and a bush
+# The content of the box ends where the line of text ends that you 
+# want placed in the box.
+
+package storynote;
+
+# --- Plug-in package variables -----
+
+# Feel free to change the look of the box and text
+$tstyle = "style=\"float:right;-moz-border-radius:5px 5px 0 0;color:blue;background:white;border: 3px red ridge; padding:3px;\"";
+
+# --------------------------------
+
+my $package = "storynote";
+
+sub start {
+1;
+}
+
+sub story { my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+$$body_ref =~ s{\^N\^(.*)} {<p $tstyle>$1</p>}gm;
+
+    1;
+  }
+1;
+
+__END__
+=HEAD1 Plugin Name: storynote
+
+=HEAD2  LIMITED WARRANTY
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+=HEAD3 LICENSE
+Not for resale without written permission. Otherwise, use freely. Also mangle, abuse, reform, distort, caress on your own behalf and in your own name and not mine.
+

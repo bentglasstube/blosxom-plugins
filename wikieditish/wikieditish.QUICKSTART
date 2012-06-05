@@ -1,0 +1,53 @@
+# Blosxom Plugin: wikieditish
+# Author(s): Rael Dornfest <rael@oreilly.com> 
+# Version: 2003-05-27
+
+# Quick Start
+
+Welcome to the Blosxom [http://www.raelity.org/apps/blosxom/] wikieditish 
+plug-in.
+
+This package provides you all you need to get wikieditish up and running
+on your Blosxom weblog.
+
+Installation is quick and easy...
+
+1. Drop the wikieditish plug-in file, found in this package's plugins 
+   directory, into your plug-ins directory (whatever you set as 
+   $plugin_dir in blosxom.cgi).
+
+2.  wikieditish, being a well-behaved plug-in, won't do anything until you 
+    either set a password ($password) or turn off the password requirement 
+    (set $require_password = 0).
+
+4. Move the contents of the flavours folder included in this distribution 
+   into your Blosxom data directory (whatever you set as $datadir in 
+   blosxom.cgi).  
+
+   Don't move the folder itself, only the files it contains!  If you don't
+   have the the sample flavours handy, you can download them from:
+
+   http://www.raelity.org/apps/blosxom/downloads/plugins/wikieditish.zip
+
+5. Point your browser at one of your Blosxom entries, specifying the 
+   wikieditish flavour:
+
+   http://localhost/cgi-bin/blosxom.cgi/path/to/a/post.wikieditish
+
+   (Replace "localhost/cgi-bin/blosxom.cgi" with your weblog's URL and 
+   "/path/to/a/post" with the path to a weblog post, including its
+   filename.)
+
+6. Edit the entry, supply your password (if required -- the default), and 
+   hit the Save button to save your changes.  
+
+You can just as easily create a new blog entry by pointing your browser at a non-existent filename, potentially on a non-existent path (e.g. http://localhost/cgi-bin/blosxom.cgi/path/to/a/nonexistent_post.wikieditish).  Give the entry a
+title and body, supply your password (again, if required), and hit the Save 
+button.  The wikieditish plug-in will create a new blog entry for you on 
+your specified path, creating the supplied path's directory structure for you
+on the fly if necessary.
+
+For detailed documentation, take a gander at the bottom of writeback
+plug-in file itself or type: 
+
+  perldoc wikieditish

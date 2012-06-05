@@ -1,0 +1,210 @@
+# Blosxom Plugin: menu
+# Author: Fletcher T. Penney
+# Version: 0.5
+# Exclude functions copied from exclude plugin
+
+package menu;
+
+# --- Configurable variables ----
+
+# HTML code to insert before the menu
+$menustart=qq%<span class="menu">%;
+
+# HTML code to insert between items
+$menuseparator=qq% :: %;
+
+# HTML code to insert after menu
+$menuend=qq%</span>%;
+
+# These serve the same purpose as above, but for the root menu
+$rootmenustart = $menustart;
+$rootmenuseparator=qq%<br>%;
+$rootmenuend=$menuend;
+
+$pretty=1;	# Enable "prettying" up category names
+
+# -------------------------------
+
+
+$menu = "";
+$rootmenu = "";
+$path_noflavour = "";
+$pretty_path = "";
+
+$ign_file = $exclude::ign_file;
+$hide_file = $hide::ign_file;
+
+sub start {
+	@excludes = ();
+
+	if ($ign_file) {
+		$ign_fp = "$blosxom::datadir";
+		$ign_fn = "$ign_fp/$ign_file";
+		if (open(EXCLUDE, "< $ign_fn")) {
+			while (<EXCLUDE>) {
+				chomp;
+				push(@excludes, "$_") if $_;
+			}
+			close(EXCLUDE);
+		}
+	}
+	
+	# Now do the same for hide
+	if ($hide_file) {
+		$ign_fp = "$blosxom::datadir";
+		$ign_fn = "$ign_fp/$hide_file";
+		if (open(EXCLUDE, "< $ign_fn")) {
+			while (<EXCLUDE>) {
+				chomp;
+				push(@excludes, "$_") if $_;
+			}
+			close(EXCLUDE);
+		}
+	}
+	
+	$path_noflavour = $blosxom::path_info;
+	if ($path_noflavour !~ s/\.[^\.]*$//) {
+		$path_noflavour =~ s/\/$//;
+		$path_noflavour .= "\/index";
+		$path_noflavour =~ s/^([^\/])/$1/;
+	}
+	$path_noflavour =~ s/^\/*//;
+	1;
+}
+
+sub filter {
+	my ($pkg, $files) = @_;
+
+	@files_list = sort keys %$files;
+	@rootlist = @files_list;
+
+	$myroot = $blosxom::datadir ."/" . $blosxom::path_info;
+	$myurl = $blosxom::url ."/" . $blosxom::path_info;
+	$myurl =~ s/\/$//;
+
+	@dirs = ();
+	@rootdirs = ();
+
+	$lastdir="";
+	$lastroot="";
+
+	foreach (@files_list) {
+		if ($_ =~ s/$myroot//) {
+			# These are subdirectories of the current directory
+			$_ =~ s/^\/?([^\/]+)\/.*/$1/;
+			$_ =~ s/\/?[^\/]+\.txt//;
+			if ($_ and ($lastdir ne $_)) {
+				$lastdir=$_;
+				push(@dirs,$_);
+			}
+		} 
+	}
+
+	foreach (@rootlist) {
+		#These are not
+	#		$rootmenu.="$_ <br>";
+		if ($_ =~ s/$blosxom::datadir\///) {
+			$_ =~ s/^\/?([^\/]+)\/.*/$1/;
+			$_ =~ s/\/?[^\/]+\.txt//;
+			if ($_ and ($lastroot ne $_)) {
+				$lastroot=$_;
+				push(@rootdirs,$_);
+			}
+		}
+	}
+
+
+	@rootdirs = @dirs if ($blosxom::path_info eq "");
+
+	$menu = $menustart;
+	for ($i=0;$i<scalar(@dirs)-1;$i++) {
+		$pretty = $dirs[$i];
+		$pretty =~ s/^(.)/\u$1/;
+		$pretty =~ s/[_-](.)/ \u$1/g;
+		$pretty =~ s/ojh/OJH/gi;
+
+		$menu.= "<a href=\"$myurl/$dirs[$i]/\">" . $pretty . "</a>" .$menuseparator;
+	}
+
+	for (;$i<scalar(@dirs);$i++) {
+		$pretty = $dirs[$i];
+		$pretty =~ s/^(.)/\u$1/;
+		$pretty =~ s/[_-](.)/ \u$1/g;
+		$pretty =~ s/ojh/OJH/gi;
+		
+		$menu.= "<a href=\"$myurl/$dirs[$i]/\">" . $pretty . "</a>" ;
+	}
+	$menu.=$menuend;
+
+	$sepholder = "";
+
+	$rootmenu .= $rootmenustart;
+	for ($i=0;$i<scalar(@rootdirs);$i++) {
+		$use = 1;
+		foreach $exclude (@excludes) {
+			foreach $ign_cf (@files_list) {
+				$use = 0 if ($rootdirs[$i] =~ m/^$exclude/) ;
+			}
+		}
+		$sepholder = $rootmenuseparator if ($rootmenu ne $rootmenustart);
+
+		$pretty = $rootdirs[$i];
+		$pretty =~ s/^(.)/\u$1/;
+		$pretty =~ s/[_-](.)/ \u$1/g;
+		$pretty =~ s/ojh/OJH/gi;
+
+		$rootmenu.= $sepholder . "<a href=\"$blosxom::url/$rootdirs[$i]/\">" . $pretty . "</a>" if $use;
+	}
+
+	$rootmenu.=$rootmenuend;
+	
+1;
+}
+
+sub story {
+	my($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+	
+	$pretty_path = $path;
+	$pretty_path =~ s/^\/?(.)/\u$1/;
+	$pretty_path =~ s/[_-](.)/ \u$1/g;
+	$pretty_path =~ s/\/(.)/ :: \u$1/g;
+	1;
+}
+
+sub date {
+	my ($pkg, $date_ref, $mtime, $dw,$mo,$mo_num,$da,$ti,$yr) = @_;
+	
+	$pretty_path = $blosxom::path;
+	$pretty_path =~ s/^\/?(.)/\u$1/;
+	$pretty_path =~ s/[_-](.)/ \u$1/g;
+	$pretty_path =~ s/\/(.)/ :: \u$1/g;
+	1;
+}
+
+1;
+
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: menu
+
+=head1 DESCRIPTION
+
+This creates a menu ($menu::menu)showing the available subdirectories from your current position.  A subdirectory, or one of its "descendents" must have a story in it in order to be shown in the menu (ie, it does not lead down "blind alleys").  Additionally, it abides by the excluded sections if the exclude plug-in is enabled.
+
+The default configuration settings at the begin lead to a sort of reversal of the breadcrumbs plug-in.
+
+Additionally, the $menu::rootmenu variable contains the top level directories, regardless of the current page.
+
+=head1 AUTHOR
+
+Fletcher T. Penney - http://fletcher.freeshell.org
+
+
+=head1 LICENSE
+
+This source is submitted to the public domain.  Feel free to use and modify it.  If you like, a comment in your modified source attributing credit to myself for my work would be appreciated.
+
+THIS SOFTWARE IS PROVIDED AS IS AND WITHOUT ANY WARRANTY OF ANY KIND.  USE AT YOUR OWN RISK!

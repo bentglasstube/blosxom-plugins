@@ -1,0 +1,67 @@
+/* MMToday */
+.MMToday {
+	margin-top:0.5em;
+	margin-bottom:2em;
+}
+
+.MMToday a {
+	text-decoration:none;
+}
+
+.MMToday q {
+/*	font-style: italic; */
+	color: black;
+}
+
+.MMToday .line {
+	margin-top: 0.25em;
+	margin-left: 0.25em;
+	margin-bottom: 1.5em;
+	line-height: 125%;
+}
+
+.MMToday .line br {
+	display: none;
+}
+
+.MMToday .line .anchor {
+	display: inline;
+}
+
+.MMToday .line .genre {
+	font-family: Verdana, Arial, sans-serif;
+	background-color: #eef;
+}
+
+.MMToday .line .genre a {
+	color: black;
+}
+
+.MMToday .line .title {
+	font-family: Verdana, Arial, sans-serif;
+	font-weight: normal;
+	text-decoration: underline;
+}
+
+.MMToday .line .url {
+	display: none;
+}
+
+.MMToday .line .info_link {
+/*	font-size: x-small; */
+	display: none;
+}
+
+.MMToday .line .memo_text {
+	margin-top: 0.1em;
+	margin-left: 1em;
+	font-size: small;
+}
+
+.MMToday .line .memo_text br {
+	display: inline;
+}
+
+.MMToday .line .button {
+	font-size: x-small;
+}

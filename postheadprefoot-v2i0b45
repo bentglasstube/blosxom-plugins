@@ -1,0 +1,137 @@
+# Blosxom Plugin: postheadprefoot
+# Author(s): Rael Dornfest <rael@oreilly.com> 
+# Version: 2.0b4-5
+# Documentation: See the bottom of this file or type: perldoc postheadprefoot
+
+package postheadprefoot;
+
+# --- Configurable variables -----
+
+# How should I decorate my posthead, if at all?
+# A dressed up version might look like: 
+# my $posthead = '<span class="head">$posthead</span>';
+# The default is plain and simple:
+my $posthead = '$posthead';
+
+# How should I decorate my prefoot, if at all?
+# A dressed up version might look like: 
+# my $prefoot = '<span class="foot">$prefoot</span>';
+# The default is plain and simple:
+my $prefoot = '$prefoot';
+
+# --------------------------------
+
+use FileHandle;
+
+my $fh = new FileHandle;
+
+sub start {
+  1;
+}
+
+sub head {
+  my($pkg, $path, $head_ref) = @_;
+  
+  $posthead =~ s!\$posthead!load($path, 'posthead')!eis;
+  $$head_ref .= $posthead;
+  
+  1;
+}
+
+sub foot {
+  my($pkg, $path, $foot_ref) = @_;
+  
+  $prefoot =~ s!\$prefoot!load($path, 'prefoot')!eis;
+  $$foot_ref = $prefoot . $$foot_ref;
+  
+  1;
+}
+ 
+sub load { 
+  my($path, $chunk) = @_;
+
+  my($path,$fn) = $path =~ m!^(?:(.*)/)?(.*)\.$blosxom::flavour!;
+
+  $path =~ s!^/*!!; $path &&= "/$path";
+
+  do {
+    $fh->open("< $blosxom::datadir$path/$chunk") || $fh->open("< $blosxom::datadir$path/$chunk.$blosxom::flavour") and return join '', <$fh>;
+  } while ($path =~ s/(\/*[^\/]*)$// and $1);
+
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: postheadprefoot
+
+=head1 SYNOPSIS
+
+Appends the contents of any posthead.flavour (specific to a particular flavour) 
+or posthead (general, regardless of flavour) file found along a particular 
+category path/directory to the head.flavour.
+
+Prepends the contents of any prefoot.flavour (specific to a particular flavour) 
+or prefoot (general, regardless of flavour) file found along a particular 
+category path/directory to the foot.flavour.
+
+In both cases, the plug-in prefers the posthead or prefoot  found closest to 
+the point of the path at hand.  Also, preference is given to the flavour
+specific versus general version.
+
+=head1 VERSION
+
+2.0b4-5
+
+Version number coincides with the version of Blosxom with which the 
+current version was first bundled.
+
+=head1 AUTHOR
+
+Rael Dornfest  <rael@oreilly.com>, http://www.raelity.org/
+
+=head1 INSTALLATION
+
+Drop into your Blosxom plug-in directory ($plugin_dir).
+
+Optionally, you can gussie up the included posthead or prefoot
+by altering the $posthead and $prefoot variables in the 
+Configurable Variables section.  Just be sure to include 
+$posthead and $prefoot where the respective includes should go.
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+Blosxom and this Blosxom Plug-in
+Copyright 2003, Rael Dornfest 
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

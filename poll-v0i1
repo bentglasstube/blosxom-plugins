@@ -1,0 +1,861 @@
+# Blosxom Plugin: poll
+# Author(s): Greg Schueler
+# Version: 0.1
+# Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/ 
+
+package poll;
+
+# --- Configurable variables -----
+
+# $poll_dir is the path relative to $blosxom::datadir where polls are stored. 
+$poll_dir = '/polls';
+
+# $poll_marker is a string which blosxom entries must have in their name if they
+# are to be parsed as polls, if they are not in the polls directory.  Set to "" if you want to disable.
+$poll_marker = 'poll-';
+
+# the admin password allows you to close polls from further voting
+$poll_admin_password = 'secret';
+
+# wrapped around the entire poll HTML of the current poll in headers/footers
+$poll_cur_head='<div class="currentpoll">';
+$poll_cur_foot='</div>';
+
+# wrapped around the entire poll HTML of a blosxom entry poll
+$poll_head='<div class="poll">';
+$poll_foot='</div>';
+
+# wrapped around the Title of the poll
+$poll_head_head='<span class="pollhead">';
+$poll_head_foot='</span><br />';
+
+# wrapped around the name of the poll item when part of a form
+$poll_item_form_head='<span class="pollitem">';
+$poll_item_form_foot='</span><br />';
+
+# wrapped around the name of the poll item when shown in the results
+$poll_item_res_head='<span class="pollitem">';
+$poll_item_res_foot='</span><br />';
+
+# wrapped around the winning poll item(s) when the results are displayed
+$poll_item_win_head='<span class="pollitemwin">';
+$poll_item_win_foot='</span><br />';
+
+# wrapped around the footer of the poll (from the poll file)
+$poll_foot_head='<span class="pollfoot">';
+$poll_foot_foot='</span>';
+
+# wrapped around any messages for the poll (vote total, errors, warnings)
+$poll_msg_head='<div class="pollmsg">';
+$poll_msg_foot='</div>';
+
+# html to wrap the list of items in  the results 
+$poll_list_head = '<div class="polllist">';
+$poll_list_foot = "</div>";
+
+# html to wrap the list of items in the form
+$poll_list_form_head = '<div class="polllist">';
+$poll_list_form_foot = "</div>";
+
+#  Message to append to footer after a person has voted
+$poll_vote_thanks="Thanks for voting!";
+
+# Message to append to footer if the voted on poll doesn't exist or has already been closed
+$poll_invalid="The poll you tried to vote on is closed or does not exist.";
+
+# --- Advanced Configuration ----
+
+# $poll_render_entries
+# If entries in the poll directory can be viewed as normal blog entries, do you want 
+# to see them rendered as results output? If you set this to 0, the "poll.txt" files that
+# you create will be rendered normally by blosxom, which is probably not what you want.
+# However if the poll files will never be seen by blosxom (e.g. they are excluded) you 
+# could set this to 0 for a little more efficiency.
+#
+$poll_render_entries = 1;
+
+# The number of loose vote files to allow before consolidating a vote.
+$poll_max_unconsolidated = 30;
+
+# ---- Customizing the results output ----
+
+#   The default output, which is defined in a subroutine called "default_output", will display the
+# name of the poll item, the percentage of votes it has, and the number of votes.
+#  You can customize the output here, e.g. if you want to generate a bar graph using css, or 
+# you want to generate a custom graphic.
+# 
+# How to do it:
+#  (Warning: If you are not familiar with perl, this may not be for you.)
+# 
+#  set $poll_item_output_sub to a sub ref which takes these parameters:
+# 
+#    ($name,  $choicenum, $perc, $count,  $totalvotes,$winner,$html_head, $html_foot)
+#
+#        $name - the name of the vote item,
+#        $choicenum - the number of the item (e.g. 0 to n if you have n+1 choices)
+#        $perc - percentage of the total votes that were for this item
+#        $count - the number of votes for this item
+#        $totalvotes - the total votes in the poll
+#        $winner - true if this item has the most votes (may be a tie and so all winning items will see $winner as true)
+#        $html_head - prefix html, will be $poll_item_win_head or $poll_item_res_head
+#        $html_foot - suffix html, will be $poll_item_win_foot or $poll_item_res_foot
+#
+#  the sub ref should return the HTML for the item. It's up to you to enclose them in the html_head and html_foot,
+#  or ignore those if you desire.
+#
+#  simple example:
+#        $poll_item_output_sub = sub {
+#            my ($name,  $choicenum, $perc, $count,  $totalvotes,$winner,$css) =@_;
+#            return qq{
+#            <li><span class="$css">$name - $perc%</span><br />
+#                <img src="/img/somebar.gif" height="10" width="$perc"/>
+#             };
+#        };
+#
+
+$poll_item_output_sub = "default_output";
+
+
+# ---- END OF CONFIGURATION ---- 
+
+
+# ---- defaults ----
+
+$poll_item_output_sub ||= "default_output";
+
+$html=""; #exported
+%parsed;
+$default_poll;
+%flocks;
+
+use Fcntl ':flock';
+use File::stat;
+use File::Find;
+use CGI qw/:standard/;
+use Data::Dumper;
+
+sub start{
+    return $blosxom::static_or_dynamic eq 'dynamic' ? 1 : 0; 
+}
+sub end{
+    $html="";
+    %parsed=();
+     
+}
+sub story {
+  my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+  return 1 unless $poll_render_entries;
+  #warn "path:$path, name: $filename, story: $$story_ref, title: $$title_ref, body:  $$body_ref";
+  if($path eq $poll_dir or ($poll_marker and $filename=~/$poll_marker/)){
+    #parse this story body as a poll
+    my $poll;
+     my $t = time;
+    if($parsed{$path."/".$filename}){    
+        $poll = $parsed{$path."/".$filename};
+    }else{
+         my @files;
+         unless(-d $blosxom::plugin_state_dir."/".$path){
+            $pkg->_make_dir($blosxom::plugin_state_dir."/".$path);
+          }else{
+             opendir(DIR,$blosxom::plugin_state_dir."/".$path) || die "Couldn't open dir for reading: $blosxom::plugin_state_dir/$path: $!";
+             @files=readdir(DIR);
+             closedir(DIR);
+         }
+         $poll = $pkg->parse_poll($path,$filename,@files);
+     }
+     return 1 unless $poll;
+     $$body_ref = $pkg->handle_poll($path,$filename,$poll,@{$poll->{'files'}});
+     my $n = time;
+     $n= $t-$n;
+     #$$body_ref.="<br>total time: $n seconds";
+  }
+  1;
+} 
+
+sub head{
+    my ($pkg, $currentdir, $head_ref)=@_;
+    return 1 unless $poll_dir;
+    my $dir = $blosxom::datadir."/".$poll_dir;
+    return unless -d $dir;
+    my @files;
+    opendir(DIR,$dir) or (warn "can't open dir $dir" and return 0);
+    my @allfiles= readdir(DIR);
+    closedir(DIR);
+    @files = sort {stat($dir."/".$a)->mtime <=> stat($dir."/".$b)->mtime} grep{ /\.txt$/ } @allfiles;
+    my $poll=pop @files;
+    return 0 unless $poll;
+    $poll=~/^(.*?)\.txt$/s;
+    my $pname=$1;
+    $default_poll=$poll_dir."/".$pname;
+    unless(-d $blosxom::plugin_state_dir."/".$poll_dir){
+        $pkg->_make_dir($blosxom::plugin_state_dir."/".$poll_dir);
+        @allfiles=();
+    }else{
+        opendir(DIR,$blosxom::plugin_state_dir."/".$poll_dir) || die "can't open dir $blosxom::plugin_state_dir/$poll_dir";
+        @allfiles = readdir(DIR);
+        closedir(DIR);
+    }
+    my $poll = $pkg->parse_poll($poll_dir,$pname,@allfiles);
+    $poll->{'templated'}=1 if $poll;
+    $html = $pkg->handle_poll($poll_dir,$pname,$poll,@allfiles)
+        if $poll;
+    1;
+}
+
+sub _make_dir{
+    my ($pkg,$dir)=@_;
+    my @parts = grep{$_} split(/\//,$dir);
+  foreach my $x(0..@parts-1){
+        if(!-d "/".join("/",@parts[0..$x])){
+            mkdir("/".join("/",@parts[0..$x]) )
+                || die "Unable to create necessary directory: $! $dir";
+        }
+    }
+    
+}
+
+sub handle_poll{
+    my ($pkg, $dir,$pname,$poll,@allfiles)=@_;
+
+    my $html;
+    my $ip=remote_host();
+    #do poll closing 
+   
+    if(param('pollclose') eq $poll_admin_password
+        and $poll_admin_password
+        and !($poll->{'closed'})
+        and (
+            (param('pollname') eq $dir."/".$pname)
+                or   
+                    (!param('pollname') and $dir."/".$pname eq $default_poll)
+                )){
+        if($pkg->_lock_poll($dir,$pname)){
+                my $res = $pkg->consolidate($dir,$pname,@allfiles);
+                if($res){
+                    $html = $res;
+                }else{
+                    $res = $pkg->pollclose($poll, $dir,$pname);
+                    if($res){
+                        $html = $res;
+                    }else{
+                        $poll->{'closed'}=1;
+                        $html = "Poll closed: \"".$poll->{'head'}." \"";
+                    }
+                }
+                $pkg->_unlock_poll($dir,$pname);
+        } else{
+            $html="Couldn't lock the poll";
+        }
+    }elsif(param('voteconsolidate') eq $poll_admin_password 
+        and $poll_admin_password
+        and !$poll->{'acted'}
+            and (param('pollname') eq $dir."/".$pname  
+            or (!param('pollname') 
+                and $dir."/".$pname eq $default_poll))){
+        #do poll closing
+        if($pkg->_lock_poll($dir,$pname)){
+            my $res = $pkg->consolidate($dir,$pname,@allfiles);
+            if($res){
+                $html = $res;
+            }else{
+                $poll->{'acted'}=1;
+                $html = "Vote consolidation successful for poll \"".$poll->{'head'}." \"";
+            }
+            $pkg->_unlock_poll($dir,$pname);
+        }else{
+            $html="Couldn't lock the poll";
+        }
+    }
+    elsif($poll->{'closed'} || $poll->{'acted'} || $poll->{'results'}->{'unique'}->{$ip}){
+        #person has already voted
+        $html=$pkg->gen_poll_results($poll);
+
+    }elsif(param('pollvote') 
+        and !$poll->{'acted'}
+        and (!param('pollname') 
+            and ($dir."/".$pname eq $default_poll) 
+            or param('pollname') eq $dir."/".$pname  ) ){
+        #person is voting
+        my $choice=param('pollchoice');
+        if ($choice=~/^\d+$/ and $choice < @{$poll->{'items'}}){
+            my $vt = "$blosxom::plugin_state_dir/$dir/$pname.$ip.vote.$choice";
+            
+            if(system("touch '".$vt."'")){
+                warn "Couldn't write vote ($vt):$!";
+                $html = $pkg->gen_poll($pname,$poll,"Sorry, there was an error and the vote could not be cast.");
+            }else{
+                $pkg->add_vote($poll,$choice,$ip);
+                $poll->{'acted'}=1;
+                $html=$pkg->gen_poll_results($poll,$poll_vote_thanks);
+            }
+        }else{
+            $html = $pkg->gen_poll($pname,$poll,"Sorry, that vote choice was not valid.");
+        }
+    }elsif($poll->{'acted'}){
+        $html=$pkg->gen_poll_results($poll);
+    }else{
+        #show the poll form
+        $html=$pkg->gen_poll($pname,$poll);
+    
+    }
+    return $html;
+}
+
+sub consolidate{
+    my ($pkg,$dir,$pname,@files)=@_;
+    my $voterest;
+    open(VOTED,">>$blosxom::plugin_state_dir/$dir/$pname.voted") || return "Unable to open votes file for appending: $!";
+    #warn "opened voted, files are:".join(" ",@files);
+    foreach my $vf (@files){
+        #warn "checking if vote:$vf";
+        if($vf=~/^$pname\.(.*?)\.vote.(\d+)$/s){
+            #warn "consolidating: adding vote from $1 for $2";
+            $voterest=$1.":".$2."\n";
+            unless(unlink($blosxom::plugin_state_dir."/".$dir."/".$vf)){
+                warn "unlink failed $!";
+                close(VOTED);
+                return "Couldn't unlink file: $blosxom::plugin_state_dir/$dir/$vf : $!";
+            }
+            print VOTED $voterest;
+        }
+    }
+    close(VOTED);
+    return '';
+}
+
+sub pollclose{
+    my ($pkg,$poll,$dir,$pname)=@_;
+    return "Poll \"$poll->{'head'}\" is already closed." if -f "$blosxom::plugin_state_dir/$dir/$pname.closed";
+    open(VOTED,">$blosxom::plugin_state_dir/$dir/$pname.closed") || return "Unable to open votes file for appending: $!";
+    #warn "opened voted, files are:".join(" ",@files);
+    my %newpoll = (%$poll);
+    delete $newpoll{'results'}->{'unique'};
+    delete $newpoll{'files'};
+    delete $newpoll{'templated'};
+    $newpoll{'closed'}=1;
+    $newpoll{'dateclosed'}=localtime;
+    print VOTED Dumper(\%newpoll);
+    close(VOTED);
+    return '';
+}
+
+sub add_vote{
+    my ($pkg,$poll,$choice,$ip)=@_;
+    $poll->{'results'}->{'total'}->{$choice}++;
+    $poll->{'results'}->{'unique'}->{$ip}=1;
+    $poll->{'results'}->{'totalvotes'}++;
+    if($poll->{'results'}->{'total'}->{$choice} > $poll->{'results'}->{'winner'}){
+        $poll->{'results'}->{'winner'}=$poll->{'results'}->{'total'}->{$choice};
+    }
+}
+sub parse_poll{
+    my ($pkg,$dir,$pname,@files)=@_;
+    return $parsed{$dir."/".$pname} if $parsed{$dir."/".$pname};
+    if(-r $blosxom::plugin_state_dir."/".$dir."/".$pname.".closed"){
+        open(CL,$blosxom::plugin_state_dir."/".$dir."/".$pname.".closed") || die "can't open closed poll file $blosxom::plugin_state_dir/$dir/$pname.closed: $!";
+        my $txt;
+        {local $/;
+        $txt = <CL>;
+        }
+        eval $txt;
+        die "couldn't load closed poll data: $@" if $@;
+        return $VAR1;
+    }
+    open(P,$blosxom::datadir."/".$dir."/".$pname.".txt") ||die "can't read poll file $blosxom::datadir/$dir/$pname.txt";
+    my @poll=<P>;
+    close(P);
+    my $poll= $pkg->_int_parse($dir,$pname,\@poll,@files);
+    return $poll;
+}
+
+sub _int_parse{
+    my ($pkg,$dir,$pname,$lines,@files)=@_;
+    return $parsed{$dir."/".$pname} if $parsed{$dir."/".$pname};
+    my %poll;
+    my @poll = @$lines;
+    my $header=shift @poll;
+    my (@qs,$rest);
+    chomp($header);
+    $poll{'head'}=$header;
+    shift @poll while  $poll[0] =~/^\s*$/s and @poll;
+    while($poll[0]=~/^(\S.*?)\s+(\S.*)$/s and @poll){
+        my $a=$2;
+        chomp($a);
+        push @qs,$a;
+        shift @poll;
+    }
+    $poll{'items'}=\@qs;
+    shift @poll while  $poll[0] =~/^\s*$/s and @poll;
+    $rest = join("\n",@poll);
+    $poll{'foot'}=$rest if $rest;
+    if(!$poll{'head'} || (@qs<1) ){
+        return undef;
+    }
+    #parse results
+    $poll{'results'}= {total=>{map {$_=>0}0..@qs-1},unique=>{}};
+    my $tot=0;
+    my $max=0;
+    $poll->{'results'}->{'winner'}=0;
+    if(-r $blosxom::plugin_state_dir."/".$dir."/".$pname.".voted"){
+        open(V,$blosxom::plugin_state_dir."/".$dir."/".$pname.".voted") || die 'unable to open tallied votes for counting';
+        for(<V>){
+            chomp;
+            if(/^(.*?):(\d+)/){
+                my $v=$2;
+                my $u=$1;
+                $poll{'results'}->{'total'}->{$v}++;
+                $poll{'results'}->{'unique'}->{$u}=1;
+                $tot++;
+                $poll{'results'}->{'winner'} = $poll{'results'}->{'total'}->{$v}
+                    if $poll{'results'}->{'total'}->{$v} >$poll{'results'}->{'winner'};
+            }
+        }
+        close(V);
+    }
+    my $vfcount=0;
+    foreach (@files){
+        if(/^$pname\.(.*?)\.vote\.(\d+)$/){        
+            my $v=$2;
+            my $u=$1;
+            $poll{'results'}->{'total'}->{$v}++;
+            $poll{'results'}->{'unique'}->{$u}=1;
+            $tot++;
+            $poll{'results'}->{'winner'} = $poll{'results'}->{'total'}->{$v}
+                if $poll{'results'}->{'total'}->{$v} >$poll{'results'}->{'winner'};
+            $vfcount++;
+        }
+    }
+    if ( -e $blosxom::plugin_state_dir."/".$dir."/".$pname.".closed" ){
+        $poll{'closed'}=1;
+    }
+    $poll{'results'}->{'totalvotes'}=$tot;
+    $poll{'dir'}=$dir;
+    $poll{'name'}=$pname;
+    $poll{'files'}=\@files;
+    $parsed{$dir."/".$pname}=\%poll;
+    if($vfcount > $poll_max_unconsolidated){
+        if($pkg->_lock_poll($dir,$pname)){
+            $pkg->consolidate($dir,$pname,@files);
+            $pkg->_unlock_poll($dir,$pname);
+        }
+    }
+    return \%poll;
+}
+
+sub _lock_poll{
+    my ($pkg,$dir,$pname)=@_;
+    my $md="$blosxom::plugin_state_dir/$dir";
+    unless(-d $md){
+        $pkg->_make_dir($md);
+    }
+    if($flocks{$dir."/".$pname}){
+        flock($flocks{$dir."/".$pname},LOCK_EX); #wait...
+        return 1;
+    }else{
+        open(X,">>$md/$pname.poll.lock")
+            or (warn "Unable to open lock for writing: $!" and return 0);
+        flock(X,LOCK_EX); #wait...
+        $flocks{$dir."/".$pname}=*X{IO};
+        
+        return 1;
+    }
+}
+
+sub _unlock_poll{
+    my ($pkg,$dir,$pname)=@_;
+    
+    my $fh = $flocks{$dir."/".$pname};
+    return unless $fh;
+    flock($fh,LOCK_UN);
+    close($fh);
+    
+}
+
+sub gen_poll{
+    my ($pkg,$name,$poll,$msg)=@_;
+    my (@qs,$rest);
+    my $html;
+    $html.=qq(
+      $poll_head
+     <form method="get" name="$name">
+     <input type="hidden" name="pollname" value="$poll->{'dir'}/$name" />
+    $poll_head_head $poll->{'head'} $poll_head_foot
+    $poll_list_form_head
+    );
+    foreach my $x (0..@{$poll->{'items'}}-1){
+        $html.=qq(
+        $poll_item_form_head <input type="radio" name="pollchoice" value="$x" />${$poll->{'items'}}[$x] $poll_item_form_foot
+        );
+    }
+    $html.=$poll_msg_head.$msg.$poll_msg_foot if $msg;
+    $html.=qq{
+    $poll_list_form_foot
+    <input type="submit" name="pollvote" value="Vote" />
+    </form>
+    };
+    $html.=$poll_foot_head.$poll->{'foot'}.$poll_foot_foot
+        if $poll->{'foot'};
+    $html.=$poll_foot;
+    return $html;
+}
+sub default_output{
+            my ($name,  $choicenum, $perc, $count,  $totalvotes,$winner,$head,$foot) =@_;
+            my $pc = sprintf("%.1f",$perc);
+            return qq{
+            $head $name - $pc% $foot};
+}
+sub gen_poll_results{
+    my ($pkg,$poll,$msg) = @_;
+    my $phead = $poll->{'templated'}? $poll_cur_head : $poll_head;
+    my $pfoot = $poll->{'templated'} ? $poll_cur_foot : $poll_foot;
+    my $html;
+    $html.=qq(
+        $phead
+        $poll_head_head $poll->{'head'} $poll_head_foot
+        $poll_list_head
+    );
+    #warn "generating, total votes:".$poll->{'results'}->{'totalvotes'}." winner:".$poll->{'results'}->{'winner'};
+    foreach my $x (0..@{$poll->{'items'}}-1){
+        my $count = $poll->{'results'}->{'total'}->{$x};
+        
+        my $pc = ($count > 0 ? (($count / $poll->{'results'}->{'totalvotes'}) *100)  : 0);
+        #warn "vote item $x : count $count, % $pc, perc = $perc";
+        my $win = $poll->{'results'}->{'winner'}== $count ;
+        my $out;
+        eval{ no strict 'refs';
+        $out = &$poll_item_output_sub($poll->{'items'}->[$x],  $x, $pc, $count,  $pol->{'results'}->{'totalvotes'},$win,($win? $poll_item_win_head: $poll_item_res_head ),($win ?$poll_item_win_foot: $poll_item_res_foot));
+        };
+        if($@){
+            warn "Error calling \$poll_item_output_sub:$@";
+            return "There was an error generating poll results.";
+        }
+        $html.= $out;
+    }
+    
+    $html.=qq(
+$poll_list_foot
+$poll_msg_head).
+    qq(Total Votes: $poll->{'results'}->{'totalvotes'});
+    
+    $html.=qq(<br />
+    Voting closed on $poll->{'dateclosed'}) 
+        if $poll->{'dateclosed'};
+    
+    $html.=qq(<br />
+    $msg) if $msg;
+    
+    $html.= $poll_msg_foot;
+    
+    $html.=($poll->{'foot'}? '<br />'.$poll_foot_head .$poll->{'foot'}.$poll_foot_foot :'');
+    
+    $html.=$pfoot;
+    return $html;
+}
+
+
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: poll
+
+=head1 SYNOPSIS
+
+Purpose: Provides public polls which can be placed in the header or footer templates,
+or viewed as blosxom entries.  
+
+Minimal configuration is necessary, but plenty of customization is possible.
+
+$poll::html will contain the HTML for the "current" poll,
+which is the newest poll in the special I<poll directory>, although many polls may be
+active at one time.  
+
+=head1 QUICK START
+
+Edit the poll plugin file and make sure these are set correctly:
+
+    # a blosxom dir to contain only polls.  
+    $poll_dir = '/polls'; 
+    
+    # if any blosxom entry contains this in the name, it will act like a poll
+    $poll_marker = "poll-"; 
+    
+    # set this password to something secret, so you can close polls
+    $poll_admin_password = 'secret'; 
+    
+Make sure your webserver can write to the plugin_state_dir (which you set in blosxom.cgi).
+    
+Then, create a poll file entry, either in the polls_dir, or with a name containing the poll_marker:
+
+    What is your favorite cheese?
+    
+    * Gouda
+    * Brie
+    * Cheddar
+    * Parmesan
+    * Goat
+    * Cheese is gross!
+    
+    If anybody votes 'Cheese is gross!', they're insane!
+
+The first line is the title, the items come after a blank line, and anything after the last item is shown at the bottom.
+The name for each item is everything after the first word, (so "*" is left out in this case).
+
+The newest poll in the poll_dir is the "default" or "current" poll.   If you want to include the default poll 
+in the blosxom header.html or footer.html put "$poll::html" in your template somewhere.
+
+Simple!
+
+It's ok to edit your poll files once they are created,  (e.g. typos)
+I<as long as you don't change the order of the poll items>.
+
+=head1 QUICK ADMIN
+
+Go to any page of your blog, and add C<?pollclose=secret> to the URL, and hit enter.  
+This will close the current poll so nobody can vote on it anymore. (change "secret" to 
+the password you configured above.)
+
+To close a specific poll, go to a page containing the poll and add C<?pollclose=secret&pollname=/path/to/a-poll-name>
+to the URL and hit enter.  Make sure the "pollname" has the correct blosxom path and name for the poll entry.
+    
+=head1 BIT MORE SYNOPSIS
+
+The generated HTML is customizable with various configuration options. (see below)
+
+Client IP addresses/hostnames are used to try to maintain a 1 vote per client rule.
+
+Polls can be B<closed> at any time (see L</"Closing A Poll"> below), which writes 
+the results to a final form and prevents further voting.
+
+When a poll is interpreted, such as in a blosxom entry, or in $poll::html, it
+will contain either the HTML for voting (HTML form) or the results of the poll,
+depending on whether the poll is still open and whether the client has already voted.
+
+Polls are created by simple text files (in the blosxom spirit).  All entries in the special
+I<poll directory> are interpreted as polls, and any entry in any other directory can 
+be interpreted as a poll if the name of the entry contains the poll marker (default "poll-").
+
+
+=head1 DETAILS
+
+=over
+
+
+=item Configuration
+
+These configuration values should be set in the 'poll' plugin file.
+    
+$poll_dir is the path relative to $blosxom::datadir where polls are stored. 
+
+    $poll_dir = '/polls';
+    
+$poll_marker is a string which blosxom entries must have in their name if they
+are to be parsed as polls but are not in the polls directory.  Set to "" if you want to disable.
+
+    $poll_marker = "poll-";
+
+The admin password is used to allow an admin to remotely close a vote. (See  L<Closing> below).
+
+    $poll_admin_password = 'secret';
+    
+Text that is wrapped around the entire poll HTML of the current poll in headers/footers.
+
+    $poll_cur_head='<div class="currentpoll">';
+    $poll_cur_foot='</div>';
+    
+Text that is wrapped around the entire poll HTML.
+
+    $poll_head='<div class="poll">';
+    $poll_foot='</div>';
+    
+Text that is rapped around the Title of the poll.
+
+    $poll_head_head='<span class="pollhead">';
+    $poll_head_foot='</span><br />';
+
+Text that is wrapped around the name of the poll item when part of a form.
+
+    $poll_item_form_head='<span class="pollitem">';
+    $poll_item_form_foot='</span><br />';
+
+Text that is wrapped around the name of the poll item when shown in the results.
+
+    $poll_item_res_head='<span class="pollitem">';
+    $poll_item_res_foot='</span><br />';
+
+Text that is wrapped around the winning poll item(s) when shown in the results.
+
+    $poll_item_win_head='<span class="pollitemwin">';
+    $poll_item_win_foot='</span><br />';
+
+Text that is wrapped around the footer of the poll (from the poll file).
+
+    $poll_foot_head='<span class="pollfoot">';
+    $poll_foot_foot='</span><br />';
+
+Text that is wrapped around any messages for the poll (errors, warnings).
+
+    $poll_msg_head='<span class="pollmsg">';
+    $poll_msg_foot='</span>';
+
+Text that is wrapped around the list of items in  the results. You use C<< <ol> >> or C<< <ul> >> for making a list.
+
+    $poll_list_head = '<div class="polllist">';
+    $poll_list_foot = "</div>";
+
+Text that is wrapped around the list of items in the form.
+
+    $poll_list_form_head = '<div class="polllist">';
+    $poll_list_form_foot = "</div>";    
+
+Message to append to footer after a person has voted.
+
+    $poll_vote_thanks="Thanks for voting!";
+
+Message to append to footer if the voted on poll doesn't exist or has already been closed.
+
+    $poll_invalid="The poll you tried to vote on is closed or does not exist.";
+
+
+=item Creating A Poll
+
+Polls are created by adding text files to the poll directory (just like a normal blosxom entry :)
+In addition, polls can be created in any normal blosxom directory.  You just need to name the 
+entry so that it contains the "poll marker" you set in the configuration.  (By default this is "poll-".)
+
+The poll file format is similar to a normal blosxom entry. It has a title on the first line,
+followed by one or more blank lines, then the body of the entry.  The title is used as the
+"question" of the poll, so it is often phrased as a question, e.g. "What is your favorite fruit?".
+
+The poll file body has the following format:
+
+    tag     Poll Item 1
+    tag     Poll Item 2...
+    tag     Poll Item X
+    [blank line(s)]
+    footer text until the end of the file.
+    
+The body starts with poll items, 1 per line.  The first word on an item line is ignored, but you could use this
+to make the text file look good just as a normal text file, if you want to.  The word could be e.g. "&bull;".
+Everything after the first word and a sequence of whitespace on the item line is taken to be the name of that item.
+
+(Note: after votes have been placed for a poll, you SHOULD NOTchange the poll file itself.  At least, don't change the order
+of the poll items, or all the votes will get screwed up :)
+
+After the poll items comes any sequence of blank lines, followed by the pool footer, which is taken till the end of the file.
+The poll footer is optional. If present it will be included at the bottom of the generated poll HTML.
+
+
+=item Closing A Poll
+
+To close the current poll, append C<?pollclose=secret> to the URL of a blosxom page, and hit enter.
+
+To close a specific poll, append 
+
+    ?pollclose=secret&pollname=/path/to/pollname
+
+to the URL of a blosxom page that shows the named poll.
+
+There is a slim chance that the moment you close a poll, someone also votes on the poll.  Their vote will not
+get counted, and technically shouldn't because they voted after you closed the poll.
+
+
+=item Files
+
+Except for the B<Poll File>, which can be put anywhere in your blosxom directory, 
+the other files are created and maintained in the blosxom plugin_state_dir.
+
+=over
+
+=item Poll File
+
+Each poll is defined in a file with a file extension of ".txt". e.g. "poll1.txt" (See L<Creating A Poll> below.)
+
+=item Vote File
+
+Each vote that is cast (for a poll with ID "poll1") creates a B<vote file> in the blosxom plugin_state_dir. 
+It is a 0 byte file named the following:
+
+    poll1.ID.vote.X
+    
+ID is a unique identifier for the client; either their IP address, or their DNS hostname if available.
+
+X is the index of the item voted for, such as 0, 1, 2, etc.
+
+=item Closed Poll File
+
+Once you decide that enough people have voted, you can L<Close|/"Closing A Poll"> a poll (see below.)  When this is done
+a B<Closed Poll File> is created.  This file is named I<poll1.closed>, and contains the summary of poll statistics.
+
+Warning: Once you close a poll, all the information about unique clients is removed, and cannot be recovered.
+
+=item Consolidation File
+
+The vote files are periodically consolidated into a single file for faster processing.  By default this happens after
+every 30 votes, though that is configurable.  
+
+As an admin, you can also explicitly L<Consolidate|/"Consolidating A Poll"> the votes (see below.)
+When the votes are consolidated, all the existing vote files for the poll have their information appended to a file (the B<Consolidation File>) 
+named I<poll1.voted>, then the vote files are deleted.
+
+=back
+
+=item Consolidating A Poll
+
+Consolidating a poll is probably never necessary to perform explicitly.  
+
+To consolidate the current poll, append C<?voteconsolidate=secret> to the URL of a blosxom page, and hit enter.
+
+To consolidate a specific poll, append C<?voteconsolidate=secret&pollname=/path/to/pollname> to the URL of a blosxom
+page that shows the named poll.
+
+
+=back
+
+
+=head1 VERSION
+
+2003-08-21
+
+0.1 - first release
+
+=head1 AUTHOR
+
+Greg Schueler <greg-blosxom@vario.us> http://greg.vario.us
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+Poll plugin website : L<http://greg.vario.us/software/poll>
+
+=head1 BUGS
+
+Please send bug reports to C<greg-poll-bugs@vario.us>.
+
+=head1 LICENSE
+
+This Blosxom Plug-In Copyright 2003, Greg Schueler
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

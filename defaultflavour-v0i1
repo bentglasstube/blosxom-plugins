@@ -1,0 +1,42 @@
+# Blosxom Plugin: defaultflavour  -*- perl -*-
+# Author(s): Steve Schwarz <steve at agilitynerd.com>
+# Version: 2005-APR-19 0.1
+# Documentation:
+# Whenever the requested flavour isn't found use the 
+# blosxom::default_flavour instead of giving the Unknown Flavour Error
+
+# No configuration necessary.
+
+package defaultflavour;
+
+sub start {
+  1;
+}
+
+use FileHandle;
+my $fh = new FileHandle;
+
+# Replace the default template mechanism to use the blosxom $default_flavour
+sub template {
+    return sub {
+	my ($path, $chunk, $flavour) = @_;
+	# The standard method - search up the path for a flavour template match
+	do {
+	    return join '', <fh> if fh->open("< $blosxom::datadir/$path/$chunk.$flavour");
+	} while ($path =~ s/(\/*[^\/]*)$// and $1);
+
+	# See if one of the built in flavours are being requested
+	my $built_in = $blosxom::template{$flavour}{$chunk};
+	return join '', $built_in if $built_in;
+
+	# Search up the path for the default flavour template match
+	do {
+	    return join '', <fh> if fh->open("< $blosxom::datadir/$path/$chunk.$blosxom::default_flavour");
+	} while ($path =~ s/(\/*[^\/]*)$// and $1);
+
+	# Shouldn't ever get here...
+	return join '', ($blosxom::template{error}{$chunk} || '');
+    };
+}
+
+1;

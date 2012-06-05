@@ -1,0 +1,133 @@
+# Blosxom Plugin: entries_template
+# Author(s): Pomin Wu <pm5@fiorile.org>
+# Version: 2004-01-18
+# Documentation: See the bottom of this file or type: perldoc entries_template
+
+package entries_template;
+
+# --- Configurable variables -----
+
+# --------------------------------
+
+use vars qw/$package/;
+
+$package = 'entries';
+
+sub start {
+  while (<DATA>) {
+    last if /^(__END__)?$/;
+    my($ct, $comp, $txt) = /^(\S+)\s(\S+)\s(.*)$/;
+    $txt =~ s/\\n/\n/mg;
+    $blosxom::template{$ct}{$package} = $txt;
+  }
+  1;
+}
+
+sub story {
+  my ($self, $path, $fn, $story, $title, $body) = @_;
+  my $tmpl;
+  $blosxom::path_info =~ m!^(?:.*/)?(index\.$blosxom::flavour|[^\.]*)$!
+    and $tmpl = &$blosxom::template($blosxom::path,$package,$blosxom::flavour)
+      and do {
+        if (! $tmpl) {
+          $tmpl = &$blosxom::template(
+	    $blosxom::path,'story',$blosxom::flavour)
+	} else {
+	  $$story = $tmpl
+        }
+      }
+}
+  
+1;
+
+__DATA__
+html entries <p><a name="$fn"><b>$title</b></a><br />$body<br /><br />posted at: $ti | path: <a href="$url$path">$path</a> | <a href="$url/$yr/$mo_num/$da#$fn">permanent link to this entry</a></p>\n
+rss entries   <item>\n    <title>$title</title>\n    <link>$url/$yr/$mo_num/$da#$fn</link>\n    <description>$body</description>\n  </item>\n
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: entries_template
+
+=head1 SYNOPSIS
+
+Provide alternative template for displaying stories in index
+pages.
+
+It simply switch the template to F<entries.*> files when
+generating index pages.
+
+Like the S<flavourdir> plugin, it "respects the Blosxom
+concept of finding flavours along specific paths, expecting
+to find these paths echoed in your flavour directory."
+
+=head1 INSTALLATION AND CONFIGURATION
+
+Drop the plug-in into your Blosxom plugins folder.
+
+No configuration required.  The plugin will provide default
+template for html, rss, and error flavour (they are the same
+as Blosxom's default story template.)  To customize
+templates, provide your own F<entries.$flavour> file in
+S<$blosxom::datadir> or S<$flavourdir::flavour_dir> (if you
+have S<flavourdir> plugin installed.)
+
+It is expected to work will with all other blosxom plugins.
+Please inform me if you find any trouble integrating it.
+
+=head1 VERSION
+
+2003-11-16
+
+=head1 AUTHOR
+
+Pomin Wu  <pm5@fiorile.org>, http://blog.fiorile.org/fiorile
+
+=head1 SEE ALSO
+
+Blosxom Home/Docs/Licensing: http://www.raelity.org/apps/blosxom/
+
+Blosxom Plugin Docs: http://www.raelity.org/apps/blosxom/plugin.shtml
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list 
+[http://www.yahoogroups.com/group/blosxom].
+
+=head1 LICENSE
+
+This Blosxom Plug-in
+Copyright 2003, Pomin Wu
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+=head1 CHANGELOG
+
+=over 4
+
+=item 2004-01-18
+
+Fix fallback behaviour.  Now when entries_template doesn't
+find the F<entries.$flavour> template file, it won't use the
+default error handling template F<entries.error>, but
+instead it looks for F<story.$flavour>.
+
+=back
+
+=end

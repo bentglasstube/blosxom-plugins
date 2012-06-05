@@ -1,0 +1,271 @@
+# Blosxom Plugin: nixie
+# Author: Stu MacKenzie <http://groups.yahoo.com/group/blosxom/messages>
+# Version: v0.4 2005-05-22
+# License: MIT/Public Domain
+# nixie home: http://www.enilnomi.net/download.html
+# Documentation at the bottom of this file or type: perldoc nixie
+
+# "nixie", noun, pl. nixies.
+#     (U.S. Slang.) a letter or other mail that is not
+#     delivered because of an illegible or incorrect address.
+#
+# When blosxom displays no stories, nixie adds a user-specified
+# "404"-type message to the head, via flavour file. Optionally,
+# the plugin can be set to "throw a real 404" (server log will
+# show a 404 error). Defaults to built-in "real" 404 when no
+# flavour files are present. Works with any blosxom URL:
+# path-based, date-based, or mixed (e.g. /pets/dogs/2005).
+
+package nixie;
+
+# = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
+#
+#  Configuration Section
+#
+# = = = = = = = = = = = = = = = =
+#
+#  Setting your empty-page message --
+#     Your "file not found" message will be appended to the current
+#     head template, so use all your normal styling, DIVs, etc. Enter
+#     your message in a flavour file named "nixie.head.flavour_name"
+#     (no quotes), in any of the spots you normally keep flavour files.
+#     A file named "nixie.head.all" (no quotes) works with any flavour.
+#
+#  Should nixie throw a "real" 404?
+#     When set to 0 (normal), the plugin adds your "file not found"
+#     message to the normal blosxom page; when set to 1, the entire
+#     blosxom page is dumped -- including http header -- and a new
+#     page is generated with header status set to 404. This may
+#     prevent robots from recording "empty" pages...I dunno. It'll
+#     definitely show on your server log as a 404.
+ $throw_a_real_404 = 0
+           unless defined $throw_a_real_404;
+#
+#  Setting your 404 message --
+#     When $throw_a_real_404 is set to 1, you have to supply an
+#     entire page as your "message." This page can be saved as a
+#     flavour file, named "404.head.flavour_name" or "404.head.all"
+#     (no quotes), located at the top of your datadir. A default 
+#     404 flavour is built in to the plugin.
+#
+#  Environment Variables --
+#     Your 404 templates can use $nixie::server_port, $nixie::server_name,
+#     $nixie::server_software, $nixie::server_protocol, and $nixie::url
+#     (And, of course, all the normal blosxom variables.)
+#
+# = = = = = = = = = = = = = = = =
+
+use strict;
+use CGI qw/:standard/;
+
+use vars qw { $server_port $server_name $server_software $server_protocol $url $throw_a_real_404 };
+my $counter = 0;
+my $template;
+my $current_dir;
+my $mark;
+
+sub start {
+  1;
+}
+
+sub head {
+  my ($pkg, $dir, $head_ref) = @_;
+
+  $mark = rand(7);             # add a (99.999) unique mark to $head
+  while ($$head_ref =~ m/$mark/) {$mark += rand(7);}
+  $mark = "<!-- $mark -->";
+  $$head_ref .= $mark;
+  $url = path_info();
+  $current_dir = $dir;
+
+  1;
+}
+
+sub story {
+  $counter++;                 # record number of stories processed
+}
+
+sub get_default {             # read in the default 404 template
+  my $str = "";
+  while (<DATA>) {
+    #last if /^(__END__)?$/;
+    last if /^(__END__)$/;
+    $str .= $_;
+  }
+  $str;
+}
+
+sub last {
+  $counter and                             # if *any* stories were processed, 
+      $blosxom::output =~ s/$mark// and    # delete our mark and we're done
+          return 1;
+
+  $server_software = $ENV{"SERVER_SOFTWARE"};
+  $server_software =~ s/\D*$//;
+  $server_name = $ENV{"SERVER_NAME"};
+  $server_port = $ENV{"SERVER_PORT"};
+  $server_protocol = $ENV{"SERVER_PROTOCOL"};
+                                           # load a template
+  my $chunk = $throw_a_real_404 ? '404.head' : 'nixie.head';
+  $template = $blosxom::template->($current_dir, $chunk, $blosxom::flavour);
+  $template ||= $blosxom::template->('', $chunk, "all");
+  $template or $throw_a_real_404 = 1;
+  $template ||= get_default();
+  $template ||= '<html><head><title>404 Not Found</title></head><body>Page Not Found</body></html>';
+  $template = &$blosxom::interpolate($template);
+
+  if ($throw_a_real_404) {                 # to throw a real 404, replace blosxom's
+    $blosxom::output = $template;          # output and http header;
+    print "Status: 404\n";                 # else just swap our message into head
+  } else {$blosxom::output =~ s/$mark/$template/;}
+
+  1;
+}
+
+1;
+
+__DATA__
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<HTML><HEAD>
+<TITLE>404 Not Found</TITLE>
+</HEAD><BODY>
+<H1>Not Found</H1>
+The requested URL $nixie::url was not found on this server.<P>
+<HR>
+<ADDRESS>$nixie::server_software Server at $nixie::server_name Port $nixie::server_port</ADDRESS>
+</BODY></HTML>
+__END__
+
+
+=head1 NAME
+
+Blosxom plug-in: nixie
+
+
+=head1 SYNOPSIS
+
+When blosxom processes no stories -- due to a bad link, 
+bad typing, bad karma, etc. -- nixie steps in and adds a 
+user-specified "file not found" message to the empty page. 
+Messages are saved in flavour files, on a per-flavour, 
+per-category basis; a generic flavour can also be used.
+
+Optionally, nixie can generate a "real 404" which will show 
+up in server logs; the 404 page is saved in flavour files, 
+as above. In the absence of any flavour files, nixie provides 
+a default 404 page.
+
+=head1 INSTALLATION
+
+Enter configuration info as instructed, then drop this file 
+into your blosxom plugins folder. Blog on.
+
+
+=head1 CONFIGURATION
+
+With any luck, the instructions in the "Configuration Section" 
+at the top of this file are sufficient; if more information is 
+needed, see the documentation at:
+  http://www.enilnomi.net/dltext/nixie.dl
+
+
+=head1 USAGE
+
+=head2 Blog page, or 404 page?
+
+nixie can react to an "empty" blog page in one of two ways. 
+When $throw_a_real_404 is set to 0 (termed "normal"), the 
+normal blog page will display, with your "file not found" 
+message appearing where stories would normally display. In 
+all other regards the page will be a "normal" blog page, and 
+your server log will record the url as Status 200 (no problems).
+
+When $throw_a_real_404 is set to 1, the normal blog page is 
+discarded and a new page is generated, complete with a "404" 
+http header; your server log will record the url as Status 404.
+
+=head2 Flavour files
+
+You don't have to modify your existing flavour files at all 
+to use nixie; your "file not found" message will be added 
+automagically. You do, however, have to make up a message. 
+Typically, this will include: a prominent notice that the 
+requested page doesn't exist; a brief explanation of how 
+this might have happened; and link back to a "good" page.
+
+File-not-found messages for a "normal" blog page should be 
+saved in files named "nixie.head.flavour_name" (no quotes), 
+where flavour_name is one of your existing flavours. No other 
+plugins will process this message, so make sure it's properly 
+marked up. These "nixie.head.flavour_name" files work just like 
+normal flavour files -- they are used on a per-flavour, per-
+directory basis.
+
+If one message will work for all your flavours, you can save 
+your message in a file named "nixie.head.all"(no quotes); 
+the file must reside at the top of your datadir.
+
+When opting to produce a "real" 404 page, your flavour file 
+must contain a complete page -- "<html>...<head>...<title>...
+</title>...</head>...<body>...</body></html>". Save your 404 
+page in file named "404.head.flavour_name" (no quotes), where 
+flavour_name is one of your existing flavours. No other plugins 
+will process this page, so make sure it's properly marked up. 
+These "404.head.flavour_name" files work just like normal flavour 
+files -- they are used on a per-flavour, per-directory basis.
+
+If one 404 page will work for all flavours, you can save 
+your page in a file named "404.head.all" (no quotes); 
+the file must reside at the top of your datadir.
+
+If you are truly lazy, you'll just let the built-in generic 
+404 template produce your page (no flavour files required); 
+if you're a little bit ambitious, you'll modify the default 
+template to match your server's normal 404 page ;-)
+
+B<No matter what $throw_a_real_404 is set to>, if no flavour 
+files are available the built-in 404 template will be 
+used to generate a page, and a "404" header will be sent.
+
+
+=head2 Environment variables
+
+You can use $nixie::server_protocol, $nixie::server_software, 
+$nixie::server_name, $nixie::server_port, and $nixie::url 
+in your flavour files. Since nixie flavours are interpolated 
+by blosxom, you can also use all the normal blosxom variables.
+
+
+=head1 BUGS
+
+Address bug reports and comments to the Blosxom mailing list:
+http://www.yahoogroups.com/group/blosxom
+
+
+=head1 VERSION
+
+2005-05-02 (v0.4)   - it's alive
+
+
+=head1 LICENSE
+
+this Blosxom Plug-in
+Copyright 2005, Stu MacKenzie
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

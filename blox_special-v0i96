@@ -1,0 +1,385 @@
+
+
+# Blosxom Plugin: blox_special
+# Author: Stu MacKenzie <groups.yahoo.com/group/blosxom/messages>
+# Version: v0.96+, 2004-06-06, special case of 2003-09-14 (v0.96)
+# License: Public Domain
+# Blosxom Home/Docs/Licensing: http://www.blosxom.com
+# blox docs/: http://www.enilnomi.net/download.html
+# More notes at the bottom of this file or type: perldoc blox
+
+
+#  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#  The blox plugin generates "paragraph" markup tags around blocks 
+#  of plain text as your entry files are processed by Blosxom. Just 
+#  type plain text into your entry files, separating paragraphs by 
+#  at least one blank line (completely blank; no spaces, tabs, etc.). 
+#  When Blosxom builds your stories, blox will add the open- and 
+#  close-tags of your choice to each paragraph. Existing markup tags 
+#  will be left alone. As a bonus, blox lets you use virtually any 
+#  text processor and upload method for your entry files, by reading 
+#  "lines" from either Unix-, Mac-, or Windows-based text processors 
+#  (ascii 10; ascii 13; or ascii 10/13 line-ends).
+#
+#  If you need to put a tag at the start or end of a block in an 
+#  entry file (such as <b> or </a>), pad it with a single space and 
+#  blox will still add an open- or close-block tag.
+#
+#  To have blox skip an entry, put <!--noblox--> into the story's 
+#  first line (the second line of the entry file). Or, add the paths 
+#  to files or directories to a file named "noblox" in the Blosxom 
+#  plugins' "state" directory ($blosxom::plugin_state_dir); blox will 
+#  skip those files and/or directories. Each path must be separated 
+#  by a newline. Paths must be complete from where $blosxom::datadir 
+#  stops, and in this format:
+#    directory/
+#    directory/filename.ext
+#
+#  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#  For example, consider this entry file text:
+#     "Welcome to my entry.
+#
+#       <b>Short</b>, isn't it?
+#
+#      That's all - <em>bye!</em> "
+#
+#  (Notice the space before "<b>" at the start of the 2nd block,
+#   and the space after "</em>" at the end of the third block)
+#
+#
+#  Unless your "flavour" templates are wrapping your entries in 
+#  <PRE>-like html tags, this entry will render on the page as:
+#     "Welcome to my entry. Short, isn't it? That's all - bye!" 
+#  (Eh, not very pretty.)
+#
+#  With blox, the entry gets marked up with this html:
+#     "<p>
+#      Welcome to my entry.
+#      </p>
+#
+#      <p>
+#      <b>Short</b>, isn't it?
+#      </p>
+#
+#      <p>
+#      That's all - <em>bye!</em>
+#      </p>
+#
+#  That's much better.
+#  (Note how blox removed the extra space from the start of line 2 and
+#  the end of line 3; that's just to stay tidy.)
+#
+#  To use blox, first look down at the "Configuration Section" 
+#  section just below. Then, drop this file into your Blosxom 
+#  plugins folder, and start typing less.
+#
+#  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+
+package blox_special;
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+#
+#  Configuration Section
+#
+# # # # # # # # # # # # # # # # #
+#
+#  Open and Close tags --
+#   The text you enter between the single quote marks for open_p_tag 
+#   and close_p_tag becomes the exact html inserted before and after 
+#   each untagged block of text in your entry file. You could use 
+#   '<blockquote>' and '</blockquote>', or '<li>' and '</li>', or 
+#   even '<hr><p class="glitzy">' and '<img src="fini.gif"></p>', 
+#   or whatever you like. Default here is '<p>' and '</p>'
+  $open_p_tag = '<p>';
+  $close_p_tag = '</p>';
+#
+#  Adding initial and final tags --
+#   Perhaps your flavour templates specify a tag for the beginning or end 
+#   of your entry; if so, you can stop blox from adding either tag by 
+#   putting 0 [zero] into add_initial_open_tag and/or add_final_close_tag
+#
+#   Should blox do anything to the start of the very first block?
+#   0 = no; 1 = yes
+  $add_initial_open_tag = 1;
+#
+#   Should blox do anything to the end of the very last block?
+#   0 = no; 1 = yes
+  $add_final_close_tag = 1;
+#
+#  Using a noblox file to ignore certain files --
+#   For some pre-formatted entry files, blox may just get in the way; 
+#   for those cases, you can make blox skip over particular files. You 
+#   can always set the first line of a story to "<!--noblox-->", and 
+#   blox will skip that file. You can also enter paths in a file named 
+#   "noblox" in your plugins' "state" directory, and tell blox to skip 
+#   over the directories and files listed there.
+#   Format is: (note -- no leading "/")
+#   directory/
+#   directory/file.ext
+#
+#   Should blox read a list of files to skip over?
+#   0 = no; 1 = yes
+  $use_noblox_file = 1;
+#
+#   What's the complete path to the noblox file?
+#   (default is "$blosxom::plugin_state_dir/noblox";
+#    you p'bly don't want to change that)
+  $noblox_path = "$blosxom::plugin_state_dir/noblox";
+#
+# - - - - - - - - - - - - - - - - - - - - - - - - -
+#  Here's what makes this version special ;-)
+#   Should blox throw a break between single lines?
+#   0 = no; 1 = yes
+  $break_singles = 0;
+#
+#   What html tag should be used for these breaks?
+#   (you p'bly want to leave this as '<BR>')
+  $break = '<BR>';
+#
+#  NOTE: the same rule applies to single-breaks as to 
+#        double-breaks: < and > at start or end of line
+#        must be padded with a space for the break to appear
+# 
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+
+sub start {
+# is this trip necessary?
+  if (!$use_noblox_file) {return 1;}
+
+  $basepath = "$blosxom::datadir";
+
+# read the list of dirs/files to skip into an array, or bail:
+  @nobloxx = ();
+  open(NOBLOX, "< $noblox_path") or 1;
+  while (<NOBLOX>) {
+    chomp;
+    push(@nobloxx, "$basepath/$_") if $_;
+  }
+  close(NOBLOX);
+
+  1;
+}
+
+
+sub filter {
+  my ($pkg, $files_ref) = @_;
+
+# is this trip necessary?
+  if (!$use_noblox_file) {return 0;}
+
+  my @files_list = keys %$files_ref;
+
+# create a hash of targeted files from the array
+  %blox_ref = ();
+  foreach $nobloxx (@nobloxx) {
+    foreach $blox_keep (@files_list) {
+      $blox_keep !~ m/^$nobloxx/ or $blox_ref{$blox_keep}=1;
+    }
+  }
+
+  1;
+}
+
+sub story {
+  my ($pkg, $path, $filename, $story_ref, $title_ref, $body_ref) = @_;
+
+# Blosxom expects \n line endings (ascii 10), but macs might use 
+# \r (ascii 13), and windows might use \r\n (ascii 13,10); we'll 
+# just clean that up...
+if ($$title_ref =~ m/\r/) {
+  # convert first return to newline
+  $$title_ref =~ s/\r/\n/;
+  # re-populate the two vars
+  my $temp;
+  ($$title_ref,$temp) = split /\n/, $$title_ref, 2;
+  $$body_ref = $temp . $$body_ref;
+}
+
+if ($$body_ref =~ m/\r/) {
+  # convert leading line-ends into double newline
+  $$body_ref =~ s/^\r\n/\n\n/ or $$body_ref =~ s/^\r/\n\n/;
+
+  # convert any winlines in $body into newlines
+  $$body_ref =~ s/\r\n/\n/gm;
+
+  # convert any maclines in $body into newlines
+  $$body_ref =~ s/\r/\n/gm;
+}
+
+
+# 2 chances to skip this file:
+  $$body_ref !~ s/^<!--\s*noblox\s*-->\n// or return 0;
+  if ($use_noblox_file) {
+    !$blox_ref{"$blosxom::datadir$path/$filename.$blosxom::file_extension"} or return 0;
+  }
+
+
+# Now it's time to deal with all these lines:
+
+# remove leading and trailing blank lines; 
+# remember that it happened
+  $have_starting_blanklines = $$body_ref =~ s/^\n+//s;
+  $have_ending_blanklines = $$body_ref =~ s/\n+$//s;
+
+# change all \n{2,} to \n\n, since \n{2,} doesn't work well
+# in the lines below (phantom tags show up)
+  $$body_ref =~ s/\n{2,}/\n\n/gm;
+
+## one user reports that "(?!\<)" fails in static mode
+# change untagged start-of-blocks (except start of first block)
+  $$body_ref =~ s/\n\n(?:(?!\<))/\n\n$open_p_tag\n/gm;
+
+# change all untagged end-of-blocks (except end of last block)
+  $$body_ref =~ s/(?:(?<!\>))\n\n/\n$close_p_tag\n\n/gm;
+
+## Here's new stuff, to break single lines:
+$break_singles and $$body_ref =~ s/[^>]\n([^<|\n])/$break\n$1/gm;
+## end new stuff
+
+# change the first start-of-block if permission and untagged
+  ($add_initial_open_tag) && ($$body_ref =~ s/^(?:(?!<))/$open_p_tag\n/s);
+
+# change the last end-of-block if permission and untagged
+  ($add_final_close_tag) && ($$body_ref =~ s/(?:(?<!>))$/\n$close_p_tag/s);
+
+# restore leading/trailing blank line...
+  ($have_starting_blanklines) && ($$body_ref =~ s/^/\n/);
+  ($have_ending_blanklines) && ($$body_ref =~ s/$/\n/);
+
+# strip lone leading and trailing next-to spaces
+# (strip consecutive spaces with: s/($open_p_tag\n) +?(<)/$1$2/gm;)
+  $$body_ref =~ s/($open_p_tag\n) (<)/$1$2/gm;
+  $$body_ref =~ s/(>) (\n$close_p_tag)/$1$2/gm;
+
+ 1;
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Blosxom Plug-in: blox -- adds html block tags around "paragraphs" from plain entry file text
+
+=head1 SYNOPSIS
+
+Use blox to add pre-selected "paragraph" tags to plain text entry files. If blox sees one or more blank lines and no starting or ending tags, it adds appropriate markup to the text flow. Existing tags are left alone. Sloppy pre-existing markup or blank linse in <PRE> tags may add "phantom" paragraph tags to Blosxom's output; such files can be ignored in two ways. Text files can use Unix, Mac, or Windows line-ends.
+
+=head1 DESCRIPTION
+
+The blox plugin makes it easier to produce entry files, by removing the need to wrap "paragraphs" of entry text in html tags like "<p>" and "</p>" while typing. (Or "blockquote>" and "</blockquote>", or "<li>" and "</li>", or whatever.) Simply type regular text into your entry files, separating "paragraphs" by at least one blank line (completely blank: no spaces, tabs, etc.) -- blox will add open- and close-tags to each block of text. Existing tags will be left alone. 
+
+If you need to put your own tag at the start or end of a block (such as <b> or <img>), pad it with a single space and blox will still add an open- or close-block tag. 
+
+Some existing files, or new pages that use <PRE> tags, may not benefit from blox. In those cases, there are two ways to have blox skip over a file:
+1) set the first line of the story to "<!--noblox-->" (without the quotes); and of course, add formatting, since blox will now skip this file.
+2) create a file named "noblox" (again, without the quotes) in the "state" dir of your Blosxom plugins directory; on individual lines in this file, list directory or file paths that blox should skip over. List paths from where $blosxom::datadir leaves off. The extension should be the same as your $blosxom::file_extension value (p'bly "txt"). Here are two examples -- note the format:
+  dirname/dirname/
+  dirname/filename.ext
+
+
+=head1 CONFIGURABLE VARIABLES
+
+* The scalars $open_p_tag and $close_p_tag become the exact html inserted before and after each block of text in your entry file. Make sure you put your tags within the single quotes, like this:
+$open_p_tag = 'YourTagText';
+
+For default tags, use: "$open_p_tag = '<p>';" and "$close_p_tag = '</p>';". Remember the single quotes.
+
+* The scalars $add_initial_open_tag and $add_final_close_tag control whether blox adds an open tag at the very beginning of the entry, and a close tag at the very end of the entry. "1" adds a tag; "0" skips tagging.
+
+(This is handy if your story template provides an open- or close-block tag for entry files, for instance.)
+
+* The scalar $use_noblox_file controls whether blox spends time using a file named "noblox" to identify entry files to skip over. "0" means "don't use the noblox file"; "1" means "read the noblox file and skip entry files as it specifies." See USAGE (below) for details on the "noblox" file.
+
+* The scalar $noblox_path is the complete path to the "noblox" file. You should p'bly leave this at its default value: "$blosxom::plugin_state_dir/noblox".
+
+
+=head1 INSTALLATION
+
+Enter configuration values per CONFIGURATION SECTION; drop this file into your blosxom plugins folder; blog on.
+
+NOTE: if you are using the "blok" plugin, you should remove it; its functionality is built into blox. You can either delete blok, or change its name to "blok-".
+
+=head1 USAGE
+
+To best use blox, consider the two kinds of entry files it encounters: new files that can take maximum advantage of blox formatting, and existing files that are already loaded with html markup. 
+
+With new files, you can simply ignore setting tags for "paragraphs," and focus on inline tags (<b>, <i>, <span>, <img...>, etc.) and writing your entry. If you need to open a tag at the start of a paragraph in your file, pad it with a single space and blox will still preceed it with an open-paragraph tag. Likewise, if you have to put a tag at the end of a paragraph in your file, pad it with a single space character, and blox will still succeed it with a close-paragraph tag.
+
+If you're writing a new file that uses <PRE> tags containing blank lines, blox will add "phantom" paragraph tags, which may or may not affect how the assembled page renders. If blox is getting in the way, set "<!--noblox-->"  (without the quotes) as the first line of your story text (the second line in the entry file); and of course, add formatting, since blox will now skip this file.
+
+With existing files, blox might be "tricked" into producing "phantom" paragraph tags by certain machine-generated markup, or by blank lines inside <PRE> tags. In these cases it may be better to have blox skip the file. This can be accomplished in two ways:
+ 1) set the first line of the story to "<!--noblox-->" (without the quotes); and of course, 
+    add formatting, since blox will now skip this file. To avoid modifying file times...
+ 2) create a file named "noblox" (again, without the quotes) in the "state" directory of your 
+    Blosxom plugins directory; on individual lines in this file, list directories or files that 
+    blox should skip over. Here are two examples -- note the format for directories:
+      dirname/
+      dirname/filename.ext
+All paths must be complete, starting from your $blosxom::datadir.
+
+For example (at a typical host, perhaps), if your $blosxom::datadir is:
+  /var/www/html/somewhere.net/blosxom/docs
+and you want blox to skip over the file:
+  /somewhere.net/blosxom/docs/tech/projects/time_machine.txt
+then your "noblox" entry for the file would look like this:
+  tech/projects/time_machine.txt
+
+To have blox skip the whole /projects folder:
+  tech/projects/
+
+To have blox skip the whole somewhere.net/blosxom/docs/tech folder:
+  tech/
+
+If your $blosxom::datadir was:
+  /var/www/html/somewhere.net/blosxom
+then your "noblox" lines for the above example would look like this:
+  docs/tech/projects/time_machine.txt
+  docs/tech/projects/
+  docs/tech/
+
+
+The best way to assess blox' compatibility with your existing entry files is to try it out; if entries don't look good, then adios, blox! (Remember: blox does nothing to your actual *files* -- any mistakes it makes with your entries only appear in Blosxom's output.)
+
+
+NOTE: if you are using the "blok" plugin, you should remove it; its functionality is built into blox. You can either delete blok, or change its name to "blok-".
+
+=head1 VERSION
+
+2004-06-06 (0.96+) - special case to break single line ends
+2003-09-14 (v0.96) - better line-end conversion
+2003-09-09 (v0.95) - LOL! put Win line-end chars in correct order ;-)
+2003-08-31 (v0.94) - add Mac and Windows line-ending conversion
+2003-08-30 (v0.93) - wip
+2003-08-04 (v0.92) - add mechanisms to ignore specified entries
+2003-07-31 (v0.9)  - half-fast workaround for <PRE> tags
+2003-07-20 (v0.8)  - it's alive
+
+=head1 LICENSE
+
+this Blosxom Plug-in
+Copyright 2003, Stu MacKenzie
+
+(This license is the same as Blosxom's)
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+

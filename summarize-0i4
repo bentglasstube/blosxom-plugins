@@ -1,0 +1,62 @@
+# Author: Stu MacKenzie
+
+package summarize;
+
+#  -- Configuration --
+ my $default_description = qw{a great place to visit};
+#  -------------------
+
+# call $summarize::summary in your head flavour
+use vars qw { $summary };
+
+use strict;
+
+my $mark;
+my $count = 0;
+
+sub start {
+  1;
+}
+
+sub head {
+  my ($pkg, $dir, $head_ref) = @_;
+  $blosxom::path_info =~ m/\.\w+$/ or return $blosxom::plugins{$pkg} = 0;
+  $mark = rand(7);
+  while ($$head_ref =~ m/$mark/) {$mark += rand(7);}
+  $mark = "<!-- $mark -->";
+  $summary = $mark;
+  1;
+}
+
+# entitizing might be inappropriate?
+sub story {
+  $count++ and return 1;
+  my $str;
+  my $body_ref = $_[5];
+  $str = $1 if $$body_ref =~ s/^(.*?)<!--\s*summary\s*-->/$1/s;
+  $str ||= $1 if $$body_ref =~ m!^(.*?)(?:<\s*(?:/p>|br>|/blockquote>|/div>)|\n\n)!s;
+  $str ||= $default_description;
+  $str =~ s/\n*$//;
+  # delete anything that resembles valid markup; entitize any other use of <...>
+  my $cycle = 0;
+  $str = join '', map {
+    if ($cycle++ % 2) {
+      s/^[A-Za-z!\/].*$//s or $_ = "&lt;$_&gt;";
+    }
+    $_;
+  } split m/<([^<]*?)>/s, $str;
+  $str =~ s/</&lt;/g;        # entitize loners...
+  $str =~ s/>/&gt;/g;
+  $str =~ s/^\n+//s;         # remove leading empty lines
+
+  $summary = "<meta name=\"description\" content=\"$str\">";
+  1;
+}
+
+sub foot {
+  $blosxom::output =~ s/$mark/$summary/;
+  1;
+}
+
+1;
+__END__
